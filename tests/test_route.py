@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import shutil
 import unittest
 from pathlib import Path
 
 from tests.helpers import TempDirCase  # first: puts <template>/_meta on sys.path
 from brainlib import config, lint, route
 from brainlib.report import BROKEN
+from brainlib.skills import list_skills
 
 SKILLS = {"lab-build-block", "lab-write-script", "lab-check-api", "lab-plain-script", "lab-fallback", "brain-retro"}
 
@@ -26,6 +28,16 @@ def rules_file() -> dict:
             {"input": {"kind": "script", "title": "Add an API call"}, "expect": "lab-write-script"},
         ],
     }
+
+
+class BareBrainCase(TempDirCase):
+    def bare_brain(self) -> Path:
+        """A fake brain holding no `brain-*` skill and no router: `fake_brain` copies the shipped ones, which
+        would make a test depend on what the template ships (a `brain-retro`, a router with a `rules.json`)."""
+        root = self.fake_brain()
+        for folder in (root / ".claude" / "skills").glob("brain-*"):
+            shutil.rmtree(str(folder), ignore_errors=True)
+        return root
 
 
 def fields(**kwargs) -> dict:
@@ -136,7 +148,7 @@ class RouteTest(unittest.TestCase):
         self.assertEqual(route.route(rules, fields(title="an api"))["rule"], 1)
 
 
-class LoadRulesTest(TempDirCase):
+class LoadRulesTest(BareBrainCase):
     def test_load_rules_reads_json_and_names_a_bad_file(self):
         good = self.tmp / "good.json"
         good.write_text(json.dumps(rules_file()), encoding="utf-8")
@@ -158,7 +170,7 @@ class LoadRulesTest(TempDirCase):
         self.assertEqual(route.load_rules(bom), {"rules": []})
 
     def test_router_files_lists_each_routers_rules_json(self):
-        root = self.fake_brain()
+        root = self.bare_brain()
         for name in ("lab-b", "lab-a"):
             path = root / ".claude" / "skills" / name / "rules.json"
             path.parent.mkdir(parents=True)
@@ -279,10 +291,10 @@ class CheckRulesTest(unittest.TestCase):
         self.assertTrue(any("case 1" in e and "lab-ghost" in e and "lab-build-block" in e for e in errors))
 
 
-class RouteCommandTest(TempDirCase):
+class RouteCommandTest(BareBrainCase):
     def brain_with_skills(self, names=("lab-build-block", "lab-write-script", "lab-check-api",
                                        "lab-plain-script", "lab-fallback", "brain-retro")) -> Path:
-        root = self.fake_brain()
+        root = self.bare_brain()  # the only skills are the ones named here, so `brain-retro` is there only if listed
         for name in names:
             self.make_skill(root, name, "Does X. Does NOT do Y, which is lab-fallback.", "body")
         return root
@@ -398,7 +410,7 @@ class RouteCommandTest(TempDirCase):
         del bare["default"]
         path = self.write_rules(self.tmp / "bare.json", bare)
         self.assertEqual(self.run_brain(root, "route", str(path), "--check").returncode, 0)
-        lonely = self.fake_brain()
+        lonely = self.bare_brain()  # no brain-retro, whatever the template ships
         for name in ("lab-build-block", "lab-write-script", "lab-check-api", "lab-plain-script"):
             self.make_skill(lonely, name, "Does X.", "body")
         r = self.run_brain(lonely, "route", str(path), "--check")
@@ -423,9 +435,9 @@ class RouteCommandTest(TempDirCase):
         self.assertIn("bad.json", r.stdout + r.stderr)
 
 
-class LintRulesTest(TempDirCase):
+class LintRulesTest(BareBrainCase):
     def brain_with_router(self, rules) -> Path:
-        root = self.fake_brain()
+        root = self.bare_brain()
         for name in ("lab-build-block", "lab-write-script", "lab-check-api", "lab-plain-script", "lab-fallback"):
             self.make_skill(root, name, "Does X.", "body")
         self.make_skill(root, "lab-router", "Does X.", "body")
@@ -442,13 +454,17 @@ class LintRulesTest(TempDirCase):
         del rules["rules"][1]["why"]
         root = self.brain_with_router(rules)
         cfg = config.load(root)
+        # Other checks may add findings under the same subject; this module's are the `rule N` / `case N` ones.
         found = lint.all_findings(root, cfg)
-        mine = [f for f in found if f.subject == "lab-router" and f.severity == BROKEN]
+        mine = [f for f in found if f.subject == "lab-router" and f.severity == BROKEN
+                and f.message.startswith(("rule ", "case "))]
         self.assertEqual(len(mine), 2, found)
+        self.assertEqual(sorted(mine, key=lambda f: f.message),
+                         sorted(route.lint_rules(root, cfg, list_skills(root)), key=lambda f: f.message))
         self.assertTrue(any("rule 3" in f.message and "lab-ghost" in f.message for f in mine))
         self.assertTrue(any("rule 2" in f.message and "'why'" in f.message for f in mine))
         # `lint_skills` stays the skill checks alone.
-        self.assertEqual([f for f in lint.lint_skills(root, cfg) if "rule" in f.message], [])
+        self.assertEqual([f for f in lint.lint_skills(root, cfg) if f.message.startswith(("rule ", "case "))], [])
         r = self.run_brain(root, "lint")
         self.assertEqual(r.returncode, 1, r.stdout)
         self.assertTrue(any(l.startswith("BROKEN lab-router: rule 3") for l in r.stdout.splitlines()), r.stdout)
@@ -456,7 +472,6 @@ class LintRulesTest(TempDirCase):
     def test_lint_rules_direct_call_uses_the_given_skills(self):
         root = self.brain_with_router(rules_file())
         cfg = config.load(root)
-        from brainlib.skills import list_skills
         skills = list_skills(root)
         self.assertEqual(route.lint_rules(root, cfg, skills), [])  # brain-retro is not needed: default is set
         found = route.lint_rules(root, cfg, [s for s in skills if s.name != "lab-fallback"])
@@ -471,7 +486,7 @@ class LintRulesTest(TempDirCase):
         self.assertIn("rules.json", found[0].message)
 
     def test_a_brain_without_routers_has_no_rules_findings(self):
-        root = self.fake_brain()
+        root = self.bare_brain()
         self.assertEqual(route.lint_rules(root, config.load(root), []), [])
 
 

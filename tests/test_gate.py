@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 from datetime import datetime
@@ -265,6 +266,11 @@ class SkillGateTest(GateCase):
             ("ls && printf hi >| docs/UNCLASSIFIED-LOG.md", "docs/UNCLASSIFIED-LOG.md"),
             ("cd /tmp; cp a b\ncp c scripts/z.py", "scripts/z.py"),
             ("cat > .claude/skills/lab-q/SKILL.md <<EOF\nhi\nEOF", ".claude/skills/lab-q/SKILL.md"),
+            # A folder the command creates (or renames to) is a write into it, whether or not it exists yet.
+            ("mkdir -p .claude/skills/lab-new && cp /tmp/SKILL.md .claude/skills/lab-new/", ".claude/skills/lab-new/"),
+            ("cp -r /tmp/draft .claude/skills/lab-new", ".claude/skills/lab-new/"),
+            ("mv .claude/skills/lab-old .claude/skills/lab-new", ".claude/skills/lab-new/"),
+            ("cp -r /tmp/draft docs/practices", "docs/practices/"),
         ]
         for command, rel in commands:
             with self.subTest(command=command):
@@ -288,7 +294,10 @@ class SkillGateTest(GateCase):
                         "cat docs/ROUTING.md", "sed -n 1,5p docs/ROUTING.md", "sed -e s/in/out/ docs/ROUTING.md",
                         "cp docs/ROUTING.md /tmp/copy.md", "echo hi 2>&1 | head", "ls docs/practices 2>/dev/null",
                         "grep -r 'a > b' scripts", "echo x > /dev/null", "cp a", "tee",
-                        "git commit -m 'update docs/ROUTING.md'"):
+                        "git commit -m 'update docs/ROUTING.md'",
+                        "grep -n '>' docs/ROUTING.md", 'grep -- "-->" docs/ROUTING.md', "echo '>' docs/ROUTING.md",
+                        'echo "a > b" docs/ROUTING.md', "echo \\> docs/ROUTING.md", "printf %s '>>' docs/RETRO-LOG.md",
+                        "cp a notes/new", "cp a notes/new/"):
             with self.subTest(command=command):
                 self.assert_silent(self.bash(root, command))
 
@@ -502,6 +511,264 @@ class SkillGateTest(GateCase):
         self.denied(self.write(second, "docs/ROUTING.md"))
 
 
+SCRIPT_WHY = "Scripts follow brain-write-script: placement, read-only by default, tests."
+PRACTICE_WHY = "Practices need evidence, a duplicate check and the index, through brain-write-practice."
+DEPLOY_RULE = {"path": "scripts/deploy/**", "skills": ["lab-deploy"], "why": "Deploys go through lab-deploy."}
+WAIVE_HINT = "Invoke the skill{s}; a one-time waiver needs the person's express say-so: " \
+             "_meta/brain gate waive {skill} \"<reason, and who said so>\""
+
+
+class GateObligationsTest(GateCase):
+    """Every ruled target of a call, and every rule that matches it, must be satisfied (ruling R18)."""
+
+    def test_every_ruled_target_of_a_command_must_be_satisfied(self):
+        root = self.fake_brain()
+        self.ran(root, "brain-write-script")
+        commands = ("cp a scripts/x.py && echo y > docs/ROUTING.md", "echo y > docs/ROUTING.md && cp a scripts/x.py",
+                    "tee scripts/x.py docs/ROUTING.md", "echo y > docs/ROUTING.md > scripts/x.py")
+        for command in commands:
+            with self.subTest(command=command):
+                self.assertEqual(self.denied(self.bash(root, command)),
+                                 refusal("docs/ROUTING.md", ["brain-write-skill"], ROUTING_WHY))
+        self.ran(root, "brain-write-skill")
+        for command in commands:
+            with self.subTest(command=command, ran="both"):
+                self.assert_silent(self.bash(root, command))
+
+    def test_the_denial_names_every_unsatisfied_target_and_owner_set(self):
+        root = self.fake_brain()
+        reason = self.denied(self.bash(root, "cp a scripts/x.py && echo y > docs/ROUTING.md"))
+        self.assertEqual(reason, (
+            f"skill gate: writing scripts/x.py needs brain-write-script to run first in this session. {SCRIPT_WHY} "
+            f"Writing docs/ROUTING.md needs brain-write-skill to run first. {ROUTING_WHY} "
+            + WAIVE_HINT.format(s="s", skill="brain-write-script")))
+        # The first unsatisfied target is the one remembered.
+        self.assertTrue(self.status(root, "--session", "s1")[3].startswith(
+            "last refusal: scripts/x.py needs brain-write-script"))
+
+    def test_a_denial_spends_and_consumes_nothing(self):
+        root = self.draft_brain()
+        (root / "out").mkdir()
+        for name in ("a.md", "b.md"):
+            (root / "out" / name).write_text("draft\n", encoding="utf-8")
+        self.ran(root, "lab-draft")
+        # One run cannot cover two revisions: the second file is refused and the run is still there.
+        reason = self.denied(self.bash(root, "sed -i s/a/b/ out/a.md out/b.md"))
+        self.assertEqual(reason, refusal("out/b.md", ["lab-draft"], DRAFT_RULE["why"]))
+        lines = self.status(root, "--session", "s1")
+        self.assertEqual(lines[1], "ran: lab-draft x1")
+        self.assertTrue(lines[3].startswith("last refusal: out/b.md needs lab-draft"), lines[3])
+        # A second run covers both, and each revision spends one.
+        self.ran(root, "lab-draft")
+        message = self.notice(self.bash(root, "sed -i s/a/b/ out/a.md out/b.md"))
+        self.assertIn("out/a.md", message)
+        self.assertIn("out/b.md", message)
+        self.assertEqual(self.status(root, "--session", "s1")[1], "ran: lab-draft x0")
+        self.denied(self.bash(root, "sed -i s/a/b/ out/a.md"))
+
+    def test_creating_files_spends_nothing_even_next_to_a_revision(self):
+        root = self.draft_brain()
+        (root / "out").mkdir()
+        (root / "out" / "a.md").write_text("draft\n", encoding="utf-8")
+        self.ran(root, "lab-draft")
+        message = self.notice(self.bash(root, "echo new > out/new.md && sed -i s/a/b/ out/a.md"))
+        self.assertIn("out/a.md", message)
+        self.assertNotIn("out/new.md", message)
+        self.assertEqual(self.status(root, "--session", "s1")[1], "ran: lab-draft x0")
+
+    def test_a_denial_leaves_an_armed_waiver_alone(self):
+        root = self.fake_brain()
+        self.waive(root, "brain-write-skill", "Dana said so")
+        # The waiver covers the ROUTING.md write only; the script write still needs its skill.
+        reason = self.denied(self.bash(root, "cp a scripts/x.py && echo y > docs/ROUTING.md"))
+        self.assertEqual(reason, refusal("scripts/x.py", ["brain-write-script"], SCRIPT_WHY))
+        self.assertTrue(self.waiver_path(root).exists())
+        self.assertEqual(len(self.waiver_log(root)), 1)  # armed, never used
+        self.ran(root, "brain-write-script")
+        message = self.notice(self.bash(root, "cp a scripts/x.py && echo y > docs/ROUTING.md"))
+        self.assertIn("waiver", message)
+        self.assertIn("docs/ROUTING.md", message)
+        self.assertFalse(self.waiver_path(root).exists())
+        armed, used = self.waiver_log(root)
+        self.assertEqual(used[1:], ["used", "brain-write-skill", "Dana said so", "docs/ROUTING.md"])
+
+    def test_one_waiver_covers_every_target_of_the_call_that_names_its_skill(self):
+        root = self.fake_brain()
+        self.waive(root, "brain-write-skill", "Dana said so")
+        message = self.notice(self.bash(root, "cp a docs/ROUTING.md && cp b .claude/skills/lab-q/SKILL.md"))
+        self.assertIn("waiver", message)
+        self.assertFalse(self.waiver_path(root).exists())
+        rows = self.waiver_log(root)
+        self.assertEqual([row[1] for row in rows], ["armed", "used", "used"])
+        self.assertEqual([row[4] for row in rows[1:]], ["docs/ROUTING.md", ".claude/skills/lab-q/SKILL.md"])
+
+    def test_a_symlink_ruled_under_two_owners_needs_both(self):
+        root = self.fake_brain()
+        (root / "scripts").mkdir()
+        (root / "docs").mkdir()
+        (root / "docs" / "practices").symlink_to(root / "scripts")  # docs/practices/x.py is scripts/x.py
+        self.ran(root, "brain-write-practice")
+        self.assertEqual(self.denied(self.write(root, "docs/practices/x.py")),
+                         refusal("scripts/x.py", ["brain-write-script"], SCRIPT_WHY))
+        self.ran(root, "brain-write-script", session="s2")
+        self.assertEqual(self.denied(self.write(root, "docs/practices/x.py", session="s2")),
+                         refusal("docs/practices/x.py", ["brain-write-practice"], PRACTICE_WHY))
+        self.ran(root, "brain-write-script")
+        self.assert_silent(self.write(root, "docs/practices/x.py"))
+
+    def test_every_rule_that_matches_a_path_must_be_satisfied(self):
+        root = self.fake_brain(extra={"gates": [dict(DEPLOY_RULE)]})
+        both = (f"skill gate: writing scripts/deploy/x.sh needs brain-write-script to run first in this session. "
+                f"{SCRIPT_WHY} It also needs lab-deploy to run first. {DEPLOY_RULE['why']} "
+                + WAIVE_HINT.format(s="s", skill="brain-write-script"))
+        self.assertEqual(self.denied(self.write(root, "scripts/deploy/x.sh")), both)
+        self.ran(root, "brain-write-script")  # the shipped rule alone is no longer enough
+        self.assertEqual(self.denied(self.write(root, "scripts/deploy/x.sh")),
+                         refusal("scripts/deploy/x.sh", ["lab-deploy"], DEPLOY_RULE["why"]))
+        self.ran(root, "lab-deploy", session="s2")  # nor is the brain's rule alone
+        self.assertEqual(self.denied(self.write(root, "scripts/deploy/x.sh", session="s2")),
+                         refusal("scripts/deploy/x.sh", ["brain-write-script"], SCRIPT_WHY))
+        self.ran(root, "lab-deploy")
+        self.assert_silent(self.write(root, "scripts/deploy/x.sh"))
+        self.assert_silent(self.bash(root, "cp a scripts/deploy/y.sh"))
+        # A path under the shipped rule only still needs only that rule's skill.
+        self.assert_silent(self.write(root, "scripts/other.py"))
+
+    def test_a_waiver_covers_only_the_rules_naming_its_skill(self):
+        root = self.fake_brain(extra={"gates": [dict(DEPLOY_RULE)]})
+        self.waive(root, "brain-write-script", "Dana said so")
+        self.assertEqual(self.denied(self.write(root, "scripts/deploy/x.sh")),
+                         refusal("scripts/deploy/x.sh", ["lab-deploy"], DEPLOY_RULE["why"]))
+        self.assertTrue(self.waiver_path(root).exists())
+        self.ran(root, "lab-deploy")
+        self.assertIn("waiver", self.notice(self.write(root, "scripts/deploy/x.sh")))
+        self.assertFalse(self.waiver_path(root).exists())
+
+    def test_a_brain_rule_inside_a_shipped_glob_is_not_shadowed(self):
+        root = self.fake_brain(extra={"gates": [dict(DEPLOY_RULE)]})
+        self.ran(root, "brain-write-script")
+        self.assertIn("needs lab-deploy", self.denied(self.bash(root, "echo x > scripts/deploy/a.sh")))
+        self.assert_silent(self.bash(root, "echo x > scripts/build/a.sh"))
+
+
+class GateReservedPathsTest(GateCase):
+    """The waiver and its log are written by `gate waive` only; no skill run or waiver opens them."""
+
+    RESERVED = (".brain/gate-waiver.json", ".brain/gate-waivers.log")
+
+    def assert_reserved(self, r, rel):
+        reason = self.denied(r)
+        self.assertIn(f"writing {rel} is refused", reason)
+        self.assertIn("_meta/brain gate waive", reason)
+        self.assertIn("No skill run opens", reason)
+
+    def test_the_waiver_files_cannot_be_written_by_the_tools(self):
+        root = self.fake_brain()
+        for rel in self.RESERVED:
+            for tool in ("Write", "Edit"):
+                with self.subTest(rel=rel, tool=tool):
+                    self.assert_reserved(self.write(root, rel, tool=tool), rel)
+            for command in (f"echo x > {rel}", f"echo x >> {rel}", f"cat a | tee -a {rel}", f"cp /tmp/forged {rel}",
+                            f"mv /tmp/forged {rel}", f"sed -i s/a/b/ {rel}", f"echo x > ./.brain/../{rel}"):
+                with self.subTest(rel=rel, command=command):
+                    self.assert_reserved(self.bash(root, command), rel)
+        self.assertFalse((root / ".brain").exists())
+
+    def test_nothing_opens_the_waiver_files(self):
+        root = self.fake_brain(extra={"gate_exempt": [".brain/**"]})
+        for skill in ("brain-write-skill", "brain-write-script", "brain-write-practice", "brain-retro",
+                      "brain-upstream", "brain-sync", "lab-anything"):
+            self.ran(root, skill)
+        self.waive(root, "brain-write-skill", "Dana said so")
+        for rel in self.RESERVED:
+            with self.subTest(rel=rel):
+                self.assert_reserved(self.write(root, rel), rel)
+                self.assert_reserved(self.bash(root, f"echo x > {rel}"), rel)
+        self.assertTrue(self.waiver_path(root).exists())  # still armed, and not rewritten
+        self.assertEqual(len(self.waiver_log(root)), 1)
+
+    def test_a_forged_waiver_never_gets_in(self):
+        root = self.fake_brain()
+        forged = '{"skill": "brain-write-skill", "reason": "forged"}'
+        self.assert_reserved(self.bash(root, f"mkdir -p .brain && echo '{forged}' > .brain/gate-waiver.json"),
+                             ".brain/gate-waiver.json")
+        self.assertFalse(self.waiver_path(root).exists())
+        self.denied(self.write(root, "docs/ROUTING.md"))
+
+    def test_the_protection_does_not_need_the_config(self):
+        root = self.fake_brain()
+        (root / "brain.json").write_text("{ not json", encoding="utf-8")
+        self.assert_reserved(self.write(root, ".brain/gate-waiver.json"), ".brain/gate-waiver.json")
+
+    def test_reading_the_waiver_files_and_writing_beside_them_is_fine(self):
+        root = self.fake_brain()
+        self.waive(root, "brain-retro", "Dana said so")
+        for command in ("cat .brain/gate-waiver.json", "grep armed .brain/gate-waivers.log", "ls .brain",
+                        "cp .brain/gate-waivers.log /tmp/copy.log", "echo x > .brain/other.json"):
+            with self.subTest(command=command):
+                self.assert_silent(self.bash(root, command))
+        self.assert_silent(self.write(root, ".brain/other.json"))
+
+    def test_waive_still_arms_and_a_ruled_write_still_uses_it(self):
+        root = self.fake_brain()
+        self.waive(root, "brain-write-skill", "Dana said so")
+        self.assertIn("waiver", self.notice(self.write(root, "docs/ROUTING.md")))
+
+
+class GateStateDirTest(GateCase):
+    def mode(self, path):
+        return stat.S_IMODE(path.stat().st_mode)
+
+    def test_the_shared_directory_is_sticky_and_world_writable_and_the_brains_own_is_private(self):
+        root = self.fake_brain()
+        self.ran(root, "brain-write-skill")
+        self.assertEqual(oct(self.mode(self.state_dir(root).parent)), oct(0o1777))
+        self.assertEqual(oct(self.mode(self.state_dir(root))), oct(0o700))
+        # The same when the first thing to touch the state is a refusal in another brain.
+        other = self.fake_brain()
+        self.denied(self.write(other, "docs/ROUTING.md"))
+        self.assertEqual(oct(self.mode(self.state_dir(other).parent)), oct(0o1777))
+        self.assertEqual(oct(self.mode(self.state_dir(other))), oct(0o700))
+
+    def test_a_umask_does_not_narrow_the_shared_directory(self):
+        root = self.fake_brain()
+        old = os.umask(0o077)
+        try:
+            self.ran(root, "brain-write-skill")
+        finally:
+            os.umask(old)
+        self.assertEqual(oct(self.mode(self.state_dir(root).parent)), oct(0o1777))
+
+    def test_state_that_cannot_be_kept_fails_open(self):
+        root = self.fake_brain()
+        (Path(self.env["TMPDIR"]) / "brain-gate").write_text("in the way", encoding="utf-8")  # no state can be kept
+        r = self.hook(root, "record", "Skill", skill="brain-write-skill")
+        self.assertIn("skill gate error", self.notice(r))
+        # A refusal nobody could ever satisfy is not a refusal: the write goes through, with a warning.
+        message = self.notice(self.write(root, "docs/ROUTING.md"))
+        self.assertTrue(message.startswith("skill gate: cannot keep session state"), message)
+        self.assertIn("docs/ROUTING.md", message)
+        self.assertIn("write allowed", message)
+        self.assert_silent(self.write(root, "notes/a.md"))
+        self.assert_silent(self.bash(root, "ls"))
+
+    def test_a_failed_record_leaves_an_earlier_state_alone(self):
+        root = self.fake_brain()
+        self.ran(root, "brain-write-skill")
+        state = self.state_dir(root) / "s1.json"
+        before = state.read_text(encoding="utf-8")
+        os.chmod(str(self.state_dir(root)), 0o500)  # read-only: the next record cannot write
+        try:
+            if os.access(str(self.state_dir(root)), os.W_OK):  # running as root: permissions do not bind
+                self.skipTest("directory permissions do not apply to this user")
+            r = self.hook(root, "record", "Skill", skill="brain-retro")
+            self.assertIn("skill gate error", self.notice(r))
+            self.assertEqual(state.read_text(encoding="utf-8"), before)
+            self.assert_silent(self.write(root, "docs/ROUTING.md"))  # the earlier run still counts
+        finally:
+            os.chmod(str(self.state_dir(root)), 0o700)
+
+
 class GateFunctionsTest(GateCase):
     def test_bash_targets(self):
         cases = [
@@ -531,7 +798,19 @@ class GateFunctionsTest(GateCase):
             ("echo a; cp x y.py && echo b > z.md", ["y.py", "z.md"]),
             ("cp a b\ncp c d", ["b", "d"]),
             ("cp a \\\n  b", ["b"]),
-            ("echo 'unterminated > docs/ROUTING.md", ["docs/ROUTING.md"]),  # fallback split
+            ("echo 'unterminated > docs/ROUTING.md", []),  # the shell refuses to run it: it is all one word
+            ("echo hi > docs/ROUTING.md\necho 'unterminated", ["docs/ROUTING.md"]),
+            ("grep -n '>' docs/ROUTING.md", []),
+            ('grep -- "-->" docs/ROUTING.md', []),
+            ("echo '>' docs/ROUTING.md", []),
+            ("echo \\> docs/ROUTING.md", []),
+            ("echo '>' > docs/ROUTING.md", ["docs/ROUTING.md"]),
+            ("grep '>' a.md > out.md", ["out.md"]),
+            ('echo "a>b" > c.md', ["c.md"]),
+            ("echo x >'my file.md'", ["my file.md"]),
+            ("echo x > my\\ file.md", ["my file.md"]),
+            ("echo `date > a.md`", ["a.md"]),
+            ("cp /tmp/SKILL.md .claude/skills/lab-new/", [".claude/skills/lab-new/"]),
             ("FOO=1 sudo cp a scripts/x.py", ["scripts/x.py"]),
             ("cat <<EOF > docs/ROUTING.md\nhello > not-a-target\nEOF", ["docs/ROUTING.md"]),
             ("cat > docs/n.md <<'EOF'\ncp a scripts/x.py\necho y > scripts/y.py\nEOF\ncp b docs/practices/p.md",
@@ -567,6 +846,13 @@ class GateFunctionsTest(GateCase):
         self.assertEqual(targets(command="echo x > docs/ROUTING.md; cp a /etc/b; cp a ../out"),
                          [("docs/ROUTING.md", True)])
         self.assertEqual(targets(command="cp a scripts/"), [("scripts/", True)])  # an existing folder
+        # A destination that is not there yet may be a folder about to be made: it is tried both ways.
+        self.assertEqual(targets(command="cp -r a scripts/new"), [("scripts/new", False), ("scripts/new/", False)])
+        self.assertEqual(targets(command="mv a docs/new"), [("docs/new", False), ("docs/new/", False)])
+        self.assertEqual(targets(command="cp a docs/new/"), [("docs/new/", False)])  # written as a folder
+        self.assertEqual(targets(command="mv a docs/ROUTING.md"), [("docs/ROUTING.md", True)])
+        self.assertEqual(targets(command="echo x > docs/new"), [("docs/new", False)])  # a redirection is a file
+        self.assertEqual(targets(command="tee docs/new"), [("docs/new", False)])
         self.assertEqual(targets(file_path="/etc/hosts"), [])
         self.assertEqual(targets(file_path=str(root)), [])
         self.assertEqual(targets(), [])

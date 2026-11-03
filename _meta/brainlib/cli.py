@@ -11,6 +11,7 @@ from . import paths
 # add_arguments(parser) and run(args) -> int; it is imported only when its command is chosen.
 COMMANDS: dict[str, tuple[str, str]] = {
     "gate": ("gate", "the skill gate: record, check, waive, status"),
+    "hook": ("hook", "the pre-commit privacy guard: pre-commit, install, self-test"),
     "lint": ("lint", "check skills and the routing map"),
     "practices": ("practices", "check, index and search the practices store"),
     "route": ("route", "apply a router's rules file and name one skill"),

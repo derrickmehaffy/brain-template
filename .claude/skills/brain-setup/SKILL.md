@@ -1,12 +1,13 @@
 ---
 name: brain-setup
-description: "Set up or repair this brain: in a copy of the template that was never set up, turn it into a brain (init) after four questions and a dry run; in a brain, explain what is here, run doctor and fix what it reports, and run update to pull template improvements. Use when someone says set this up, when doctor reports a BLOCK, or to update from the template. Does NOT create or adopt a brain from the template, which is template-make-brain in a template session, and does NOT write domain skills, which is brain-write-skill."
+description: "Set up or repair this brain: in a copy of the template that was never set up, check the computer, ask a few plain questions, rehearse and turn it into a brain (init); in a brain, explain what is here, run doctor and fix what it reports, set up or decline an online backup, and run update to pull template improvements. Use when someone says set this up, when doctor reports a BLOCK, to back the brain up, or to update from the template. Does NOT create or adopt a brain from the template, which is template-make-brain in a template session, and does NOT write domain skills, which is brain-write-skill."
 ---
 
 # brain-setup
 
-Setup is one short conversation and the harness does the rest. Tell from `brain.json` which case this
-is, then turn a copy of the template into a brain, or look after a brain that already is one.
+Setup is one short conversation and the harness does the rest. The person may never have used git or
+a terminal: decide what you can, ask only what only they know, say what each step does in plain
+words, and run every command yourself. Never ask them to type a command or edit a file you can.
 
 ## Where this sits
 
@@ -16,57 +17,96 @@ is, then turn a copy of the template into a brain, or look after a brain that al
 **Hand to next:** `brain-sync`
 <!-- where:end -->
 
-**Call it directly when:** someone says "set this up", `doctor` reports a BLOCK, or the person wants
-the template's latest improvements; nothing needs to run first.
+**Call it directly when:** someone says "set this up", `doctor` reports a BLOCK, the person wants an
+online backup, or the template's latest improvements; nothing needs to run first.
 
 ## Which mode
 
 Read `brain.json` `role`, and look for a `local/` folder at the root:
 
-- `role` is `template`, no `local/`: a copy of the template never set up (a clone, a "Use this
-  template" repo, a copied folder). Take the copy route, unless the person means to develop the
-  template here: then they create `local/`, and making brains from it is `template-make-brain`.
+- `role` is `template`, no `local/`: a copy of the template never set up (a download, a clone, a
+  "Use this template" repository). Take the copy route. Only if the person says they want to develop
+  the template itself do they create `local/` instead.
 - `role` is `template` with `local/`: the template's own checkout. Never run `init` here.
 - Anything else: a brain. Go to "In a brain".
 
+## 0. Check the computer first
+
+Run these yourself and handle each in plain words before any question about the brain:
+
+- `python3 --version` (3.9 or newer) and `git --version`. Missing on a Mac: run `xcode-select
+  --install` and tell them a box will offer to install the developer tools: click Install and wait.
+  On Linux: the package manager, with their password typed by them. On Windows outside WSL: stop, and
+  say a brain needs WSL there.
+- `_meta/brain` not executable (a download can lose that): `chmod +x _meta/brain`.
+- `git config --global user.name` and `user.email`. If either is empty, ask: "What name and email
+  should label the brain's saved history? They stay on this computer unless you back it up online."
+  Set both with `git config --global` on their answer. A setting in this folder alone is lost when
+  `init` starts the fresh history.
+
 ## The copy route
 
-1. Ask four things in one message: the **name**; the **prefix** for the brain's own skills, suggested
-   from the name (2 to 16 lowercase letters or digits, starting with a letter, never `brain` or
-   `template`); a **one-line description**; **anything that must never be committed** (private
-   hostnames, unreleased project names), one pattern each. The rest is a default in `brain.json`.
-2. Dry run: `_meta/brain init --name N --prefix P --description "D" --private "PATTERN" --dry-run`,
-   one `--private` per pattern. It changes nothing.
-3. Show the person what it would remove (the template's own skills, tests, docs, README and
-   `CLAUDE.md`), what it would write, and whether it starts a fresh history (a plain clone of the
-   template keeps its old history in `.brain/template-history.git`).
-4. On a yes, run the same command without `--dry-run`. It writes the brain, installs the hook and
-   makes the first commit.
-5. Run `_meta/brain doctor` and fix any BLOCK with the table below.
-6. Tell the person to start a new session at this folder's root, so the brain's own `CLAUDE.md` and
-   settings load.
+1. **Work out, don't quiz.** Take the name and the one-line description from what they asked for,
+   and ask only if it is unclear. Derive the prefix yourself (2 to 16 lowercase letters or digits,
+   starting with a letter, never `brain` or `template`: "Home Lab" → `lab`) and say only "its
+   routines will be called `lab-…`".
+2. **Ask one question:** "Is there anything that must never be saved in this brain's history:
+   server names, addresses, client or customer names, unreleased project names? Say them as you
+   would write them. Never a password." Each answer is one `--private` term, as written; it matches
+   in any case as a whole word. An address range or a family of names becomes one `re:` pattern you
+   write (`re:\b192\.168\.1\.\d{1,3}\b`) and explain. Setup refuses a term under 3 characters, one
+   that looks like a pattern without `re:`, and one that matches the brain's own name: say why, and
+   adjust it with them. Tell them to keep their own copy of the list: it lives only on this computer.
+3. **Rehearse:** `_meta/brain init --name "N" --prefix P --description "D" --private "TERM" --dry-run`,
+   one `--private` per term. It changes nothing. Summarise it: it removes the template's own
+   instructions and tests (they are for people developing the template), adds the brain's starter
+   files and saves the first version; say whether the history starts fresh.
+4. **On a yes**, run it without `--dry-run`. It writes the brain, installs the safety check on saving
+   (the pre-commit hook) and makes the first commit. Then `_meta/brain doctor`; fix any BLOCK with
+   the table below.
+5. **Ask about a backup once:** "Do you want an online backup copy? It needs a free GitHub account."
+   Yes: "Online backup" below. No: set `brain.json` `"backup": "local"` and commit it through
+   `brain-sync`, so the session-start check stops asking.
+6. **Hand over:** tell them to start a new chat in this same folder now (desktop app: the folder
+   picker beside the environment selector, "Open folder…"), and to start every chat here, so the
+   brain's own instructions load. Offer three things to say first, from its `README.md`.
 
-When `init` refuses: a dirty tree → show `git status --short`, the person commits or discards (never
-discard yourself); unpushed commits on a clone → the person pushes them first, so nothing is lost;
-`local/` exists → "Which mode". The patterns go to `.brain-private`; never copy one into a tracked file.
+When `init` refuses, say why in plain words and do the fix with them: changes not yet saved → show
+them and ask whether to keep or throw them away (never discard yourself); commits only in this copy
+→ explain they would be lost, and save them elsewhere first on a yes. Terms go to `.brain-private`
+only; never copy one into a tracked file.
+
+## Online backup
+
+1. `gh --version`. Missing: on a Mac with Homebrew, `brew install gh`; otherwise walk them through
+   the download from cli.github.com, or skip to step 4.
+2. `gh auth login --hostname github.com --git-protocol https --web`: it prints a one-time code and a
+   web address. Give both to the person; they sign in in their browser. Never ask for a password.
+3. `gh repo create "<name>" --private --source . --remote origin --push`. Then `brain-sync` pushes
+   from now on whenever they ask.
+4. Without `gh`: walk them through github.com → New repository: a name, **Private**, and **no**
+   README, licence or .gitignore (any of those makes the first push fail). Take its address, run
+   `git remote add origin <address>` and `git push -u origin main`; git opens the browser to sign in.
+5. Nested project folders with their own history are not part of this backup: name them, and offer
+   to do the same for each, on a yes.
 
 ## In a brain
 
-**Explain what is here** when asked, in a few lines, not file dumps: `brain.json` (name, prefix,
-template version); `_meta/brain routing show` (entry points, skills nothing routes to); the brain's
-own skills next to the `brain-*` ones; open rows in `docs/RETRO-LOG.md`; `docs/UNCLASSIFIED-LOG.md`
-(a kind seen twice is a skill waiting to be written); open suggestions from `_meta/brain upstream list`.
+**Explain what is here** when asked, in a few lines: `brain.json` (name, prefix, template version);
+`_meta/brain routing show` (entry points, skills nothing routes to); its own skills next to the
+`brain-*` ones; open rows in `docs/RETRO-LOG.md`; `docs/UNCLASSIFIED-LOG.md` (a kind seen twice is a
+skill waiting to be written); open suggestions from `_meta/brain upstream list`.
 
 **Run `_meta/brain doctor`** (`--quick` skips the script tests, nested repos and the network). Fix
-every BLOCK; offer a fix for each WARN and make it on a yes. Then run it again. Every session also
-starts with `doctor --brief`, a hook that prints only WARN and BLOCK lines: when it printed any, say
-them to the person and offer the fixes below.
+every BLOCK; offer a fix for each WARN in plain words and make it on a yes. Then run it again. Every
+session starts with `doctor --brief`, which prints only WARN and BLOCK lines: when it printed any,
+tell the person what each means and offer the fix.
 
 | Doctor line | Fix |
 | --- | --- |
-| `git`, `python3` or `scripts.python` missing (BLOCK) | Install it, or point `brain.json` `scripts.python` at an interpreter that exists |
+| `git`, `python3` or `scripts.python` missing (BLOCK) | Step 0, or point `brain.json` `scripts.python` at an interpreter that exists |
 | `brain.json` invalid, or no prefix (BLOCK) | Fix the file as the line says |
-| A copy of the template that was never set up (BLOCK) | The copy route |
+| A copy of the template not set up yet (BLOCK) | The copy route |
 | A template-only file in a brain, e.g. a `template-*` skill (BLOCK) | It came with a copy and never ships: `git rm -r` it, on a yes |
 | A template-owned file differs from the manifest (WARN) | A local edit: `brain-upstream` records it, then restores it |
 | Template version behind its source (WARN) | The update below |
@@ -74,38 +114,38 @@ them to the person and offer the fixes below.
 | `core.hooksPath` bypasses the hook (BLOCK) | `git config --show-origin --get core.hooksPath`; unset it in this repo on a yes; if it is set globally, the person decides |
 | Settings lack the `.env` deny, a gate hook or the session-start check (WARN) | The update below rewrites those entries and leaves the file's others alone |
 | Gate rules, or a router's `rules.json`, invalid or naming a missing skill | `brain-write-skill`; `_meta/brain route <router>/rules.json --check` shows the failing case |
-| `.env` not mode 600, or keys in `.env.example` missing from `.env` (WARN) | `chmod 600 .env`; `_meta/brain env-sync` adds the missing keys empty for the person to fill. Never read or print a value |
+| `.env` not mode 600, or keys in `.env.example` missing from `.env` (WARN) | `chmod 600 .env`; `_meta/brain env-sync --open` adds the missing keys and opens the file for the person to fill in. Never read or print a value |
 | `lint` BROKEN (BLOCK) or GAPs (WARN) | `_meta/brain lint` lists them: the brain's own skills → `brain-write-skill`; a `brain-*` skill → `brain-upstream` |
 | `practices lint` errors (BLOCK) or stale entries (WARN) | `brain-write-practice`, whose sweep handles stale entries |
 | Script tests fail | `brain-write-script` |
-| The brain repo has no remote, or uncommitted or unpushed work (WARN) | `brain-sync`; adding a remote is the person's call |
-| A nested repo with no remote or unpushed commits (WARN) | Read them out: this is the work lost if the disk died. The person pushes them; never stage them into the brain |
+| No online backup (WARN) | Ask once: "Online backup" above, or `"backup": "local"` |
+| Uncommitted or unpushed work (WARN) | `brain-sync` |
+| A nested repo with no remote or unpushed commits (WARN) | Read them out: this is the work lost if the disk died. Offer to back each up; never stage them into the brain |
 | A `docs/` folder missing from `docs/README.md` (WARN) | Add one line for it to `docs/README.md` |
-| A tracked file over `max_file_kb` (WARN) | A project file: `git rm --cached` it, on a yes. If it belongs, the person adds it to `privacy.large_file_allow` |
-| `.brain-private` expected but missing (WARN) | Ask the person for the patterns and write `.brain-private` on this machine; it is never committed |
+| A tracked file over `max_file_kb` (WARN) | A project file: `git rm --cached` it, on a yes. If it belongs, add it to `privacy.large_file_allow` |
+| `.brain-private` expected but missing (WARN) | A new computer: ask the person for their list again and write `.brain-private`; it is never committed |
 
 ## Update from the template
 
 1. Commit pending work first, through `brain-sync`, so the update's commit holds only the update.
 2. `_meta/brain update --dry-run`. The source is `brain.json` `template.source`, or `brain.local.json`
-   on this machine; pass `--from <path or URL>` if it moved. Show the person the summary, the
-   changelog entries since the installed version, and the open suggestions they answer.
+   on this machine; pass `--from <path or URL>` if it moved. Show the person what it brings.
 3. If it refuses over a local edit to a template-owned file, hand that to `brain-upstream` first.
 4. On a yes, `_meta/brain update`, then `_meta/brain doctor --quick`. Skeleton files it reports as
-   changed are the brain's own now: show the difference; the person merges it by hand, or not.
+   changed are the brain's own now: show the difference; merge it on a yes, or not.
 5. Hand to `brain-sync`, which commits it alone as `meta(brain): update template to <version>` and
    marks the answered suggestions. `update` never commits.
 
-## Sessions in a nested repo
+## Every chat starts in the brain's folder
 
-Start sessions at the brain root: Claude Code reads `.claude/settings.json` only from the folder a
-session starts in, so one started inside a nested project repo misses the gate and the `.env` deny,
-and may not see the brain's skills. `claude --add-dir <brain>` is the workaround for the skills only.
+Claude Code reads the brain's settings only from the folder a chat starts in: a chat started inside
+a project folder within the brain misses the safety checks and may not see the brain's skills.
 
 ## Done when
 
-- Copy route: the person saw the dry run and said yes; `init` made the first commit; `doctor` shows
-  no BLOCK; the person knows to start a new session at the root.
+- Copy route: the computer check passed; the person saw the rehearsal and said yes; `init` made the
+  first commit; `doctor` shows no BLOCK; backup is set up or recorded as local; they know to start
+  every chat in this folder.
 - In a brain: `doctor` shows no BLOCK, and each WARN is fixed or the person chose to leave it.
 - Update: the dry run was shown, `update` ran on a yes, `doctor --quick` shows no BLOCK, and the
   change is handed to `brain-sync`.

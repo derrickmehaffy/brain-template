@@ -37,6 +37,10 @@ files → `adopt`; holding a `brain.json` → a brain already, which `brain-setu
   --install` and a box to click; on Linux, the package manager. No name or email: ask which should
   label the saved history (it stays on this computer unless backed up online), and set both with
   `git config --global`.
+- **Quick or thorough:** offer a quick setup, or an interview first ("grill me") so the brain starts
+  out knowing their goals, systems and way of working; for the interview, read
+  `.claude/skills/brain-setup/references/interview.md` and run it now. Then pick the brain's shape
+  with `.claude/skills/brain-setup/references/shapes.md` and say it in one line.
 - **Work out, don't quiz:** the **name** and a **one-line description** from what they asked for;
   the **prefix** yourself (2 to 16 lowercase letters or digits, starting with a letter, never `brain`
   or `template`: "Homelab" → `lab`), saying only "its routines will be called `lab-…`".
@@ -109,7 +113,16 @@ Fill in the skeleton's section if `CLAUDE.md` has one; otherwise add it directly
 `<!-- brain:end -->` marker, above the folder's own notes, never inside the markers. Write it on a
 yes and leave it uncommitted, for the first session in the brain to commit through `brain-sync`.
 
-## 6. Hand over
+## 6. The shape and the interview, in the new brain
+
+Lay out the shape in the new folder as `shapes.md` says (folders, projects cloned in on a yes, the
+folder map), leaving it uncommitted like the folder map. After an interview, write its `CLAUDE.md`
+sections there, and put everything else it found (words, systems, recurring work, a first routine)
+in one open entry of the new brain's `docs/INBOX.md`, headed
+`## <date> · from setup · Finish setting up from the interview`, with a `- status: open` line: the
+brain's first chat is told about it and works it through its own skills.
+
+## 7. Hand over
 
 Tell them where the brain is and how to open it: in the desktop app, the folder picker beside the
 environment selector, "Open folder…", that folder; in a terminal, `claude` in that folder. Every
@@ -127,4 +140,5 @@ anything from its `README.md`.
   `doctor` shows no BLOCK; a folder map is drafted or declined.
 - No file already in the folder was moved, renamed, overwritten or deleted, and no private term
   reached a tracked file.
+- The shape is laid out, and an interview's findings are in the new brain's `CLAUDE.md` and inbox.
 - They know the folder to open, and to start every chat there.

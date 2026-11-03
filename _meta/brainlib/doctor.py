@@ -119,8 +119,8 @@ def _template_files(root: Path, cfg: Config) -> List[Finding]:
     if cfg.role == "template":
         if (root / "local").is_dir():
             return [_ok("template", "this is the template")]
-        return [_block("template", "this is a copy of the template that was never set up: run brain-setup "
-                                   "(create local/ if you develop the template here)")]
+        return [_block("template", "this copy of the template is not set up as a brain yet: brain-setup does "
+                                   "that (to develop the template here instead, create local/)")]
     strays: List[str] = []
     base = skills_dir(root)
     try:
@@ -426,15 +426,20 @@ def _brain_repo(root: Path, cfg: Config) -> List[Finding]:
         return []  # `hook` already blocked on it
     state = gitutil.repo_state(root)
     found: List[Finding] = []
+    local_only = cfg.raw.get("backup") == "local"
     if not state.has_remote:
-        found.append(_warn("git", "no remote: nothing here is backed up; add one with `git remote add origin <url>` "
-                                  "and push"))
+        if not local_only:
+            found.append(_warn("git", "no online backup: this brain's history is only on this computer; brain-setup "
+                                      "sets one up, or records (brain.json backup: local) that it stays here"))
     elif state.unpushed:
         found.append(_warn("git", f"{_plural(state.unpushed, 'commit')} not pushed; brain-sync pushes when you ask"))
     changed = [line for line in str(gitutil.git(root, "status", "--porcelain")).splitlines() if line.strip()]
     if changed:
         found.append(_warn("git", f"{_plural(len(changed), 'uncommitted change')}; brain-sync commits them"))
-    return found or [_ok("git", "has a remote, and nothing is uncommitted or unpushed")]
+    if found:
+        return found
+    return [_ok("git", "kept on this computer only, by choice, and nothing is uncommitted" if not state.has_remote
+                else "has a remote, and nothing is uncommitted or unpushed")]
 
 
 def _nested(root: Path, cfg: Config, quick: bool) -> List[Finding]:
@@ -576,6 +581,8 @@ def _brief() -> int:
     """The session-start form: what needs attention, or nothing. Never fails the hook."""
     try:
         shown = [f for f in diagnose(paths.harness_root(), quick=True) if f.severity in (BLOCK, WARN)]
+        unset = [f for f in shown if f.subject == "template" and f.severity == BLOCK]
+        shown = unset or shown  # a copy never set up: the rest (no hook, no source) is what setup fixes
     except Exception as exc:  # a broken check must not break the session's start
         print(f"brain doctor --brief could not run ({type(exc).__name__}); run _meta/brain doctor")
         return 0

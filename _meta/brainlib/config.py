@@ -83,7 +83,11 @@ def validate_prefix(p: str) -> Optional[str]:
     if p in RESERVED_PREFIXES:
         return f"prefix '{p}' is reserved; shipped skills use brain-* and the template uses template-*"
     if not PREFIX_PATTERN.fullmatch(p):
-        return "prefix must be 2 to 16 characters: a lowercase letter, then lowercase letters or digits"
+        suggestion = re.sub(r"^[^a-z]+", "", re.sub(r"[^a-z0-9]", "", p.lower()))[:16]
+        hint = f"; '{suggestion}' would do" if PREFIX_PATTERN.fullmatch(suggestion) and \
+            suggestion not in RESERVED_PREFIXES else ""
+        return (f"prefix '{p}' must be 2 to 16 characters: a lowercase letter, then lowercase letters or digits"
+                f"{hint}")
     return None
 
 
@@ -132,8 +136,27 @@ def _choice(value: str, options: tuple, where: str) -> str:
     return value
 
 
+REGEX_PREFIX = "re:"  # a `.brain-private` line that starts with this is a regular expression, not a plain term
+# What only a regular expression holds: a backslash, `.*`, `.+`, `|` or a `[...]` class. Before 0.2.0 every line was
+# a regular expression, so a line holding one of these is still read as one: reading it as plain text would quietly
+# stop it matching, and the guard must fail closed.
+LOOKS_LIKE_REGEX = re.compile(r"\\|\.\*|\.\+|\||\[[^\]]+\]")
+
+
+def term_pattern(line: str) -> str:
+    """The regular expression one line of `.brain-private` stands for. A plain term (a name, a host, an address,
+    as a person would write it) matches as a whole word: not inside a longer word, so `lab` leaves `label` alone,
+    and `c++` or `my-server.local` mean exactly that; a straight and a curly apostrophe match each other. A line
+    starting `re:`, or one that can only be a regular expression (`LOOKS_LIKE_REGEX`), is one as written."""
+    if line.startswith(REGEX_PREFIX):
+        return line[len(REGEX_PREFIX):].strip()
+    if LOOKS_LIKE_REGEX.search(line):
+        return line
+    return r"(?<!\w)" + re.sub("['\u2019]", "['\u2019]", re.escape(line)) + r"(?!\w)"
+
+
 def _private_patterns(root: Path) -> List[str]:
-    """One pattern per line of `.brain-private`; blank lines and `#` comments are skipped.
+    """The pattern for each line of `.brain-private` (see `term_pattern`); blank lines and `#` comments are skipped.
 
     A missing file means no patterns; one that exists but cannot be read is an error,
     so a weaker privacy guard never goes unnoticed.
@@ -146,7 +169,7 @@ def _private_patterns(root: Path) -> List[str]:
     except OSError as exc:
         raise ConfigError(f"cannot read {path}: {exc}")
     lines = (line.strip() for line in text.splitlines())
-    return [line for line in lines if line and not line.startswith("#")]
+    return [term_pattern(line) for line in lines if line and not line.startswith("#")]
 
 
 # -- the public loader ------------------------------------------------------------

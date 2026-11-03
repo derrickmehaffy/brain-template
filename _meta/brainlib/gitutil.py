@@ -61,6 +61,20 @@ def git(cwd, *args: str, check: bool = True, binary: bool = False,
     return done.stdout if binary else done.stdout.decode("utf-8", errors="replace")
 
 
+NO_IDENTITY = ("git has no name and email to label the brain's saved history with; set them once with "
+               "git config --global user.name \"Your Name\" and git config --global user.email you@example.com "
+               "(they stay on this computer unless the brain is pushed somewhere)")
+
+
+def has_identity() -> bool:
+    """Whether git can name the author of a new repository's first commit: what the person set for every repository
+    (or git works out), checked outside any repository, since a fresh history has no settings of its own."""
+    import tempfile
+
+    return _succeeds(tempfile.gettempdir(), "var", "GIT_AUTHOR_IDENT") \
+        and _succeeds(tempfile.gettempdir(), "var", "GIT_COMMITTER_IDENT")
+
+
 def _succeeds(cwd, *args: str) -> bool:
     try:
         return _run(cwd, tuple(args)).returncode == 0

@@ -544,7 +544,7 @@ def _deny_case(lab: _Lab) -> None:
 
 
 def _private_case(lab: _Lab) -> None:
-    lab.write(config.PRIVATE_FILE, "\\bself-test-private-term\\b\n")
+    lab.write(config.PRIVATE_FILE, "self-test-private-term\n")
     lab.stage("docs/note.md", "mentions self-test-private-term here\n")
 
 

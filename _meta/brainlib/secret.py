@@ -93,8 +93,8 @@ def resolve(root: Path, names: List[str]) -> Dict[str, str]:
                 from_file = read_env_file(Path(root) / envsync.ENV)
             value = from_file.get(name, "")
         if not value:
-            raise SecretError(f"{name} is not set: add the name with `_meta/brain env-sync --add {name}` and ask the "
-                              "person to fill in its value, or an op:// reference, in .env")
+            raise SecretError(f"{name} is not set: add the name with `_meta/brain env-sync --add {name}`, then "
+                              "`env-sync --open` for the person to fill in its value, or an op:// reference")
         if value.startswith(OP_PREFIX):
             value = _op_read(name, value)
         found[name] = value

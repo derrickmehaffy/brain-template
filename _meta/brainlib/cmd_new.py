@@ -103,10 +103,16 @@ def _args_problem(args) -> Optional[str]:
             return f"the {label} must be one line"
     if not args.name.strip():
         return "the name must not be empty"
-    for pattern in args.private:
+    for number, pattern in enumerate(args.private, 1):
         reason = install.private_pattern_problem(pattern)
         if reason:
-            return f"--private: a pattern {reason}"
+            return f"--private: term {number} {reason}"
+    clash = install.private_clash(args.private, [args.name, args.prefix, args.description])
+    if clash:
+        return (f"--private: term {clash} matches the brain's name, prefix or description, which its own files "
+                "hold, so its first commit would be refused; change the name or drop the term")
+    if not gitutil.has_identity():
+        return gitutil.NO_IDENTITY
     return None
 
 
@@ -332,7 +338,7 @@ def run(args) -> int:
     if cfg.role != "template":
         return _refuse(f"run new from a template checkout; {template} is a brain (its brain.json does not "
                        'have "role": "template")')
-    dest = Path(os.path.abspath(args.dir))
+    dest = Path(os.path.abspath(os.path.expanduser(args.dir)))  # a quoted ~ reaches here unexpanded
     try:
         problem = _args_problem(args) or _folder_problem(dest) or _hooks_path_problem()
         if problem:

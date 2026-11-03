@@ -49,6 +49,8 @@ _PRACTICES_INDEX = "docs/practices/INDEX.md"
 _BLOCK_STARTS = {"CLAUDE.md": "<!-- brain:begin", ".gitignore": "# <!-- brain:begin -->"}
 _SHOWN = 20  # lines of one kind of finding before "and N more"
 _LARGEST_SHOWN = 10
+_LEFT_OUT_SHOWN = 12
+_NEVER_LISTED = {".git", ".brain", config.PRIVATE_FILE, config.LOCAL_JSON, ".DS_Store"}  # never meant to be saved
 
 Files = install.Files
 
@@ -86,10 +88,16 @@ def _args_problem(args) -> Optional[str]:
             return f"the {label} must be one line"
     if not args.name.strip():
         return "the name must not be empty"
-    for pattern in args.private:
+    for number, pattern in enumerate(args.private, 1):
         reason = install.private_pattern_problem(pattern)
         if reason:
-            return f"--private: a pattern {reason}"
+            return f"--private: term {number} {reason}"
+    clash = install.private_clash(args.private, [args.name, args.prefix, args.description])
+    if clash:
+        return (f"--private: term {clash} matches the brain's name, prefix or description, which its own files "
+                "hold, so its first commit would be refused; change the name or drop the term")
+    if not gitutil.has_identity():
+        return gitutil.NO_IDENTITY
     return None
 
 
@@ -406,7 +414,8 @@ def _preview_findings(pv: inventory.Preview, max_kb: int) -> List[Finding]:
         if rel in tracked:
             found.append(Finding(BLOCK, rel, "tracked by this repository, so the managed block cannot hide it: git add "
                                  "-A stages any change to it, and the pre-commit guard refuses an env file; take it "
-                                 "out of the index with git rm --cached"))
+                                 "out of the index with git rm --cached. Its values are already in this folder's "
+                                 "saved history, and reach any remote it is pushed to: change those secrets"))
         else:
             found.append(Finding(WARN, rel, "would be staged: an ignore rule of yours below the managed block lets it "
                                  "through, and the pre-commit guard refuses an env file; ignore it again"))
@@ -429,7 +438,26 @@ def _print_preview(dest: Path, pv: inventory.Preview, max_kb: int, was_repo: boo
         print("  largest:")
         for rel, size in sorted(pv.files, key=lambda item: (-item[1], item[0]))[:_LARGEST_SHOWN]:
             print(f"    {_human(size):>9}  {rel}")
+    left_out = _left_out(dest, pv)
+    if left_out:
+        shown = ", ".join(left_out[:_LEFT_OUT_SHOWN])
+        more = f", and {len(left_out) - _LEFT_OUT_SHOWN} more" if len(left_out) > _LEFT_OUT_SHOWN else ""
+        print(f"  not saved in the brain's history, so not backed up with it: {shown}{more}")
+        print("  (to save one, add `!/<name>/` for a folder or `!/<name>` for a file below the managed block in "
+              ".gitignore)")
     emit(_preview_findings(pv, max_kb))
+
+
+def _left_out(dest: Path, pv: inventory.Preview) -> List[str]:
+    """The top-level entries of `dest` the allowlist keeps out of the first commit (a folder with a trailing `/`),
+    so the person knows what the brain does not save. Env files and this machine's own files are left unsaid."""
+    staged = {rel.split("/", 1)[0] for rel, _ in pv.files}
+    try:
+        names = sorted(os.listdir(str(dest)))
+    except OSError:
+        return []
+    return [name + ("/" if (dest / name).is_dir() else "") for name in names
+            if name not in staged and name not in _NEVER_LISTED and not _is_env_file(name)]
 
 
 def _show_preview(dest: Path, gitignore_text: Optional[str], found: inventory.Inventory, max_kb: int,
@@ -460,7 +488,7 @@ def run(args) -> int:
     if cfg.role != "template":
         return _refuse(f"run adopt from a template checkout; {template} is a brain (its brain.json does not "
                        'have "role": "template")')
-    dest = Path(os.path.abspath(args.dir))
+    dest = Path(os.path.abspath(os.path.expanduser(args.dir)))  # a quoted ~ reaches here unexpanded
     try:
         problem = _args_problem(args) or _folder_problem(dest, template)
         if problem:

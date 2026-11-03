@@ -7,14 +7,18 @@ each is empty, and no message quotes a line of either file. Appended lines are a
     env-sync              add each name in `.env.example` that `.env` lacks, as `KEY=` (creates `.env`, mode 600)
     env-sync --add KEY    append `KEY=` to `.env.example` and to `.env`, where either lacks it
     env-sync --list       print `KEY  set|empty|missing` for each name in `.env.example`
+    env-sync --open       add the missing names, then open `.env` in the person's text editor to fill in
 
-`--add` exists because the `.env.*` read deny keeps the agent from editing `.env.example` itself.
+`--add` exists because the `.env.*` read deny keeps the agent from editing `.env.example` itself, and `--open`
+because a person who does not use a terminal cannot find a hidden file; the agent never sees what they type.
 """
 from __future__ import annotations
 
 import argparse
 import os
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -131,6 +135,23 @@ def add(root: Path, name: str) -> List[str]:
     return written
 
 
+def open_in_editor(path: Path) -> str:
+    """Open `path` in the desktop's text editor, without reading it; return what opened it, or "" when nothing
+    could (no desktop opener on this machine)."""
+    if sys.platform == "darwin":
+        command = ["open", "-t", str(path)]  # -t: the default text editor, whatever the file's name
+    elif shutil.which("xdg-open"):
+        command = ["xdg-open", str(path)]
+    else:
+        return ""
+    try:
+        subprocess.run(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=30, check=True)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return command[0]
+
+
 # -- the command ----------------------------------------------------------------------------------
 
 
@@ -149,6 +170,8 @@ def add_arguments(parser) -> None:
                       help="append KEY= to .env.example and .env where either lacks it")
     mode.add_argument("--list", action="store_true",
                       help="print each name in .env.example as 'KEY  set|empty|missing' (never a value)")
+    mode.add_argument("--open", action="store_true",
+                      help="add the missing names, then open .env in the text editor for the person to fill in")
 
 
 def run(args) -> int:
@@ -165,8 +188,23 @@ def run(args) -> int:
             written = add(root, args.add)
             for rel in written:
                 print(f"added {args.add} to {rel}")
+            if ENV in written:
+                print(f"{ENV} is a hidden file at {root / ENV}: the person types the value after the = sign "
+                      "(`_meta/brain env-sync --open` opens it for them), never into a chat")
             if not written:
                 print(f"{args.add} is already in {EXAMPLE} and {ENV}")
+            return 0
+        if args.open:
+            sync(root)
+            if not (root / ENV).exists():
+                _append(root / ENV, [], private=True)  # an empty .env, mode 600, to open
+            opener = open_in_editor(root / ENV)
+            if not opener:
+                print(f"env-sync: could not open {ENV} here; it is {root / ENV}, a hidden file: open it in a text "
+                      "editor, put each value after its = sign, save and close", file=sys.stderr)
+                return 1
+            print(f"opened {ENV} in the text editor: put each value after its = sign, save and close. The values "
+                  "stay on this computer and are never saved in the brain's history.")
             return 0
         if not example_names(root):
             print(f"env-sync: {EXAMPLE} lists no keys, so there is nothing to add")

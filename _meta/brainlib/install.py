@@ -28,9 +28,11 @@ SKELETON_RENAMES = {
 }
 SETTINGS = ".claude/settings.json"
 PRIVATE_HEADER = (
-    "# Terms that must never be committed: one regular expression per line, matched without regard to case.\n"
+    "# Terms that must never be committed, one per line, written as you would say them: a name, a server, an\n"
+    "# address, a codename. Each matches in any case, as a whole word. A line starting re: is a regular expression.\n"
     "# The pre-commit guard blocks a staged file whose name or content matches one. Git ignores this file.\n"
 )
+SHORTEST_TERM = 3  # a plain term shorter than this would match all over ordinary text
 
 _PLACEHOLDER = re.compile(rb"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}")
 _WALK_SKIP_ANYWHERE = {".git", "__pycache__"}
@@ -238,7 +240,7 @@ def write_local(dest, template_source: str) -> None:
 
 def private_pattern_problem(pattern: str) -> Optional[str]:
     """None when `pattern` can be a line of `.brain-private`, else why not. Surrounding whitespace is not part
-    of a pattern (the loader strips each line), so it is the stripped pattern that is judged."""
+    of a term (the loader strips each line), so it is the stripped term that is judged."""
     pattern = pattern.strip()
     if not pattern:
         return "is empty"
@@ -246,10 +248,30 @@ def private_pattern_problem(pattern: str) -> Optional[str]:
         return "must be on one line"
     if pattern.startswith("#"):
         return "starts with '#', which makes the line a comment"
-    try:
-        re.compile(pattern)
-    except re.error:
-        return "is not a valid regular expression"
+    if pattern.startswith(config.REGEX_PREFIX):
+        try:
+            re.compile(config.term_pattern(pattern))
+        except re.error:
+            return "is not a valid regular expression after re:"
+        return None if config.term_pattern(pattern) else "is empty after re:"
+    if config.LOOKS_LIKE_REGEX.search(pattern):
+        return ("looks like a regular expression (it holds \\, .*, .+, | or [...]): start it with re: to mean one, "
+                "or write the plain words")
+    if len(pattern) < SHORTEST_TERM:
+        return f"is shorter than {SHORTEST_TERM} characters, so it would block ordinary text; use a longer term"
+    return None
+
+
+def private_clash(patterns: List[str], texts: List[str]) -> Optional[int]:
+    """The number (from 1) of the first term in `patterns` that matches one of `texts` (the brain's name, prefix
+    and description, which its own files hold, so its first commit would be refused), or None."""
+    for number, pattern in enumerate(patterns, 1):
+        try:
+            found = re.compile(config.term_pattern(pattern.strip()), re.IGNORECASE)
+        except re.error:
+            continue
+        if any(found.search(text) for text in texts if text):
+            return number
     return None
 
 
@@ -355,8 +377,10 @@ def apply_managed(dest) -> List[str]:
 
 
 def git_init(dest) -> None:
-    """`git init` in `dest`."""
+    """`git init` in `dest`, on a branch named `main` whatever git's own default is (a hosting site's new
+    repository expects `main`; `symbolic-ref` rather than `init -b`, which older git lacks)."""
     gitutil.git(dest, "init", "-q")
+    gitutil.git(dest, "symbolic-ref", "HEAD", "refs/heads/main")
 
 
 def first_commit(dest, message: str) -> str:

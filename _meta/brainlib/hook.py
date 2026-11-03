@@ -5,6 +5,7 @@ text that matched, so a refused commit does not copy a secret into a terminal or
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -15,7 +16,7 @@ from datetime import date
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-from . import config, gitutil, globs, paths
+from . import config, gitutil, globs, manifest, paths
 from .config import Config
 from .report import BLOCK, BROKEN, OK, Finding, emit, exit_code
 
@@ -192,6 +193,7 @@ class _Scan:
         self.findings += bad_deny + bad_private
         self._repo_dirs: Dict[str, bool] = {}
         self._aliases: Dict[str, str] = {}
+        self.shipped: Dict[str, str] = {}  # shipped path -> the sha256 the manifest records for it
 
     def _repo_above(self, path: str) -> Optional[str]:
         """The folder above `path` that holds a `.git` (so `path` belongs to another repository), if any."""
@@ -245,6 +247,12 @@ class _Scan:
             if any(pattern.search(path) for _rule, pattern in patterns):
                 self._block(rule, f"{shown} (in the file name)")
 
+    def _as_shipped(self, path: str, data: bytes) -> bool:
+        """True when `path` is a file the template owns and these are exactly the bytes the manifest recorded for it.
+        The template put those words there; the person cannot be asked to remove them."""
+        recorded = self.shipped.get(path)
+        return recorded is not None and hashlib.sha256(data).hexdigest() == recorded
+
     def _too_big(self, path: str, size: int) -> bool:
         limit = self.cfg.max_file_kb * 1024
         return size > limit and not any(globs.match(pattern, path) for pattern in self.cfg.large_file_allow)
@@ -269,15 +277,18 @@ class _Scan:
             if self._too_big(path, size):
                 self._block("large-file", f"{shown} ({size} bytes; the limit is {self.cfg.max_file_kb} KB)")
                 return
-            text = _text_of(gitutil.staged_blob(self.root, path))
+            data = gitutil.staged_blob(self.root, path)
         except gitutil.GitError as exc:  # cannot look, so cannot vouch
             self._block("git", f"cannot read the staged {shown}: {_shown(self.scrub(_first_line(exc.stderr)))}")
             return
+        text = _text_of(data)
         if text is None:
             return
-        rules = CREDENTIAL_PATTERNS + self.private
-        if path != config.BRAIN_JSON:  # brain.json holds the deny list, which would match itself
-            rules = rules + self.deny
+        rules = list(CREDENTIAL_PATTERNS)  # credential shapes are looked for in every file, shipped or not
+        if not self._as_shipped(path, data):  # the private and deny terms, in all but the template's own bytes
+            rules += self.private
+            if path != config.BRAIN_JSON:  # brain.json holds the deny list, which would match itself
+                rules += self.deny
         for rule, number in _hits(text, rules):
             self._block(rule, f"{shown}:{number}")
 
@@ -376,6 +387,24 @@ def _staged_checks(root: Path, cfg: Config, changed: List[str], scan: _Scan) -> 
 # -- the pre-commit guard -----------------------------------------------------------------
 
 
+def _shipped_hashes(root: Path, entries: List[gitutil.StagedEntry]) -> Dict[str, str]:
+    """{path: sha256} of the template-owned files as the manifest records them: the manifest being committed when
+    this commit stages one, else the one in the working tree. A commit that removes the manifest, an unreadable
+    one or none at all (the template itself) trusts nothing, so every file is scanned in full."""
+    staged = [entry for entry in entries if entry.path == manifest.MANIFEST_PATH]
+    try:
+        if not staged:
+            recorded = manifest.read(root)
+        elif staged[0].status == "D":
+            recorded = {}
+        else:
+            blob = gitutil.staged_blob(root, manifest.MANIFEST_PATH)
+            recorded = manifest.parse(blob.decode("utf-8", errors="replace"))
+    except (OSError, gitutil.GitError):
+        recorded = {}
+    return {path: digest for path, digest in recorded.items() if manifest.is_shipped(path)}
+
+
 def _check(root: Path) -> Tuple[List[Finding], int]:
     """(the findings, how many staged files were looked at).
 
@@ -392,6 +421,7 @@ def _check(root: Path) -> Tuple[List[Finding], int]:
     except gitutil.GitError as exc:
         return [Finding(BLOCK, "git", _shown(scan.mask(f"cannot read the staged files: {_first_line(exc.stderr)}")))], 0
     scan.prepare([entry.path for entry in entries])
+    scan.shipped = _shipped_hashes(root, entries)
     present = [entry for entry in entries if entry.status != "D"]
     for entry in present:
         scan.file(entry)

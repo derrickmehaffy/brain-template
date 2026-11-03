@@ -1,0 +1,645 @@
+from __future__ import annotations
+
+import argparse
+import contextlib
+import io
+import json
+import os
+import re
+import shutil
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from tests.helpers import TEMPLATE_ROOT, TempDirCase  # first: puts <template>/_meta on sys.path
+from brainlib import cmd_init, config, hook, managed, manifest
+
+CANONICAL = "https://example.invalid/brain-template.git"
+STAND_IN = "template-only stand-in"
+HISTORY = ".brain/template-history.git"
+
+
+class InitCase(TempDirCase):
+    def setUp(self):
+        super().setUp()
+        patcher = mock.patch.dict(os.environ, self.env, clear=True)  # in-process git calls stay hermetic
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    # -- fixtures ---------------------------------------------------------
+
+    def template_copy(self, source=None) -> Path:
+        """A committed copy of the template without `local/`, holding a stand-in for each template-only file the
+        working tree does not have yet (README.md, CLAUDE.md, .claude/settings.json), and `source` as its
+        canonical `template.source` when given."""
+        copy = self.copy_template(with_local=False)
+        for rel in ("README.md", "CLAUDE.md", ".claude/settings.json"):
+            if not (copy / rel).exists():
+                (copy / rel).parent.mkdir(parents=True, exist_ok=True)
+                (copy / rel).write_text(STAND_IN + "\n" if rel != ".claude/settings.json" else "{}\n",
+                                        encoding="utf-8")
+        if source is not None:
+            raw = self.read_json(copy / "brain.json")
+            raw["template"]["source"] = source
+            (copy / "brain.json").write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+        self.git(copy, "add", "-A")
+        self.git(copy, "commit", "-q", "-m", "stand-ins for the template-only files")
+        return copy
+
+    def plain_clone(self, source=None):
+        """(the template copy, a `git clone` of it): origin is the template, so this is a plain clone."""
+        template = self.template_copy(source)
+        clone = self._new_dir("clone")
+        self.git(self.tmp, "clone", "-q", str(template), str(clone))
+        return template, clone
+
+    def used_template(self, source=None, url="https://example.invalid/me/mybrain.git") -> Path:
+        """A repo made the "Use this template" way: the template's files as the first commit of a new history,
+        with the person's own remote."""
+        template = self.template_copy(source)
+        dest = self._new_dir("used")
+        self._copy_tree(template, dest)
+        self.git(dest, "init", "-q")
+        self.git(dest, "symbolic-ref", "HEAD", "refs/heads/main")
+        self.git(dest, "add", "-A")
+        self.git(dest, "commit", "-q", "-m", "Initial commit")
+        self.git(dest, "remote", "add", "origin", url)
+        return dest
+
+    def bare_folder(self, source=None) -> Path:
+        """A copy of the template with no repository at all."""
+        copy = self.template_copy(source)
+        shutil.rmtree(str(copy / ".git"))
+        return copy
+
+    def init(self, root, *extra, name="homelab", prefix="lab", description="Running my lab", cwd=None):
+        args = ["init", "--name", name, "--prefix", prefix]
+        if description is not None:
+            args += ["--description", description]
+        return self.run_brain(root, *args, *extra, cwd=cwd)
+
+    def assert_no_scratch_left(self):
+        """The OS temporary folder (TMPDIR of the test) holds nothing: the rehearsal copy was removed."""
+        self.assertEqual(os.listdir(str(self.tmp / "os-tmp")), [])
+
+    def refused(self, root, *extra, message=None, **kwargs):
+        """Run init, expect a refusal that changed nothing, and return its stderr."""
+        before = self.snapshot(root)
+        listing = sorted(os.listdir(str(root)))
+        r = self.init(root, *extra, **kwargs)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertTrue(r.stderr.startswith("init: "), r.stderr)
+        self.assertEqual(r.stdout, "")
+        self.assertEqual(self.snapshot(root), before)
+        self.assertEqual(sorted(os.listdir(str(root))), listing)
+        self.assert_no_scratch_left()
+        if message:
+            self.assertIn(message, r.stderr)
+        return r.stderr
+
+    def done(self, root, *extra, **kwargs):
+        r = self.init(root, *extra, **kwargs)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assert_no_scratch_left()
+        return r
+
+    @staticmethod
+    def read_json(path):
+        return json.loads(Path(path).read_text(encoding="utf-8"))
+
+    @staticmethod
+    def version_of(root) -> str:
+        return (Path(root) / "_meta" / "VERSION").read_text(encoding="utf-8").strip()
+
+    def commits(self, root):
+        return self.git(root, "log", "--format=%s").splitlines()
+
+    def assert_a_brain(self, root, template_version):
+        """What every route ends in: no template-only file, the shipped files, the skeleton, a clean tree."""
+        self.assertFalse((root / "tests").exists())
+        self.assertFalse((root / "docs" / "superpowers").exists())
+        self.assertEqual(sorted(p.name for p in (root / ".claude" / "skills").glob("template-*")), [])
+        self.assertTrue(list((root / ".claude" / "skills").glob("brain-*")))
+        for rel in ("_meta/brain", "_meta/VERSION", "_meta/skeleton/CLAUDE.md", "docs/README.md", "docs/ROUTING.md",
+                    "docs/practices/INDEX.md", "scripts/tests/__init__.py", ".env.example"):
+            self.assertTrue((root / rel).is_file(), rel)
+        for rel in ("README.md", "CLAUDE.md", ".claude/settings.json", ".gitignore", "brain.json"):
+            self.assertNotIn(STAND_IN, (root / rel).read_text(encoding="utf-8"), rel)
+        self.assertIn("# homelab", (root / "README.md").read_text(encoding="utf-8"))
+        claude_md = (root / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertTrue(claude_md.startswith(managed.MD_BEGIN + "\n"))
+        self.assertIn("# homelab\n\nRunning my lab\n", claude_md)
+        self.assertTrue((root / ".gitignore").read_text(encoding="utf-8").startswith(managed.GI_BEGIN + "\n"))
+        settings = self.read_json(root / ".claude" / "settings.json")
+        self.assertEqual(settings["permissions"]["deny"], managed.DENY)
+        self.assertEqual(settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"],
+                         '"$CLAUDE_PROJECT_DIR/_meta/brain" gate check')
+
+        raw = self.read_json(root / "brain.json")
+        self.assertEqual((raw["name"], raw["prefix"], raw["description"]), ("homelab", "lab", "Running my lab"))
+        self.assertNotIn("role", raw)
+        self.assertEqual(config.load(root).role, "brain")
+        self.assertEqual(raw["template"]["version"], template_version)
+        self.assertEqual(raw["scripts"], {"python": "python3", "packages": "stdlib-only"})
+
+        self.assertEqual(manifest.local_edits(root), [])
+        self.assertIn("_meta/brain", manifest.read(root))
+        self.assertEqual(self.git(root, "status", "--porcelain"), "")
+        tracked = self.git(root, "ls-files").splitlines()
+        for rel in ("brain.json", "CLAUDE.md", ".claude/settings.json", "_meta/MANIFEST.sha256"):
+            self.assertIn(rel, tracked)
+        for rel in tracked:
+            self.assertFalse(rel.startswith("tests/") or rel.startswith("docs/superpowers/"), rel)
+        shim = root / ".git" / "hooks" / "pre-commit"
+        self.assertEqual(shim.read_text(encoding="utf-8"), hook.SHIM)
+        self.assertTrue(os.access(shim, os.X_OK))
+        r = self.run_brain(root, "lint")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        return raw
+
+
+class ConvertTest(InitCase):
+    def test_plain_clone_gets_fresh_history(self):
+        template, clone = self.plain_clone()
+        before = self.git(clone, "rev-parse", "HEAD").strip()
+        short = self.git(clone, "rev-parse", "--short", "HEAD").strip()
+        version = f"{self.version_of(clone)}+{short}"
+
+        r = self.done(clone)
+        raw = self.assert_a_brain(clone, version)
+        self.assertRegex(raw["template"]["version"], r"^0\.1\.0\+[0-9a-f]{7,}$")
+        self.assertEqual(raw["template"]["source"], str(template))  # the origin the clone was made from
+        self.assertFalse((clone / "brain.local.json").exists())
+
+        # a fresh history: one commit, the pinned message; the template's own commits are not in it
+        self.assertEqual(self.commits(clone), [f"meta(brain): initialise from template v{version}"])
+        self.assertEqual(len(self.git(clone, "rev-list", "--all").split()), 1)
+        self.assertNotEqual(self.git(clone, "rev-parse", "HEAD").strip(), before)
+        self.assertEqual(self.git(clone, "remote").strip(), "")  # the old remote went with the old repository
+
+        # the old repository was moved, not deleted: it still holds the template's commits, and git reads it
+        history = clone / HISTORY
+        self.assertTrue(history.is_dir())
+        self.assertEqual(self.git(clone, "--git-dir", str(history), "rev-parse", "HEAD").strip(), before)
+        self.assertIn("template copy for tests", self.git(clone, "--git-dir", str(history), "log", "--format=%s"))
+        self.assertNotIn(".brain", self.git(clone, "ls-files"))
+        out = r.stdout.splitlines()
+        self.assertIn(f"first commit {self.git(clone, 'rev-parse', '--short', 'HEAD').strip()}: "
+                      f"meta(brain): initialise from template v{version}", out)
+        self.assertTrue(any("template-history.git" in line for line in out), r.stdout)
+        self.assertEqual(out[-1], f"open a session in {clone}")
+
+    def test_use_this_template_keeps_history(self):
+        used = self.used_template()
+        first = self.git(used, "rev-parse", "HEAD").strip()
+        version = f"{self.version_of(used)}+{self.git(used, 'rev-parse', '--short', 'HEAD').strip()}"
+
+        self.done(used)
+        raw = self.assert_a_brain(used, version)
+        self.assertIsNone(raw["template"]["source"])  # the template is not published, so there is nothing to record
+        self.assertFalse((used / HISTORY).exists())
+        self.assertEqual(self.commits(used), [f"meta(brain): initialise from template v{version}", "Initial commit"])
+        self.assertEqual(self.git(used, "rev-parse", "HEAD~1").strip(), first)
+        self.assertEqual(self.git(used, "remote", "get-url", "origin").strip(), "https://example.invalid/me/mybrain.git")
+        # the template's tests are deleted in that commit, not left tracked
+        self.assertEqual([p for p in self.git(used, "ls-files").splitlines() if p.startswith("tests/")], [])
+
+    def test_use_this_template_records_the_canonical_source(self):
+        used = self.used_template(source=CANONICAL)
+        self.done(used)
+        self.assertEqual(self.read_json(used / "brain.json")["template"]["source"], CANONICAL)
+
+    def test_a_clone_whose_origin_is_the_canonical_source_is_a_plain_clone(self):
+        _template, clone = self.plain_clone(source=CANONICAL)
+        self.git(clone, "remote", "set-url", "origin", CANONICAL)
+        self.done(clone)
+        self.assertEqual(self.read_json(clone / "brain.json")["template"]["source"], CANONICAL)
+        self.assertTrue((clone / HISTORY).is_dir())
+        self.assertEqual(len(self.commits(clone)), 1)
+
+    def test_no_repo_creates_one(self):
+        folder = self.bare_folder()
+        self.assertFalse((folder / ".git").exists())
+        self.done(folder)
+        raw = self.assert_a_brain(folder, self.version_of(folder))  # no repository: the VERSION file alone
+        self.assertIsNone(raw["template"]["source"])
+        self.assertTrue((folder / ".git").is_dir())
+        self.assertFalse((folder / HISTORY).exists())
+        self.assertEqual(self.commits(folder), [f"meta(brain): initialise from template v{self.version_of(folder)}"])
+
+    def test_a_pushed_plain_clone_in_a_folder_with_a_space(self):
+        # origin is the template folder, whose path holds a space; "every commit is on the remote" is true after a
+        # fresh clone, so nothing stops the move
+        _template, clone = self.plain_clone()
+        self.assertIn(" ", str(clone))
+        self.done(clone)
+        self.assertTrue((clone / HISTORY / "HEAD").is_file())
+
+    def test_private_patterns_python_and_packages(self):
+        _template, clone = self.plain_clone()
+        self.done(clone, "--private", "secret-project", "--private", r"host-\d+", "--python", ".venv/bin/python",
+                  "--packages", "allowed")
+        raw = self.read_json(clone / "brain.json")
+        self.assertEqual(raw["scripts"], {"python": ".venv/bin/python", "packages": "allowed"})
+        self.assertTrue(raw["privacy"]["private_file_expected"])
+        private = (clone / ".brain-private").read_text(encoding="utf-8").splitlines()
+        self.assertEqual([line for line in private if not line.startswith("#")], ["secret-project", r"host-\d+"])
+        self.assertNotIn(".brain-private", self.git(clone, "ls-files"))
+        self.assertEqual(self.git(clone, "status", "--porcelain"), "")
+        self.assertEqual(config.load(clone).private_patterns, ["secret-project", r"host-\d+"])
+
+    def test_the_new_brain_commits_through_its_own_guard(self):
+        _template, clone = self.plain_clone()
+        self.done(clone)
+        (clone / "docs" / "note.md").write_text("a note\n", encoding="utf-8")
+        self.git(clone, "add", "docs/note.md")
+        self.git(clone, "commit", "-q", "-m", "docs: a note")
+        self.assertEqual(len(self.git(clone, "rev-list", "HEAD").split()), 2)
+
+    def test_runs_on_its_own_copy_whatever_the_current_folder_is(self):
+        _template, clone = self.plain_clone()
+        elsewhere = self.tmp / "elsewhere"
+        elsewhere.mkdir()
+        self.done(clone, cwd=elsewhere)
+        self.assertTrue((clone / "brain.json").is_file())
+        self.assertEqual(os.listdir(str(elsewhere)), [])
+
+    def test_ignores_git_variables_that_name_another_repository(self):
+        _template, clone = self.plain_clone()
+        other = self.template_copy()
+        before = self.git(other, "rev-parse", "HEAD")
+        self.env["GIT_DIR"] = str(other / ".git")
+        self.env["GIT_WORK_TREE"] = str(other)
+        try:
+            r = self.init(clone)
+        finally:
+            del self.env["GIT_DIR"], self.env["GIT_WORK_TREE"]
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.git(other, "rev-parse", "HEAD"), before)
+        self.assertEqual(self.git(other, "status", "--porcelain"), "")
+        self.assertEqual(len(self.commits(clone)), 1)
+
+
+class DryRunTest(InitCase):
+    def test_dry_run_writes_nothing(self):
+        fixtures = {
+            "plain clone": lambda: self.plain_clone()[1],
+            "use this template": self.used_template,
+            "no repo": self.bare_folder,
+        }
+        for label, make in fixtures.items():
+            with self.subTest(label):
+                root = make()
+                before = self.snapshot(root)
+                tree = sorted(os.listdir(str(root)))
+                r = self.init(root, "--dry-run", "--private", "secret-project")
+                self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+                self.assertEqual(self.snapshot(root), before)  # .git included
+                self.assertEqual(sorted(os.listdir(str(root))), tree)
+                self.assertFalse((root / ".brain-private").exists())
+                lines = [line.strip() for line in r.stdout.splitlines()]
+                self.assertIn("dry run: nothing is changed.", r.stdout.splitlines()[0])
+                for removed in ("tests", "docs", "brain.json", "CLAUDE.md", "README.md", ".gitignore",
+                                ".claude/settings.json"):
+                    self.assertIn(f"remove {removed}", lines)
+                self.assertTrue(any(line.startswith("remove .claude/skills/template-") for line in lines), lines)
+                for written in ("brain.json", "CLAUDE.md", "README.md", ".gitignore", ".claude/settings.json",
+                                "docs/ROUTING.md", ".brain-private", "_meta/MANIFEST.sha256"):
+                    self.assertIn(f"write {written}", lines)
+                self.assertNotIn("write _meta/brain", lines)  # the shipped files are already in place
+                self.assertTrue(any("initialise from template v" in line for line in lines), lines)
+                self.assertTrue(any(line.startswith("rehearsed in a temporary copy") for line in lines), lines)
+                self.assert_no_scratch_left()
+
+    def test_dry_run_says_what_happens_to_the_history(self):
+        _template, clone = self.plain_clone()
+        self.assertIn(f"move .git to {HISTORY}", self.init(clone, "--dry-run").stdout)
+        self.assertIn("keep the history", self.init(self.used_template(), "--dry-run").stdout)
+        self.assertIn("run git init", self.init(self.bare_folder(), "--dry-run").stdout)
+
+    def test_dry_run_refuses_what_a_run_refuses(self):
+        _template, clone = self.plain_clone()
+        (clone / "docs" / "scratch.md").write_text("x\n", encoding="utf-8")
+        r = self.init(clone, "--dry-run")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("uncommitted", r.stderr)
+
+
+class RehearsalTest(InitCase):
+    """The conversion is done once in a temporary copy first, so a step that would fail late (the guard refusing the
+    first commit, git without an identity) is found while the folder is still untouched."""
+
+    def test_a_private_term_in_the_filled_text_is_refused_with_nothing_changed(self):
+        fixtures = {
+            "plain clone": lambda: self.plain_clone()[1],
+            "use this template": self.used_template,
+            "no repo": self.bare_folder,
+        }
+        for label, make in fixtures.items():
+            # "running my lab" is the description init writes into CLAUDE.md; "homelab" is the name in its heading
+            for term in ("running my lab", "homelab"):
+                with self.subTest(label, term=term):
+                    root = make()
+                    stderr = self.refused(root, "--private", term, message="rehearsed in a temporary copy")
+                    self.assertIn("would fail, so nothing was changed", stderr)
+                    self.assertIn("private-pattern", stderr)  # the guard's BLOCK line names the rule
+                    self.assertNotIn(term, stderr.lower())  # and never the term
+                    self.assertFalse((root / ".brain").exists())
+                    self.assertFalse((root / ".brain-private").exists())
+                    self.assertTrue((root / "tests").is_dir())
+                    self.assertEqual(self.read_json(root / "brain.json")["name"], "brain-template")
+                    if (root / ".git").is_dir():
+                        self.assertEqual(self.git(root, "status", "--porcelain"), "")
+
+    def test_a_missing_git_identity_is_refused_with_nothing_changed(self):
+        _template, clone = self.plain_clone()
+        for name in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL", "EMAIL"):
+            self.env.pop(name, None)
+        self.git(clone, "config", "--file", self.env["GIT_CONFIG_GLOBAL"], "user.useConfigOnly", "true")
+        head = self.git(clone, "rev-parse", "HEAD")
+        stderr = self.refused(clone, message="rehearsed in a temporary copy")
+        self.assertIn("would fail, so nothing was changed", stderr)
+        self.assertRegex(stderr, r"(?i)identity|who you are|auto-detection")
+        self.assertFalse((clone / ".brain").exists())
+        self.assertEqual(self.git(clone, "rev-parse", "HEAD"), head)
+
+    def test_dry_run_reports_the_rehearsal_failing_too(self):
+        _template, clone = self.plain_clone()
+        stderr = self.refused(clone, "--dry-run", "--private", "running my lab", message="rehearsed in a temporary")
+        self.assertIn("private-pattern", stderr)
+
+    def test_the_rehearsal_leaves_no_scratch_folder_and_the_real_run_is_unaffected(self):
+        _template, clone = self.plain_clone()
+        self.assertEqual(self.init(clone, "--dry-run").returncode, 0)
+        self.assert_no_scratch_left()
+        self.done(clone)
+        self.assertEqual(len(self.commits(clone)), 1)
+
+    def test_a_failure_the_rehearsal_did_not_foresee_says_where_the_old_history_is(self):
+        # Only if something changes between the rehearsal and the real run. Skip the rehearsal to simulate that.
+        _template, clone = self.plain_clone()
+        parser = argparse.ArgumentParser()
+        cmd_init.add_arguments(parser)
+        args = parser.parse_args(["--name", "homelab", "--prefix", "lab", "--description", "Running my lab",
+                                  "--private", "running my lab"])
+        err = io.StringIO()
+        with mock.patch.object(cmd_init.paths, "harness_root", return_value=clone), \
+                mock.patch.object(cmd_init, "_rehearse", return_value=None), \
+                contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            code = cmd_init.run(args)
+        self.assertEqual(code, 1, err.getvalue())
+        self.assertIn("first commit failed", err.getvalue())
+        self.assertIn(HISTORY, err.getvalue())
+        self.assertTrue((clone / HISTORY / "HEAD").is_file())
+        self.assertTrue((clone / "brain.json").is_file())
+        self.assertEqual(self.git(clone, "rev-list", "--all").strip(), "")  # a repository with no commit yet
+
+
+class RefusalTest(InitCase):
+    def test_refusals(self):
+        def with_local():
+            copy = self.template_copy()
+            (copy / "local").mkdir()
+            return copy
+
+        def modified():
+            _t, clone = self.plain_clone()
+            with open(str(clone / "_meta" / "CHANGELOG.md"), "a", encoding="utf-8") as handle:
+                handle.write("- an edit\n")
+            return clone
+
+        def untracked():
+            _t, clone = self.plain_clone()
+            (clone / "docs" / "scratch.md").write_text("x\n", encoding="utf-8")
+            return clone
+
+        def staged():
+            _t, clone = self.plain_clone()
+            (clone / "docs" / "staged.md").write_text("x\n", encoding="utf-8")
+            self.git(clone, "add", "docs/staged.md")
+            return clone
+
+        def dirty_kept_history():
+            used = self.used_template()
+            (used / "docs" / "scratch.md").write_text("x\n", encoding="utf-8")
+            return used
+
+        def unpushed():
+            _t, clone = self.plain_clone()
+            (clone / "_meta" / "CHANGELOG.md").write_text("# Changelog\n\n- mine\n", encoding="utf-8")
+            self.git(clone, "add", "-A")
+            self.git(clone, "commit", "-q", "-m", "a local commit")
+            return clone
+
+        def unpushed_branch():
+            _t, clone = self.plain_clone()
+            self.git(clone, "switch", "-q", "-c", "side")
+            (clone / "_meta" / "CHANGELOG.md").write_text("# Changelog\n\n- side\n", encoding="utf-8")
+            self.git(clone, "add", "-A")
+            self.git(clone, "commit", "-q", "-m", "on a side branch")
+            self.git(clone, "switch", "-q", "main")
+            return clone
+
+        def stashed():
+            _t, clone = self.plain_clone()
+            (clone / "_meta" / "CHANGELOG.md").write_text("# Changelog\n\n- stashed\n", encoding="utf-8")
+            self.git(clone, "stash", "-q")
+            return clone
+
+        def history_in_the_way():
+            _t, clone = self.plain_clone()
+            (clone / HISTORY).mkdir(parents=True)
+            return clone
+
+        def brain_folder():
+            return self.make_brain()
+
+        def linked_worktree():
+            template = self.template_copy()
+            worktree = self.tmp / "linked wt"
+            self.git(template, "worktree", "add", "-q", str(worktree), "-b", "side")
+            return worktree
+
+        def not_a_repository():
+            folder = self.bare_folder()
+            (folder / ".git").mkdir()
+            return folder
+
+        def no_commit():
+            folder = self.bare_folder()
+            self.git(folder, "init", "-q")
+            return folder
+
+        def foreign_hook():
+            used = self.used_template()
+            target = used / ".git" / "hooks" / "pre-commit"
+            target.write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
+            return used
+
+        def hooks_path_in_the_repo():
+            used = self.used_template()
+            self.git(used, "config", "core.hooksPath", "elsewhere")
+            return used
+
+        def hooks_path_globally():
+            _t, clone = self.plain_clone()
+            self.git(clone, "config", "--file", self.env["GIT_CONFIG_GLOBAL"], "core.hooksPath", "elsewhere")
+            return clone
+
+        cases = [
+            ("local/ exists", with_local, "local/"),
+            ("modified file", modified, "uncommitted"),
+            ("untracked file", untracked, "uncommitted"),
+            ("staged file", staged, "uncommitted"),
+            ("dirty tree, history kept", dirty_kept_history, "uncommitted"),
+            ("unpushed commit on a plain clone", unpushed, "no remote"),
+            ("unpushed commit on another branch", unpushed_branch, "no remote"),
+            ("stash on a plain clone", stashed, "stash"),
+            ("history folder already there", history_in_the_way, "template-history.git"),
+            ("role not template", brain_folder, "copy of the template"),
+            ("linked worktree", linked_worktree, "worktree"),
+            ("a .git that is not a repository", not_a_repository, "not a repository"),
+            ("a repository with no commit", no_commit, "no commit"),
+            ("a foreign pre-commit hook", foreign_hook, "pre-commit"),
+            ("core.hooksPath in the repository", hooks_path_in_the_repo, "core.hooksPath"),
+            ("core.hooksPath in the global config", hooks_path_globally, "core.hooksPath"),
+        ]
+        for label, make, message in cases:
+            with self.subTest(label):
+                root = make()
+                self.refused(root, message=message)
+                if root.joinpath(".git").is_dir() and "history folder" not in label:
+                    self.assertFalse((root / HISTORY).exists())  # nothing was moved
+
+    def test_an_unpushed_commit_on_a_plain_clone_leaves_everything_in_place(self):
+        _t, clone = self.plain_clone()
+        (clone / "_meta" / "CHANGELOG.md").write_text("# Changelog\n\n- mine\n", encoding="utf-8")
+        self.git(clone, "add", "-A")
+        self.git(clone, "commit", "-q", "-m", "a local commit")
+        head = self.git(clone, "rev-parse", "HEAD")
+        self.refused(clone)
+        self.assertTrue((clone / ".git").is_dir())
+        self.assertFalse((clone / ".brain").exists())
+        self.assertTrue((clone / "tests").is_dir())
+        self.assertEqual(self.git(clone, "rev-parse", "HEAD"), head)
+
+    def test_unpushed_commits_are_fine_when_no_history_is_replaced(self):
+        # "Use this template": the person's history is kept, so nothing can be lost, pushed or not.
+        used = self.used_template()
+        self.assertEqual(self.git(used, "rev-list", "--count", "--branches", "--not", "--remotes").strip(), "1")
+        self.done(used)
+
+    def test_refuses_bad_arguments(self):
+        _t, clone = self.plain_clone()
+        for prefix in ("brain", "template", "A", "x", "1abc", "a-b", "a" * 17):
+            with self.subTest(prefix=prefix):
+                self.refused(clone, prefix=prefix, message="prefix")
+        self.refused(clone, name="two\nlines", message="name")
+        self.refused(clone, name="  ", message="name")
+        self.refused(clone, description="one\r\ntwo", message="description")
+        self.refused(clone, "--private", "(", message="--private")
+        self.refused(clone, "--private", "# comment", message="--private")
+        self.refused(clone, "--private", "  ", message="--private")
+
+    def test_refuses_a_template_only_path_behind_a_link(self):
+        # `.claude` leads outside the folder: removing `.claude/skills/template-*` would delete there.
+        folder = self.bare_folder()
+        outside = self.tmp / "outside"
+        outside.mkdir()
+        shutil.move(str(folder / ".claude"), str(outside / ".claude"))
+        (folder / ".claude").symlink_to(outside / ".claude")
+        before = self.snapshot(outside)
+        self.refused(folder, message=".claude")
+        self.assertEqual(self.snapshot(outside), before)
+
+    def test_missing_arguments_are_a_usage_error(self):
+        _t, clone = self.plain_clone()
+        before = self.snapshot(clone)
+        for args in (["init"], ["init", "--name", "x"], ["init", "--prefix", "lab"], ["init", "--name", "x",
+                                                                                     "--prefix", "lab", "--packages",
+                                                                                     "maybe"]):
+            with self.subTest(args=args):
+                r = self.run_brain(clone, *args)
+                self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+                self.assertIn("usage: brain", r.stderr)
+        self.assertEqual(self.snapshot(clone), before)
+
+    def test_help_lists_the_options(self):
+        r = self.run_brain(TEMPLATE_ROOT, "init", "--help")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for option in ("--name", "--prefix", "--description", "--python", "--packages", "--private", "--dry-run"):
+            self.assertIn(option, r.stdout)
+
+
+class IsPlainCloneTest(InitCase):
+    def test_origin_is_the_template_checkout(self):
+        _t, clone = self.plain_clone()
+        self.assertTrue(cmd_init.is_plain_clone(clone, config.load(clone)))
+
+    def test_origin_as_a_file_url_and_a_trailing_slash(self):
+        template, clone = self.plain_clone()
+        for url in (template.as_uri(), str(template) + "/"):
+            with self.subTest(url=url):
+                self.git(clone, "remote", "set-url", "origin", url)
+                self.assertTrue(cmd_init.is_plain_clone(clone, config.load(clone)))
+
+    def test_origin_equals_the_canonical_source(self):
+        used = self.used_template(source=CANONICAL)
+        cfg = config.load(used)
+        self.assertEqual(cfg.template_source, CANONICAL)
+        self.assertFalse(cmd_init.is_plain_clone(used, cfg))  # origin is the person's own repository
+        for url in (CANONICAL, CANONICAL[:-4], CANONICAL + "/", CANONICAL[:-4] + "/"):
+            with self.subTest(url=url):
+                self.git(used, "remote", "set-url", "origin", url)
+                self.assertTrue(cmd_init.is_plain_clone(used, cfg))
+
+    def test_origin_that_is_not_the_template(self):
+        used = self.used_template()
+        cfg = config.load(used)
+        self.assertFalse(cmd_init.is_plain_clone(used, cfg))  # a URL, and the template has no canonical source
+        self.git(used, "remote", "set-url", "origin", "git@example.invalid:me/mybrain.git")
+        self.assertFalse(cmd_init.is_plain_clone(used, cfg))
+        brain = self.make_brain()  # a local path whose brain.json is a brain, not the template
+        self.git(used, "remote", "set-url", "origin", str(brain))
+        self.assertFalse(cmd_init.is_plain_clone(used, cfg))
+        folder = self._new_dir("plain folder")  # a local path with no brain.json at all
+        self.git(used, "remote", "set-url", "origin", str(folder))
+        self.assertFalse(cmd_init.is_plain_clone(used, cfg))
+        self.git(used, "remote", "set-url", "origin", str(self.tmp / "gone"))
+        self.assertFalse(cmd_init.is_plain_clone(used, cfg))
+
+    def test_no_origin_and_no_repo(self):
+        used = self.used_template()
+        self.git(used, "remote", "remove", "origin")
+        self.assertFalse(cmd_init.is_plain_clone(used, config.load(used)))
+        folder = self.bare_folder()
+        self.assertFalse(cmd_init.is_plain_clone(folder, config.load(folder)))
+
+    def test_only_origin_counts(self):
+        used = self.used_template()
+        template, _clone = self.plain_clone()
+        self.git(used, "remote", "add", "upstream", str(template))
+        self.assertFalse(cmd_init.is_plain_clone(used, config.load(used)))
+
+
+class ShapeTest(InitCase):
+    def test_template_only_paths(self):
+        self.assertEqual(cmd_init.TEMPLATE_ONLY, [".claude/skills/template-*", "tests", "docs", "CLAUDE.md",
+                                                  "README.md", ".gitignore", ".claude/settings.json", "brain.json"])
+
+    def test_the_command_is_registered(self):
+        from brainlib import cli
+
+        self.assertEqual(cli.COMMANDS["init"][0], "cmd_init")
+        self.assertEqual(list(cli.COMMANDS), sorted(cli.COMMANDS))
+
+    def test_the_version_pattern_matches_the_pinned_message(self):
+        _t, clone = self.plain_clone()
+        self.done(clone)
+        self.assertRegex(self.commits(clone)[0], r"^meta\(brain\): initialise from template v0\.1\.0\+[0-9a-f]{7,}$")
+        self.assertTrue(re.fullmatch(r"[0-9a-f]{7,}", self.git(clone, "rev-parse", "--short", "HEAD").strip()))
+
+
+if __name__ == "__main__":
+    unittest.main()

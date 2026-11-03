@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import unittest
 from pathlib import Path
@@ -91,7 +92,10 @@ class ParseTest(unittest.TestCase):
         for bad in ("A -- text --> B", "A ==> B", "A --- B", "A --> B;", "A & B --> C", "A --> B C", "subgraph X",
                     "end", "style A fill:#fff", "click A callback", "A[unclosed --> B", "A[x]]", "A:::", "A --> ",
                     "--> B", "A -->|unclosed B", "flowchart", "graph XX", 'A["x" y]', "A[]", "A --> B -- x --> C",
-                    "1A --> B"):
+                    "1A --> B",
+                    # a longer opener that does not close must not fall back to a shorter one with brackets
+                    # or quotes left in the label; such a label has to be quoted
+                    "A([x])", "A((x)", "A[[x]", "A[Foo (bar)]", 'A[say "hi" now]'):
             with self.subTest(line=bad):
                 g = parsed(fenced("flowchart TD", bad))
                 self.assertEqual([(f.severity, f.subject) for f in g.problems], [(BROKEN, f"{DOCS}:3")])
@@ -142,6 +146,25 @@ class ParseTest(unittest.TestCase):
             g = parsed(fenced("flowchart TD", "<!-- hi -->"))
             self.assertEqual([f.subject for f in g.problems], [f"{DOCS}:3"])
 
+    def test_an_unclosed_comment_is_a_problem_at_its_opener(self):
+        diagram = fenced("flowchart TD", "A:::work")  # no `-->`: that would close the comment around it
+        cases = {
+            "never closed": ("intro\n<!-- never closed\n" + diagram, 2),
+            "closed, then another opened": ("<!-- one -->\ntext\n  <!-- two\n" + diagram, 3),
+            "closed and reopened on one line": ("<!-- one\ntwo --> <!-- three\n" + diagram, 2),
+            "opened at the very end": ("text <!--", 1),
+        }
+        for label, (text, line) in cases.items():
+            with self.subTest(label):
+                g = parsed(text)
+                self.assertEqual([(f.severity, f.subject) for f in g.problems], [(BROKEN, f"{DOCS}:{line}")])
+                self.assertEqual(g.problems[0].message, "unclosed '<!--' comment")
+                self.assertEqual(g.nodes, {})  # what the comment swallowed is not read
+        for label, text in {"closed": "<!-- a\nb -->\n" + diagram, "closed on its line": "<!-- a -->" + diagram,
+                            "none": diagram}.items():
+            with self.subTest(label):
+                self.assertEqual(parsed(text).problems, [])
+
     def test_line_numbers_run_across_fences(self):
         text = fenced("flowchart TD", "A --> B") + "\ntext\n\n" + fenced("flowchart TD", "B --> C", "oops here")
         g = parsed(text)
@@ -188,6 +211,15 @@ class GraphTest(unittest.TestCase):
                           "Y --> X", "Y -.-> lab-b:::work", "X --> STORE[(notes)]:::state"))
         up, down = routing.contract(g)
         self.assertEqual((down["lab-a"], down["lab-b"], up["lab-b"]), ({"lab-b"}, set(), {"lab-a"}))
+
+    def test_contract_drops_a_skill_calling_itself(self):
+        # A retry loop is not a hand-on: neither through a decision nor directly.
+        g = parsed(fenced("flowchart TD", "lab-a:::work --> OK{ok}:::decision -.-> lab-a", "OK --> lab-b:::work",
+                          "lab-b --> lab-b", "lab-b --> lab-c:::work"))
+        up, down = routing.contract(g)
+        self.assertEqual((down["lab-a"], up["lab-a"]), ({"lab-b"}, set()))
+        self.assertEqual((down["lab-b"], up["lab-b"]), ({"lab-c"}, {"lab-a"}))
+        self.assertEqual((down["lab-c"], up["lab-c"]), (set(), {"lab-b"}))
 
     def test_reachable_from_entry_nodes(self):
         g = parsed(fenced(
@@ -266,10 +298,32 @@ class LoadGraphTest(RoutingCase):
         root = self.brain(docs=fenced("flowchart TD", "A -- x --> B"), meta=fenced("flowchart TD", "C ==> D"))
         self.assertEqual([f.subject for f in routing.load_graph(root).problems], [f"{META}:3", f"{DOCS}:3"])
 
-    def test_a_directory_in_place_of_a_map_is_an_empty_map(self):
+    def test_a_map_that_cannot_be_read_is_broken_not_empty(self):
         root = self.brain()
-        (root / "docs" / "ROUTING.md").mkdir(parents=True)
-        self.assertEqual(routing.load_graph(root).nodes, {})
+        (root / "docs" / "ROUTING.md").mkdir(parents=True)  # a directory where the map should be
+        g = routing.load_graph(root)
+        self.assertEqual(g.nodes, {})
+        self.assertEqual([(f.severity, f.subject) for f in g.problems], [(BROKEN, DOCS)])
+        self.assertTrue(g.problems[0].message.startswith("cannot read the routing map ("), g.problems[0].message)
+        self.assertEqual(self.shape(self.lint_routing(root)), [(BROKEN, DOCS)])
+
+    def test_a_map_without_read_permission_is_broken_not_empty(self):
+        root = self.brain(docs=fenced("flowchart TD", "IN(x):::entry --> lab-a:::work"), names=("lab-a",))
+        path = root / "docs" / "ROUTING.md"
+        path.chmod(0)
+        self.addCleanup(path.chmod, 0o644)
+        if os.access(str(path), os.R_OK):
+            self.skipTest("this user can read a mode 0 file (root)")
+        # lab-a is undrawn too, since nothing could be read, but the BROKEN is what fails the run.
+        self.assertEqual(self.shape(self.lint_routing(root)), [(BROKEN, DOCS), (GAP, "lab-a")])
+        r = self.run_brain(root, "lint")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertTrue(any(l.startswith(f"BROKEN {DOCS}: cannot read the routing map") for l in r.stdout.splitlines()),
+                        r.stdout)
+
+    def test_a_missing_map_is_still_an_empty_map(self):
+        root = self.brain(docs=fenced("flowchart TD", "IN(x):::entry --> lab-a:::work"))
+        self.assertEqual(routing.load_graph(root).problems, [])  # no _meta/ROUTING-META.md
 
 
 class LintBrokenTest(RoutingCase):
@@ -296,6 +350,12 @@ class LintBrokenTest(RoutingCase):
         root = self.brain(docs=f"<!--\n{bad}-->\n" + fenced("flowchart TD", "IN(x):::entry --> lab-a:::work"),
                           names=("lab-a",))
         self.assertEqual(self.lint_routing(root), [])
+
+    def test_an_unclosed_comment_is_reported_by_lint(self):
+        docs = fenced("flowchart TD", "IN(x):::entry --> lab-a:::work") + "\n<!-- notes\n"
+        found = self.lint_routing(self.brain(docs=docs, names=("lab-a",)))
+        self.assertEqual(self.shape(found), [(BROKEN, f"{DOCS}:6")])
+        self.assertIn("unclosed", found[0].message)
 
     def test_a_class_given_on_a_later_appearance_counts(self):
         docs = fenced("flowchart TD", "IN(x):::entry --> lab-a", "lab-a:::work")
@@ -387,6 +447,12 @@ class ShowTest(RoutingCase):
         self.assertIn("up: lab-router", lines)
         self.assertIn("down: lab-d", lines)
         self.assertIn("down: (none)", routing.show(self.root, "lab-d").splitlines())
+
+    def test_show_ignores_a_skill_calling_itself(self):
+        root = self.brain(docs=fenced("flowchart TD", "IN(x):::entry --> lab-a:::work", "lab-a --> lab-a"))
+        lines = routing.show(root, "lab-a").splitlines()
+        self.assertIn("up: (entry)", lines)
+        self.assertIn("down: (none)", lines)
 
     def test_show_without_a_skill_lists_entry_points_and_isolated_skills(self):
         lines = routing.show(self.root, None).splitlines()

@@ -58,6 +58,7 @@ _ARROWS = (("-.->", True), ("-->", False))  # (text, sometimes)
 _SHAPES = (("[(", ")]"), ("((", "))"), ("{{", "}}"), ("[[", "]]"), ("[", "]"), ("(", ")"), ("{", "}"))
 _RESERVED = frozenset(("end", "subgraph", "style", "class", "classDef", "click", "linkStyle", "direction",
                        "flowchart", "graph"))  # words Mermaid reads before it reads an id
+_LABEL_BARRED = "[](){}\""  # not allowed in an unquoted label
 _HEADER = re.compile(r"(?:flowchart|graph)[ \t]+(?:TB|TD|BT|RL|LR)")
 _CLASSDEF = re.compile(r"classDef[ \t]+[A-Za-z][A-Za-z0-9_,-]*[ \t]+\S")
 _FENCE_OPEN = re.compile(r"[ \t]*(`{3,})[ \t]*([^`\s]*)[^`]*")
@@ -119,10 +120,13 @@ def _scan_shape(s: str, i: int) -> Tuple[Optional[str], int]:
             if close_at < 0:
                 continue
             label = s[start:close_at].strip()
+            if any(c in label for c in _LABEL_BARRED):  # brackets and quotes mean quoting, or a malformed shape
+                continue
         if label.strip():
             return label.strip(), close_at + len(closer)
     if i < len(s) and s[i] in "[({":
-        raise _Unsupported("a node shape that is not closed, or has no label")
+        raise _Unsupported("a node shape that is not closed, has no label, or has brackets or quotes in an "
+                           "unquoted label (quote the label)")
     return None, i
 
 
@@ -201,23 +205,24 @@ def _read_diagram_line(graph: Graph, file: str, number: int, raw: str) -> None:
         graph.edges.append(Edge(src.id, dst.id, sometimes, label, file, number))
 
 
-def _strip_comments(line: str, in_comment: bool) -> Tuple[str, bool]:
-    """`line` without its `<!-- … -->` text, and whether a comment is still open at its end."""
-    visible, i = [], 0
+def _strip_comments(line: str, in_comment: bool) -> Tuple[str, bool, bool]:
+    """`line` without its `<!-- … -->` text, whether a comment is still open at its end, and whether the
+    open one began on this line."""
+    visible, i, opened = [], 0, False
     while i < len(line):
         if in_comment:
             end = line.find("-->", i)
             if end < 0:
-                return "".join(visible), True
-            i, in_comment = end + 3, False
+                break
+            i, in_comment, opened = end + 3, False, False
         else:
             start = line.find("<!--", i)
             if start < 0:
                 visible.append(line[i:])
                 break
             visible.append(line[i:start])
-            i, in_comment = start + 4, True
-    return "".join(visible), in_comment
+            i, in_comment, opened = start + 4, True, True
+    return "".join(visible), in_comment, opened and in_comment
 
 
 def _read_not_drawn_row(graph: Graph, line: str) -> None:
@@ -234,7 +239,7 @@ def parse(text: str, file: str, graph: Graph) -> None:
     ```mermaid fences, and the table under `## Not drawn`. A line the dialect does not allow becomes a
     BROKEN finding in `graph.problems` and adds nothing, so one slip is one finding."""
     fence: Optional[Tuple[int, bool]] = None  # (backticks that opened it, whether it is mermaid)
-    in_comment = False
+    in_comment, comment_line = False, 0
     section = ""
     text = text[1:] if text.startswith("\ufeff") else text
     for number, raw in enumerate(text.split("\n"), 1):  # not splitlines(): numbers must match an editor's
@@ -246,7 +251,9 @@ def parse(text: str, file: str, graph: Graph) -> None:
             elif fence[1]:
                 _read_diagram_line(graph, file, number, raw)
             continue
-        line, in_comment = _strip_comments(raw, in_comment)
+        line, in_comment, opened = _strip_comments(raw, in_comment)
+        if opened:
+            comment_line = number
         opening = _FENCE_OPEN.fullmatch(line)
         if opening:
             fence = (len(opening.group(1)), opening.group(2) == "mermaid")
@@ -256,17 +263,24 @@ def parse(text: str, file: str, graph: Graph) -> None:
             section = heading.group(1).strip().lower()
         elif section == "not drawn":
             _read_not_drawn_row(graph, line)
+    if in_comment:  # everything after the opener was swallowed, so say where it began
+        graph.problems.append(Finding(BROKEN, f"{file}:{comment_line}", "unclosed '<!--' comment"))
 
 
 def load_graph(root: Path) -> Graph:
-    """The graph of `_meta/ROUTING-META.md` then `docs/ROUTING.md`; a missing file is an empty map."""
+    """The graph of `_meta/ROUTING-META.md` then `docs/ROUTING.md`. A missing file is an empty map; a file
+    that exists but cannot be read is a BROKEN problem, not an empty map."""
     graph = Graph()
     for parts in MAP_FILES:
+        name = "/".join(parts)
         try:
             text = Path(root).joinpath(*parts).read_text(encoding="utf-8", errors="replace")
-        except OSError:
+        except FileNotFoundError:
             continue
-        parse(text, "/".join(parts), graph)
+        except OSError as why:
+            graph.problems.append(Finding(BROKEN, name, f"cannot read the routing map ({why.strerror or why})"))
+            continue
+        parse(text, name, graph)
     return graph
 
 
@@ -301,9 +315,10 @@ def _skills_after(start: str, successors: dict[str, List[str]]) -> Set[str]:
 
 def contract(graph: Graph) -> Tuple[dict[str, Set[str]], dict[str, Set[str]]]:
     """(up, down): for each skill the skills that hand to it and the skills it hands to, walking through
-    decisions, entries and every other node that is not a skill. Every skill node has an entry."""
+    decisions, entries and every other node that is not a skill. Every skill node has an entry. A skill
+    never appears in its own sets: a call that loops back to the caller is a retry, not a hand-on."""
     successors = _successors(graph)
-    down = {n: _skills_after(n, successors) for n in graph.nodes if is_skill_id(n)}
+    down = {n: _skills_after(n, successors) - {n} for n in graph.nodes if is_skill_id(n)}  # a retry is no hand-on
     up: dict[str, Set[str]] = {n: set() for n in down}
     for skill, below in down.items():
         for target in below:

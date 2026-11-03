@@ -38,6 +38,8 @@ attention; on a new brain that is usually "no online backup". Say "Back this bra
 
 ## Let it grow from real work
 
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="../images/how-it-works-dark.svg"><img src="../images/how-it-works.svg" width="100%" alt="Ask, route, run, save, learn: and the next session starts from all of it."></picture></p>
+
 Do not write skills up front. A skill written from a guess routes badly and gets ignored; one written
 from two real cases does not.
 
@@ -79,6 +81,8 @@ skills, `brain-write-skill` writes a router that picks by rule rather than by re
   `brain-upstream`, and `template-intake` takes it in on the template side.
 
 ## Several brains side by side
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="../images/template-and-brains-dark.svg"><img src="../images/template-and-brains.svg" width="100%" alt="One template above several brains: update flows down, suggestions flow up."></picture></p>
 
 Each brain has its own skills, MCP servers and secrets, so start each session at the root of the
 brain the work belongs to. Brains share only the `brain-*` skills that come from the template. A

@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="480" viewBox="0 0 1200 480" role="img" aria-labelledby="title desc">
+  <title id="title">How a brain works</title>
+  <desc id="desc">A loop of five steps. Ask: say it your own way. Route: the routing map picks the skill. Run: the skill gate checks that the skill really ran. Save: checked, then committed, with no secrets in it. Learn: a retro fixes the skill for next time. Then the next session starts from all of it.</desc>
+  <style>
+    .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .card { fill: #24211C; stroke: #3A352D; stroke-width: 2; }
+    .head { font-size: 30px; fill: #F0EAE0; }
+    .body { font-size: 17.5px; fill: #CFC6B7; }
+    .tag { font-size: 14.5px; fill: #CFC6B7; }
+    .num { font-size: 18px; fill: #24211C; font-weight: 700; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#2E2A23"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#A39A8B"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="480" rx="24" fill="#1B1915"/>
+  <rect width="1200" height="480" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="478" rx="23" fill="none" stroke="#3A352D" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#E57D50">HOW A BRAIN WORKS</text>
+
+  <!-- connectors between cards -->
+  <g stroke="#A39A8B" stroke-width="2.5" marker-end="url(#arrow)">
+    <line x1="246" y1="205" x2="268" y2="205"/>
+    <line x1="474" y1="205" x2="496" y2="205"/>
+    <line x1="702" y1="205" x2="724" y2="205"/>
+    <line x1="930" y1="205" x2="952" y2="205"/>
+  </g>
+
+  <!-- 1 Ask -->
+  <rect class="card" x="44" y="88" width="200" height="246" rx="16"/>
+  <circle cx="80" cy="128" r="18" fill="#F0EAE0"/>
+  <text x="80" y="134" class="sans num" text-anchor="middle">1</text>
+  <text x="108" y="139" class="serif head">Ask</text>
+  <text class="sans body"><tspan x="66" y="190">Say what you need,</tspan><tspan x="66" y="216">in your own words.</tspan></text>
+  <rect x="66" y="284" width="64" height="28" rx="14" fill="#2E2A24"/>
+  <text x="98" y="303" class="mono tag" text-anchor="middle">you</text>
+
+  <!-- 2 Route -->
+  <rect class="card" x="272" y="88" width="200" height="246" rx="16"/>
+  <circle cx="308" cy="128" r="18" fill="#E2B653"/>
+  <text x="308" y="134" class="sans num" text-anchor="middle">2</text>
+  <text x="336" y="139" class="serif head">Route</text>
+  <text class="sans body"><tspan x="294" y="190">The routing map</tspan><tspan x="294" y="216">picks the skill,</tspan><tspan x="294" y="242">by rule.</tspan></text>
+  <rect x="294" y="284" width="156" height="28" rx="14" fill="#2E2A24"/>
+  <text x="372" y="303" class="mono tag" text-anchor="middle">docs/ROUTING.md</text>
+
+  <!-- 3 Run -->
+  <rect class="card" x="500" y="88" width="200" height="246" rx="16"/>
+  <circle cx="536" cy="128" r="18" fill="#5BBDB2"/>
+  <text x="536" y="134" class="sans num" text-anchor="middle">3</text>
+  <text x="564" y="139" class="serif head">Run</text>
+  <text class="sans body"><tspan x="522" y="190">The skill runs, and</tspan><tspan x="522" y="216">the gate checks</tspan><tspan x="522" y="242">that it really did.</tspan></text>
+  <rect x="522" y="284" width="110" height="28" rx="14" fill="#2E2A24"/>
+  <text x="577" y="303" class="mono tag" text-anchor="middle">skill gate</text>
+
+  <!-- 4 Save -->
+  <rect class="card" x="728" y="88" width="200" height="246" rx="16"/>
+  <circle cx="764" cy="128" r="18" fill="#E57D50"/>
+  <text x="764" y="134" class="sans num" text-anchor="middle">4</text>
+  <text x="792" y="139" class="serif head">Save</text>
+  <text class="sans body"><tspan x="750" y="190">Checked, then</tspan><tspan x="750" y="216">committed, with</tspan><tspan x="750" y="242">no secrets in it.</tspan></text>
+  <rect x="750" y="284" width="110" height="28" rx="14" fill="#2E2A24"/>
+  <text x="805" y="303" class="mono tag" text-anchor="middle">brain-sync</text>
+
+  <!-- 5 Learn -->
+  <rect class="card" x="956" y="88" width="200" height="246" rx="16"/>
+  <circle cx="992" cy="128" r="18" fill="#BE90C2"/>
+  <text x="992" y="134" class="sans num" text-anchor="middle">5</text>
+  <text x="1020" y="139" class="serif head">Learn</text>
+  <text class="sans body"><tspan x="978" y="190">A retro fixes the</tspan><tspan x="978" y="216">skill; a practice</tspan><tspan x="978" y="242">keeps the fact.</tspan></text>
+  <rect x="978" y="284" width="118" height="28" rx="14" fill="#2E2A24"/>
+  <text x="1037" y="303" class="mono tag" text-anchor="middle">brain-retro</text>
+
+  <!-- the loop back -->
+  <path d="M1056 338 C 1056 430, 980 430, 900 430 L 300 430 C 220 430, 144 430, 144 342" fill="none" stroke="#A39A8B" stroke-width="2.5" stroke-dasharray="7 7" marker-end="url(#arrow)"/>
+  <rect x="380" y="410" width="440" height="40" rx="20" fill="#1B1915"/>
+  <text x="600" y="437" class="serif" font-size="22" font-style="italic" fill="#5BBDB2" text-anchor="middle">the next session starts from all of it</text>
+</svg>

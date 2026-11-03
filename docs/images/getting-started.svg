@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="520" viewBox="0 0 1200 520" role="img" aria-labelledby="title desc">
+  <title id="title">Getting started in three steps</title>
+  <desc id="desc">One: get your copy, with Use this template and Private on GitHub, or ask Claude to download it. Two: open the folder in Claude Code. Three: say what the brain is for, for example "Set this up as a brain for running my home server"; Claude checks the computer, asks what must never be saved, shows a rehearsal and sets it up when you say yes.</desc>
+  <style>
+    .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .card { fill: #FFFCF6; stroke: #E3D8C2; stroke-width: 2; }
+    .stage { fill: #EFE7D7; }
+    .head { font-size: 28px; fill: #1E1D1A; }
+    .body { font-size: 17.5px; fill: #57524A; }
+    .num { font-size: 18px; fill: #FFFCF6; font-weight: 700; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#DED3BD"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="520" rx="24" fill="#F6F1E6"/>
+  <rect width="1200" height="520" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="518" rx="23" fill="none" stroke="#E3D8C2" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#B5522B">GETTING STARTED</text>
+
+  <!-- 1: get your copy -->
+  <rect class="card" x="44" y="84" width="352" height="396" rx="16"/>
+  <rect class="stage" x="64" y="104" width="312" height="196" rx="12"/>
+  <rect x="96" y="128" width="248" height="44" rx="8" fill="#1F883D"/>
+  <text x="220" y="157" class="sans" font-size="17" font-weight="600" fill="#FFFFFF" text-anchor="middle">Use this template ▾</text>
+  <rect x="96" y="182" width="248" height="38" rx="8" fill="#FFFCF6" stroke="#D8CCB4" stroke-width="1.5"/>
+  <text x="114" y="207" class="sans" font-size="15.5" fill="#1E1D1A">Create a new repository</text>
+  <circle cx="114" cy="252" r="8" fill="none" stroke="#2B7A74" stroke-width="2.5"/>
+  <circle cx="114" cy="252" r="3.5" fill="#2B7A74"/>
+  <text x="130" y="258" class="sans" font-size="16" font-weight="600" fill="#1E1D1A">Private</text>
+  <circle cx="222" cy="252" r="8" fill="none" stroke="#A89F8E" stroke-width="2"/>
+  <text x="238" y="258" class="sans" font-size="16" fill="#8A8274">Public</text>
+
+  <circle cx="82" cy="345" r="18" fill="#1E1D1A"/>
+  <text x="82" y="351" class="sans num" text-anchor="middle">1</text>
+  <text x="112" y="355" class="serif head">Get your copy</text>
+  <text class="sans body"><tspan x="66" y="398">On GitHub: Use this template,</tspan><tspan x="66" y="424">then Private. Or ask Claude</tspan><tspan x="66" y="450">to download it for you.</tspan></text>
+
+  <!-- 2: open the folder -->
+  <rect class="card" x="424" y="84" width="352" height="396" rx="16"/>
+  <rect class="stage" x="444" y="104" width="312" height="196" rx="12"/>
+  <rect x="464" y="122" width="272" height="160" rx="10" fill="#FFFCF6" stroke="#D8CCB4" stroke-width="1.5"/>
+  <rect x="464" y="122" width="72" height="160" rx="10" fill="#F3ECDF"/>
+  <rect x="476" y="140" width="48" height="8" rx="4" fill="#D8CCB4"/>
+  <rect x="476" y="158" width="40" height="8" rx="4" fill="#E3D8C2"/>
+  <rect x="476" y="176" width="44" height="8" rx="4" fill="#E3D8C2"/>
+  <text x="554" y="152" class="sans" font-size="13" fill="#8A8274">Code</text>
+  <rect x="552" y="168" width="64" height="30" rx="15" fill="#EFE7D7"/>
+  <text x="584" y="188" class="sans" font-size="14" fill="#57524A" text-anchor="middle">Local ▾</text>
+  <rect x="552" y="208" width="168" height="36" rx="18" fill="#FFFCF6" stroke="#2B7A74" stroke-width="2.5"/>
+  <path d="M568 218 h12 l4 5 h16 a3 3 0 0 1 3 3 v10 a3 3 0 0 1 -3 3 h-32 a3 3 0 0 1 -3 -3 v-15 a3 3 0 0 1 3 -3 z" fill="#C9962E"/>
+  <text x="612" y="232" class="mono" font-size="14.5" fill="#1E1D1A">my-homelab</text>
+  <text x="552" y="268" class="sans" font-size="13" fill="#8A8274">Open folder…</text>
+
+  <circle cx="462" cy="345" r="18" fill="#C9962E"/>
+  <text x="462" y="351" class="sans num" text-anchor="middle">2</text>
+  <text x="492" y="355" class="serif head">Open the folder</text>
+  <text class="sans body"><tspan x="446" y="398">In Claude Code's Code tab,</tspan><tspan x="446" y="424">open your copy's folder. Or run</tspan><tspan x="446" y="450">claude there, in a terminal.</tspan></text>
+
+  <!-- 3: ask for the brain -->
+  <rect class="card" x="804" y="84" width="352" height="396" rx="16"/>
+  <rect class="stage" x="824" y="104" width="312" height="196" rx="12"/>
+  <rect x="852" y="118" width="268" height="56" rx="12" fill="#1E1D1A"/>
+  <text class="sans" font-size="14.5" fill="#F6F1E6"><tspan x="866" y="141">Set this up as a brain for</tspan><tspan x="866" y="162">running my home server.</tspan></text>
+  <g class="mono" font-size="13.5">
+    <text x="840" y="202"><tspan fill="#2B7A74">✓</tspan><tspan fill="#57524A" dx="8">Python and git are here</tspan></text>
+    <text x="840" y="227"><tspan fill="#C9962E">?</tspan><tspan fill="#57524A" dx="8">Anything never to save?</tspan></text>
+    <text x="840" y="252"><tspan fill="#2B7A74">✓</tspan><tspan fill="#57524A" dx="8">Rehearsal shown. Go ahead?</tspan></text>
+    <text x="840" y="277"><tspan fill="#2B7A74">✓</tspan><tspan fill="#1E1D1A" dx="8">Your brain is ready.</tspan></text>
+  </g>
+
+  <circle cx="842" cy="345" r="18" fill="#2B7A74"/>
+  <text x="842" y="351" class="sans num" text-anchor="middle">3</text>
+  <text x="872" y="355" class="serif head">Ask for a brain</text>
+  <text class="sans body"><tspan x="826" y="398">Say what it's for. Claude checks</tspan><tspan x="826" y="424">the computer, asks a few plain</tspan><tspan x="826" y="450">questions, rehearses, sets it up.</tspan></text>
+</svg>

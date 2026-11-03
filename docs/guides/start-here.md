@@ -4,6 +4,8 @@ How to get your own brain, from nothing, with Claude doing the technical parts. 
 experience with git, terminals or code. Claude asks a few plain questions, shows you what it will do
 before it does it, and explains anything it needs you to click.
 
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="../images/getting-started-dark.svg"><img src="../images/getting-started.svg" width="100%" alt="Three steps: get your copy, open the folder in Claude Code, ask for a brain."></picture></p>
+
 ## What a brain is
 
 A folder where Claude keeps what it learns about one kind of work you do: the routines it follows,
@@ -67,6 +69,8 @@ Claude then:
   the ones you asked for.
 
 ## 4. Use it
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="../images/things-to-say-dark.svg"><img src="../images/things-to-say.svg" width="100%" alt="Seven things to say to a brain, and what each one does."></picture></p>
 
 Start every new chat in the brain's folder (step 2). Each chat opens with a quick health check, and
 Claude tells you if anything needs attention. Then work as you normally would. When something comes

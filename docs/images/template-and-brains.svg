@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="540" viewBox="0 0 1200 540" role="img" aria-labelledby="title desc">
+  <title id="title">One template, many brains</title>
+  <desc id="desc">The brain template sits above three brains: my-homelab, my-game-mod and shop-inbox, each with its own skills, facts and scripts. Update brings the template's fixes and new features down into each brain without touching the brain's own files. Brain-upstream sends a suggestion back up, with nothing private in it, and template-intake answers it in the changelog.</desc>
+  <style>
+    .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .card { fill: #FFFCF6; stroke: #E3D8C2; stroke-width: 2; }
+    .name { font-size: 26px; fill: #1E1D1A; }
+    .small { font-size: 16.5px; fill: #57524A; }
+    .down { stroke: #2B7A74; stroke-width: 3; fill: none; }
+    .up { stroke: #B5522B; stroke-width: 3; fill: none; stroke-dasharray: 8 7; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#DED3BD"/>
+    </pattern>
+    <marker id="teal" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2B7A74"/>
+    </marker>
+    <marker id="terra" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#B5522B"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="540" rx="24" fill="#F6F1E6"/>
+  <rect width="1200" height="540" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="538" rx="23" fill="none" stroke="#E3D8C2" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#B5522B">ONE TEMPLATE, MANY BRAINS</text>
+
+  <!-- template -->
+  <rect class="card" x="400" y="80" width="400" height="104" rx="16" style="stroke: #C9962E; stroke-width: 3"/>
+  <text x="600" y="124" class="serif name" text-anchor="middle">brain-template</text>
+  <text x="600" y="156" class="sans small" text-anchor="middle">the harness and the seven brain-* skills</text>
+
+  <!-- arrows: down (update) and up (suggestion) for each brain -->
+  <path class="down" d="M470 186 C 420 240, 240 240, 200 316" marker-end="url(#teal)"/>
+  <path class="up" d="M260 316 C 300 250, 450 240, 500 190" marker-end="url(#terra)"/>
+  <path class="down" d="M580 186 L 580 312" marker-end="url(#teal)"/>
+  <path class="up" d="M620 316 L 620 192" marker-end="url(#terra)"/>
+  <path class="down" d="M700 190 C 750 240, 900 250, 940 316" marker-end="url(#teal)"/>
+  <path class="up" d="M1000 316 C 960 240, 780 240, 730 188" marker-end="url(#terra)"/>
+
+  <!-- brains -->
+  <rect class="card" x="80" y="320" width="300" height="110" rx="16"/>
+  <text x="104" y="362" class="mono" font-size="21" font-weight="700" fill="#1E1D1A">my-homelab</text>
+  <text x="104" y="392" class="mono" font-size="15" fill="#2B7A74">lab-* skills</text>
+  <text x="104" y="414" class="sans small">its own skills, facts, scripts</text>
+
+  <rect class="card" x="450" y="320" width="300" height="110" rx="16"/>
+  <text x="474" y="362" class="mono" font-size="21" font-weight="700" fill="#1E1D1A">my-game-mod</text>
+  <text x="474" y="392" class="mono" font-size="15" fill="#2B7A74">mod-* skills</text>
+  <text x="474" y="414" class="sans small">its own skills, facts, scripts</text>
+
+  <rect class="card" x="820" y="320" width="300" height="110" rx="16"/>
+  <text x="844" y="362" class="mono" font-size="21" font-weight="700" fill="#1E1D1A">shop-inbox</text>
+  <text x="844" y="392" class="mono" font-size="15" fill="#2B7A74">shop-* skills</text>
+  <text x="844" y="414" class="sans small">its own skills, facts, scripts</text>
+
+  <!-- legend -->
+  <line x1="80" y1="482" x2="124" y2="482" class="down" marker-end="url(#teal)"/>
+  <text x="138" y="488" class="sans" font-size="17.5" fill="#1E1D1A"><tspan font-weight="700">update</tspan><tspan fill="#57524A">  fixes and features flow down; your files are never touched</tspan></text>
+  <line x1="80" y1="512" x2="124" y2="512" class="up" marker-end="url(#terra)"/>
+  <text x="138" y="518" class="sans" font-size="17.5" fill="#1E1D1A"><tspan font-weight="700">brain-upstream</tspan><tspan fill="#57524A">  a suggestion flows up, with nothing private in it, and is answered in the changelog</tspan></text>
+</svg>

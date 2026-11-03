@@ -4,6 +4,8 @@ Things to say to Claude Code, in a session started in the right folder. Each lin
 lands in, so you can word it your own way: say what you want and the descriptions and routing map pick
 the skill. Naming the skill works too. Paths and names below are examples.
 
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="../images/things-to-say-dark.svg"><img src="../images/things-to-say.svg" width="100%" alt="Seven things to say to a brain, and what each one does."></picture></p>
+
 ## In the template: making a brain
 
 | Say | Lands in |

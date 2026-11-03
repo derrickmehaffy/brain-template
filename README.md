@@ -1,7 +1,102 @@
-# Brain template
+<p align="center">
+  <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/banner-dark.svg"><img src="docs/images/banner.svg" width="100%" alt="Brain template for Claude Code. Teach Claude once. It remembers how."></picture>
+</p>
 
-[![tests](https://github.com/derrickmehaffy/brain-template/actions/workflows/tests.yml/badge.svg)](https://github.com/derrickmehaffy/brain-template/actions/workflows/tests.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+<p align="center">
+  <a href="https://github.com/derrickmehaffy/brain-template/actions/workflows/tests.yml"><img src="https://github.com/derrickmehaffy/brain-template/actions/workflows/tests.yml/badge.svg" alt="tests"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="License: MIT"></a>
+  <img src="https://img.shields.io/badge/python-3.9%2B-3776AB.svg" alt="Python 3.9+">
+  <img src="https://img.shields.io/badge/dependencies-none-2B7A74.svg" alt="No dependencies">
+</p>
+
+<p align="center">
+  <a href="https://github.com/derrickmehaffy/brain-template/generate"><b>Use this template</b></a> ·
+  <a href="docs/guides/start-here.md"><b>Start here</b> (no git needed)</a> ·
+  <a href="docs/guides/prompts.md">Things to say</a> ·
+  <a href="#reference">Reference</a>
+</p>
+
+Claude Code is sharp within a session and starts from zero in the next one. A **brain** fixes that.
+It is a folder you open Claude in, holding what Claude needs to do one kind of work well: the
+routines it follows, the facts it has checked, the words you use and the small scripts it runs.
+Every session starts from all of it, and every change is saved in git, so nothing learned is lost
+and anything can be undone.
+
+Make one for a home server, a game mod, a customer inbox, a research project: anything you do with
+Claude again and again. A new brain starts with no routines of its own, just seven meta skills
+that write the rest the same way every time.
+
+## Why a brain
+
+- 🧠 **It remembers.** Routines become skills, checked facts become practices, and your words go
+  in a glossary. Every session starts from all of it.
+- 🧭 **It picks the right routine.** One routing map says which skill handles what, so the work
+  is never improvised from memory.
+- 🚦 **It checks itself.** The skill gate refuses a skill's output until that skill really ran,
+  and every chat opens with a health check that names anything needing attention.
+- 🔒 **It keeps secrets out.** A pre-commit guard blocks `.env` files, credentials and the names
+  you mark private. Keys stay in `.env` (or 1Password) and are never printed.
+- 🔁 **It gets better.** When something goes wrong, a retro proposes the one change that fixes
+  it, and `update` brings in the template's improvements without merge conflicts.
+- 📦 **Nothing to install.** Python 3.9+ and git. No packages, no server, no extra account.
+
+## How it works
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/how-it-works-dark.svg"><img src="docs/images/how-it-works.svg" width="100%" alt="A loop of five steps: ask in your own words; the routing map picks the skill; the skill runs and the gate checks it did; the work is checked and committed with no secrets in it; a retro fixes the skill and a practice keeps the fact. The next session starts from all of it."></picture></p>
+
+You talk to Claude the way you normally would. The brain's `CLAUDE.md` and routing map steer each
+request to the skill written for it, the skill gate makes sure that skill actually runs, and
+`brain-sync` saves the result through the privacy guard. When something goes wrong, `brain-retro`
+turns it into a fix, so the same mistake does not happen twice.
+
+## Get started
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/getting-started-dark.svg"><img src="docs/images/getting-started.svg" width="100%" alt="Three steps: get your copy with Use this template and Private; open the folder in Claude Code; say what the brain is for, and Claude checks the computer, asks a few plain questions, rehearses and sets it up."></picture></p>
+
+1. **Get your copy.** Click **[Use this template](https://github.com/derrickmehaffy/brain-template/generate)**, then **Create a new
+   repository**, and choose **Private**. Or ask Claude to download the template for you.
+2. **Open it in Claude Code.** In the desktop app's Code tab, open the folder. In a terminal, run
+   `claude` there.
+3. **Say "Set this up as a brain for &lt;what you do&gt;."** Claude checks the computer, asks a few
+   plain questions, shows a rehearsal of what it will do, and sets the brain up when you say yes.
+
+> [!NOTE]
+> **Your copy becomes yours.** Setup removes everything that is only there for developing the
+> template: this README, the guides and images, the tests, and the GitHub files (licence, issue
+> forms, CI). What is left is a clean brain with a README of its own. The licence for the harness
+> and the `brain-*` skills travels in `_meta/LICENSE`.
+
+**Never used git or a terminal?** [Start here](docs/guides/start-here.md) walks through every click,
+and Claude does the technical parts. You need macOS or Linux (on Windows, inside WSL), Claude Code,
+Python 3.9+ and git; Claude checks for the last two and helps install them.
+
+## Things to say
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/things-to-say-dark.svg"><img src="docs/images/things-to-say.svg" width="100%" alt="Seven things to say and what each does: what's in this brain (explains it and runs the health check); make it a routine (writes a skill); remember what we found (records a practice); that went wrong (runs a retro); keep that query as a script (writes a script); save this (checks and commits); update this brain from the template."></picture></p>
+
+Say it in your own words: the skill descriptions and the routing map find the right skill. More, by
+step and by kind of work, in [docs/guides/prompts.md](docs/guides/prompts.md).
+
+## What's inside a brain
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/whats-inside-dark.svg"><img src="docs/images/whats-inside.svg" width="100%" alt="The folder of a brain called my-homelab. Yours: CLAUDE.md, README.md, your lab-* skills, docs with the routing map, practices and glossary, and scripts. From the template: the seven brain-* skills and _meta, the harness. In the folder but never saved: .env and your project repos and big files."></picture></p>
+
+The projects, big files and keys the work produces live in the same folder but are never part of the
+brain. Its `.gitignore` is an allowlist, so a nested repo, a generated asset or a `.env` is never
+staged by accident.
+
+## One template, many brains
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/template-and-brains-dark.svg"><img src="docs/images/template-and-brains.svg" width="100%" alt="The brain template above three brains, my-homelab, my-game-mod and shop-inbox. Update brings fixes and features down without touching a brain's own files; brain-upstream sends a suggestion up, with nothing private in it, answered in the changelog."></picture></p>
+
+Make one brain per kind of work. Every brain pulls the template's fixes with `update`, and sends
+ideas back with `brain-upstream`; neither side ever writes into the other.
+
+## Reference
+
+The detail behind everything above.
+
+### What a brain is, exactly
 
 A **brain** is a folder you start Claude Code sessions in, whose root is a git repo holding what
 Claude needs to do one kind of work well: skills, the rules that bite, what has been learned, and
@@ -17,12 +112,7 @@ replaces only the files the template owns and refuses, rather than merges, when 
 Requirements: Python 3.9+ (standard library only, no packages) and `git`, on macOS or Linux (on
 Windows, inside WSL).
 
-**Quick start:** click **Use this template** on GitHub and create a **private** repository, open your
-copy in Claude Code, and say "set this up as a brain for <what you do>". **Never used git or a
-terminal?** [docs/guides/start-here.md](docs/guides/start-here.md) walks through every click, and
-Claude does the technical parts.
-
-## Setting up a brain
+### Setting up a brain
 
 New to this? [docs/guides/making-a-brain.md](docs/guides/making-a-brain.md) covers what a brain is
 for and how it grows, and [docs/guides/prompts.md](docs/guides/prompts.md) has what to say to Claude
@@ -69,7 +159,7 @@ nested project repo gets neither the deny nor the gate, and likely not the brain
 start every session at the root. (In a terminal, `claude --add-dir <brain>` from a project folder
 loads the brain's skills, but still not the deny or the gate.)
 
-## Keeping a brain current
+### Keeping a brain current
 
 `_meta/brain update` pulls the template's **committed** history (never its working tree, so
 uncommitted template edits do not reach a brain) and replaces the files the template owns: `_meta/`,
@@ -79,7 +169,7 @@ other entry is left alone, and so is everything else in the brain. It refuses, r
 when a template-owned file was edited in the brain; it prints the changelog entries it brings and
 does not commit, `brain-sync` does.
 
-## Sending a change upstream
+### Sending a change upstream
 
 A brain never edits a template-owned file, and the template never writes into a brain. They exchange
 suggestions by reading each other:
@@ -93,7 +183,7 @@ suggestions by reading each other:
 3. In the brain, the next `update` reports the answered ids, and `brain-sync` marks each one landed
    or declined.
 
-## The skills
+### The skills
 
 Seven meta skills ship in every brain:
 
@@ -114,7 +204,7 @@ Two skills work on the template itself and are never copied into a brain:
 | `template-make-brain` | Create a brain with `new`, or adopt a folder with `adopt`, after the setup questions and a dry run. |
 | `template-intake` | Take in the upstream suggestions brains have recorded, with the person, and answer each in the changelog. |
 
-## Forced routing and the skill gate
+### Forced routing and the skill gate
 
 Routing is forced, not left to judgement. One map says which skill hands to which and every skill is
 in it: a brain's own skills in `docs/ROUTING.md`, the `brain-*` skills in `_meta/ROUTING-META.md`.
@@ -128,7 +218,7 @@ has run, a script until `brain-write-script` has, and so on; a brain adds rules 
 The refusal names the skill to invoke. A one-time waiver exists (`_meta/brain gate waive`), and only
 on the person's say-so. The gate is friction and visibility, not a security boundary.
 
-## Secrets, MCP servers, agents and the glossary
+### Secrets, MCP servers, agents and the glossary
 
 - **Secrets** live in `.env`, which git ignores and Claude is denied reading. A value can be the
   secret or a 1Password reference (`op://vault/item/field`, read with `op read` when needed). Names
@@ -145,7 +235,7 @@ on the person's say-so. The gate is friction and visibility, not a security boun
 - **Skill usage**: the gate logs every skill run to `.brain/skill-usage.log`, and
   `_meta/brain usage` shows which skills earn their place.
 
-## The privacy guard
+### The privacy guard
 
 A pre-commit hook, installed by `new`, `adopt` and `init`, blocks a commit that stages:
 
@@ -163,7 +253,7 @@ matches `_meta/MANIFEST.sha256`) is exempt from the private-term and deny-patter
 person cannot edit it and template text should not block every commit; credential shapes and file
 names are still checked, and an edited template file is scanned like any other.
 
-## Working on the template
+### Working on the template
 
 `CLAUDE.md` here is for sessions that work on the template. Run the tests before committing:
 

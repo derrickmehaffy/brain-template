@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="640" viewBox="0 0 1200 640" role="img" aria-labelledby="title desc">
+  <title id="title">Things to say to a brain</title>
+  <desc id="desc">Seven things to say, and what each one does. "What's in this brain, and is anything wrong with it?" explains the brain and runs the health check. "That's the second time we've done this. Make it a routine." writes a skill. "Remember what we just found out." records a checked fact. "That went wrong. Work out why." runs a retro and proposes one fix. "Keep that query as a script." writes a script. "Save this, and push it online." checks and commits, and pushes when you ask. "Update this brain from the template." brings in the latest template.</desc>
+  <style>
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .say { font-size: 17.5px; fill: #F6F1E6; }
+    .does { font-size: 18px; fill: #1E1D1A; }
+    .skill { font-size: 14.5px; fill: #8A8274; }
+    .bubble { fill: #1E1D1A; }
+    .arrow { stroke: #C9B79A; stroke-width: 2.5; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#DED3BD"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#C9B79A"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="640" rx="24" fill="#F6F1E6"/>
+  <rect width="1200" height="640" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="638" rx="23" fill="none" stroke="#E3D8C2" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#B5522B">THINGS TO SAY</text>
+  <text x="1156" y="56" class="sans" font-size="15" fill="#8A8274" text-anchor="end">in your own words: the routing map finds the skill</text>
+
+  <rect x="44" y="80" width="1112" height="524" rx="16" fill="#FFFCF6" stroke="#E3D8C2" stroke-width="2"/>
+
+  <g class="sans">
+    <!-- rows: bubble at x 68, arrow 680-720, result at 740 -->
+    <rect class="bubble" x="68" y="102" width="592" height="50" rx="14"/>
+    <text x="88" y="133" class="say">What's in this brain, and is anything wrong with it?</text>
+    <line class="arrow" x1="676" y1="127" x2="716" y2="127" marker-end="url(#arrow)"/>
+    <text x="736" y="124" class="does">Explains it and runs the health check</text>
+    <text x="736" y="146" class="mono skill">brain-setup · doctor</text>
+
+    <rect class="bubble" x="68" y="174" width="592" height="50" rx="14"/>
+    <text x="88" y="205" class="say">That's the second time we've done this. Make it a routine.</text>
+    <line class="arrow" x1="676" y1="199" x2="716" y2="199" marker-end="url(#arrow)"/>
+    <text x="736" y="196" class="does">Writes a skill, placed in the routing map</text>
+    <text x="736" y="218" class="mono skill">brain-write-skill</text>
+
+    <rect class="bubble" x="68" y="246" width="592" height="50" rx="14"/>
+    <text x="88" y="277" class="say">Remember what we just found out.</text>
+    <line class="arrow" x1="676" y1="271" x2="716" y2="271" marker-end="url(#arrow)"/>
+    <text x="736" y="268" class="does">Records the fact, with how to check it again</text>
+    <text x="736" y="290" class="mono skill">brain-write-practice</text>
+
+    <rect class="bubble" x="68" y="318" width="592" height="50" rx="14"/>
+    <text x="88" y="349" class="say">That went wrong. Work out why and stop it happening again.</text>
+    <line class="arrow" x1="676" y1="343" x2="716" y2="343" marker-end="url(#arrow)"/>
+    <text x="736" y="340" class="does">Logs it and proposes the one fix</text>
+    <text x="736" y="362" class="mono skill">brain-retro</text>
+
+    <rect class="bubble" x="68" y="390" width="592" height="50" rx="14"/>
+    <text x="88" y="421" class="say">Keep that query as a script.</text>
+    <line class="arrow" x1="676" y1="415" x2="716" y2="415" marker-end="url(#arrow)"/>
+    <text x="736" y="412" class="does">Writes a tested, read-only script</text>
+    <text x="736" y="434" class="mono skill">brain-write-script</text>
+
+    <rect class="bubble" x="68" y="462" width="592" height="50" rx="14"/>
+    <text x="88" y="493" class="say">Save this, and push it online.</text>
+    <line class="arrow" x1="676" y1="487" x2="716" y2="487" marker-end="url(#arrow)"/>
+    <text x="736" y="484" class="does">Checks, commits; pushes when you ask</text>
+    <text x="736" y="506" class="mono skill">brain-sync</text>
+
+    <rect class="bubble" x="68" y="534" width="592" height="50" rx="14"/>
+    <text x="88" y="565" class="say">Update this brain from the template.</text>
+    <line class="arrow" x1="676" y1="559" x2="716" y2="559" marker-end="url(#arrow)"/>
+    <text x="736" y="556" class="does">Brings in the template's latest, safely</text>
+    <text x="736" y="578" class="mono skill">brain-setup · update</text>
+  </g>
+</svg>

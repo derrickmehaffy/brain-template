@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="712" viewBox="0 0 1200 712" role="img" aria-labelledby="title desc">
+  <title id="title">What's inside a brain</title>
+  <desc id="desc">The folder of a brain called my-homelab. Yours: CLAUDE.md, where every session starts; README.md; your routines in .claude/skills/lab-*; docs/ROUTING.md, which skill runs when; docs/practices, facts you have checked; docs/GLOSSARY.md, your words; scripts, small helpers. From the template and kept up to date: the seven brain-* meta skills and _meta, the harness. Never saved in the brain: .env with keys and passwords, and your project repos and big files.</desc>
+  <style>
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .tree { font-size: 18px; fill: #1E1D1A; }
+    .branch { fill: #A89F8E; }
+    .note { font-size: 17.5px; fill: #57524A; }
+    .lead { stroke: #D8CCB4; stroke-width: 1.5; stroke-dasharray: 2 5; }
+    .tagtext { font-size: 13.5px; font-weight: 600; fill: #FFFCF6; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#DED3BD"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="712" rx="24" fill="#F6F1E6"/>
+  <rect width="1200" height="712" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="710" rx="23" fill="none" stroke="#E3D8C2" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#B5522B">WHAT'S INSIDE A BRAIN</text>
+
+  <!-- legend -->
+  <g class="sans">
+    <rect x="616" y="38" width="76" height="26" rx="13" fill="#2B7A74"/>
+    <text x="654" y="56" class="tagtext" text-anchor="middle">yours</text>
+    <rect x="704" y="38" width="200" height="26" rx="13" fill="#C9962E"/>
+    <text x="804" y="56" class="tagtext" text-anchor="middle">from the template</text>
+    <rect x="916" y="38" width="240" height="26" rx="13" fill="#B5522B"/>
+    <text x="1036" y="56" class="tagtext" text-anchor="middle">in the folder, never saved</text>
+  </g>
+
+  <rect x="44" y="88" width="1112" height="588" rx="16" fill="#FFFCF6" stroke="#E3D8C2" stroke-width="2"/>
+
+  <g class="mono tree">
+    <text x="76" y="136" font-weight="700">my-homelab/</text>
+    <text x="76" y="178"><tspan class="branch">├─ </tspan>CLAUDE.md</text>
+    <text x="76" y="220"><tspan class="branch">├─ </tspan>README.md</text>
+    <text x="76" y="262"><tspan class="branch">├─ </tspan>.claude/skills/</text>
+    <text x="76" y="304"><tspan class="branch">│  ├─ </tspan>lab-*/</text>
+    <text x="76" y="346"><tspan class="branch">│  └─ </tspan>brain-*/</text>
+    <text x="76" y="388"><tspan class="branch">├─ </tspan>docs/</text>
+    <text x="76" y="430"><tspan class="branch">│  ├─ </tspan>ROUTING.md</text>
+    <text x="76" y="472"><tspan class="branch">│  ├─ </tspan>practices/</text>
+    <text x="76" y="514"><tspan class="branch">│  └─ </tspan>GLOSSARY.md</text>
+    <text x="76" y="556"><tspan class="branch">├─ </tspan>scripts/</text>
+    <text x="76" y="598"><tspan class="branch">├─ </tspan>_meta/</text>
+    <text x="76" y="640"><tspan class="branch">└─ </tspan>.env · projects/ …</text>
+  </g>
+
+  <g>
+    <line class="lead" x1="218" y1="172" x2="460" y2="172"/>
+    <line class="lead" x1="218" y1="214" x2="460" y2="214"/>
+    <line class="lead" x1="218" y1="298" x2="460" y2="298"/>
+    <line class="lead" x1="239" y1="340" x2="460" y2="340"/>
+    <line class="lead" x1="261" y1="424" x2="460" y2="424"/>
+    <line class="lead" x1="261" y1="466" x2="460" y2="466"/>
+    <line class="lead" x1="272" y1="508" x2="460" y2="508"/>
+    <line class="lead" x1="207" y1="550" x2="460" y2="550"/>
+    <line class="lead" x1="185" y1="592" x2="460" y2="592"/>
+    <line class="lead" x1="315" y1="634" x2="460" y2="634"/>
+  </g>
+
+  <g class="sans note">
+    <text x="476" y="178">Where every session starts: how this brain works</text>
+    <text x="476" y="220">What the brain is for, and things to say to it</text>
+    <text x="476" y="304">Your routines, written the same way every time</text>
+    <text x="476" y="346">Seven meta skills that write, check and save the rest</text>
+    <text x="476" y="430">The routing map: which skill runs when</text>
+    <text x="476" y="472">Facts you have checked, with how to check them again</text>
+    <text x="476" y="514">Your words, what they mean here, and words to avoid</text>
+    <text x="476" y="556">Small helpers, read-only unless their name says not</text>
+    <text x="476" y="598">The harness: health check, gate, guard, update</text>
+    <text x="476" y="640" font-size="17">Keys, and your repos and big files: never committed</text>
+  </g>
+
+  <g class="sans">
+    <rect x="1058" y="160" width="76" height="26" rx="13" fill="#2B7A74"/><text x="1096" y="178" class="tagtext" text-anchor="middle">yours</text>
+    <rect x="1058" y="202" width="76" height="26" rx="13" fill="#2B7A74"/><text x="1096" y="220" class="tagtext" text-anchor="middle">yours</text>
+    <rect x="1058" y="286" width="76" height="26" rx="13" fill="#2B7A74"/><text x="1096" y="304" class="tagtext" text-anchor="middle">yours</text>
+    <rect x="1018" y="328" width="116" height="26" rx="13" fill="#C9962E"/><text x="1076" y="346" class="tagtext" text-anchor="middle">template</text>
+    <rect x="1058" y="412" width="76" height="26" rx="13" fill="#2B7A74"/><text x="1096" y="430" class="tagtext" text-anchor="middle">yours</text>
+    <rect x="1058" y="454" width="76" height="26" rx="13" fill="#2B7A74"/><text x="1096" y="472" class="tagtext" text-anchor="middle">yours</text>
+    <rect x="1058" y="496" width="76" height="26" rx="13" fill="#2B7A74"/><text x="1096" y="514" class="tagtext" text-anchor="middle">yours</text>
+    <rect x="1058" y="538" width="76" height="26" rx="13" fill="#2B7A74"/><text x="1096" y="556" class="tagtext" text-anchor="middle">yours</text>
+    <rect x="1018" y="580" width="116" height="26" rx="13" fill="#C9962E"/><text x="1076" y="598" class="tagtext" text-anchor="middle">template</text>
+    <rect x="1018" y="622" width="116" height="26" rx="13" fill="#B5522B"/><text x="1076" y="640" class="tagtext" text-anchor="middle">never saved</text>
+  </g>
+</svg>

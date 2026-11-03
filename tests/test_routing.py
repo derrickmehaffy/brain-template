@@ -132,6 +132,7 @@ class ParseTest(unittest.TestCase):
             "after a code block that opens a comment": f"{FENCE}html\n<!--\n{FENCE}\n" + good,
             "indented": "  " + good.replace("\n", "\n  ").rstrip(" "),
             "CRLF": good.replace("\n", "\r\n"),
+            "byte order mark": "\ufeff" + good,
         }
         for label, text in read.items():
             with self.subTest(label):

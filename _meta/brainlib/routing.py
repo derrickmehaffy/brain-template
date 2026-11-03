@@ -236,7 +236,7 @@ def parse(text: str, file: str, graph: Graph) -> None:
     fence: Optional[Tuple[int, bool]] = None  # (backticks that opened it, whether it is mermaid)
     in_comment = False
     section = ""
-    text = text[1:] if text.startswith("﻿") else text
+    text = text[1:] if text.startswith("\ufeff") else text
     for number, raw in enumerate(text.split("\n"), 1):  # not splitlines(): numbers must match an editor's
         raw = raw.rstrip("\r")
         if fence is not None:

@@ -190,6 +190,38 @@ class SmokeTest(TempDirCase):
         self.assertEqual(len(subjects), 1, subjects)
         self.assertTrue(subjects[0].startswith("meta(brain): initialise from template v"), subjects)
 
+    def test_init_keep_guides_leaves_the_guides_in_the_brain_indexed(self):
+        template = self.copy_template(with_local=False)
+        clone = self._new_dir("clone")
+        self.git(self.tmp, "clone", "-q", str(template), str(clone))
+        done = self.run_brain(clone, "init", "--name", "homelab", "--prefix", "lab", "--keep-guides")
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
+        tracked = self.git(clone, "ls-files").splitlines()
+        self.assertTrue(any(rel.startswith("docs/guides/") for rel in tracked), tracked)
+        self.assertTrue(any(rel.startswith("docs/images/") for rel in tracked), tracked)
+        self.assertFalse((clone / "docs" / "superpowers").exists())
+        doctor = self.run_brain(clone, "doctor")
+        self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
+        self.assertIn("ok     docs:", doctor.stdout)  # the kept folders are in docs/README.md
+
+    # -- several brains ---------------------------------------------------
+
+    def test_a_hub_hands_work_to_another_brain_and_that_brain_is_told(self):
+        hub = self.make_brain("hub", "hub")
+        homelab = self.make_brain()
+        added = self.run_brain(hub, "brains", "add", str(homelab))
+        self.assertEqual(added.returncode, 0, added.stdout + added.stderr)
+        sent = self.run_brain(hub, "brains", "handoff", "homelab", "--title", "Renew the certificates",
+                              "--body", "They expire on Friday.")
+        self.assertEqual(sent.returncode, 0, sent.stdout + sent.stderr)
+        self.assertIn("1 open hand-off", self.run_brain(hub, "brains", "list").stdout)
+
+        brief = self.run_brain(homelab, "doctor", "--brief")
+        self.assertIn("Renew the certificates", brief.stdout)
+        # the hand-off is the only change in the other brain, and it is left for that brain to commit
+        self.assertEqual(self.git(homelab, "status", "--porcelain").split(), ["M", "docs/INBOX.md"])
+
     # -- update -----------------------------------------------------------
 
     def test_update_brings_in_a_committed_change_to_a_shipped_skill(self):

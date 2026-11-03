@@ -90,8 +90,11 @@ only makes sense after reading the description is the wrong name. Rename only wi
   standing, and so a gate rule (gates.md) has a path to cover.
 - `lint` reads every `references/…` or `scripts/…` token in `SKILL.md` as a path that must exist,
   relative to the skill folder, then to the brain root. Write a placeholder (`references/<file>`,
-  `scripts/<system>/`) when you mean no particular file. Every file under `references/` must be
-  cited, or it is an ORPHAN: nothing would ever tell an agent to read it.
+  `scripts/<system>/`) when you mean no particular file, and a brain-root path that may not exist
+  yet (a script still to be written, a folder another brain lacks) as `./scripts/…`, which lint
+  leaves alone; otherwise one missing file makes `lint` BROKEN and blocks every commit. Cite only
+  `references/` files the skill ships. Every file under `references/` must be cited, or it is an
+  ORPHAN: nothing would ever tell an agent to read it.
 - `## Done when` holds conditions someone else could check, not "the work is good".
 
 A call line, for a skill that checks a config change before it is applied:

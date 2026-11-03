@@ -60,24 +60,24 @@ makes the first commit, adds the folder to `local/brains.txt` and prints `doctor
   brain (its `.gitignore` is an allowlist); pushing them is the person's call.
 - **Large folders** (assets, builds, datasets): not staged either.
 - **What is already here**, all kept: `CLAUDE.md` and `.gitignore` get the managed block above their
-  lines; `.env` stays and is ignored, with its key names only in `.env.example`; existing skills show
-  as GAPs in `lint` until `brain-write-skill` brings them in; a root `.git` keeps its history.
+  lines; `.env` stays and is ignored, with its key names only in `.env.example`; existing skills arrive
+  undrawn, as `lint` GAPs, which is fine: `brain-write-skill` draws them later; a root `.git` keeps its history.
 
-On a yes, run `adopt` without `--dry-run`. It writes the missing brain files and managed blocks,
-runs `git init` if needed, installs the hook, adds the folder to `local/brains.txt`, and stops
-before committing.
+On a yes, run `adopt` without `--dry-run`. It writes the missing brain files and managed blocks, runs
+`git init` if needed, installs the hook, adds the folder to `local/brains.txt`, and stops before committing.
 
 ## 4. Adopt: the staging list, then the first commit
 
 `adopt` prints what `git add -A` would stage (file count, total size, the largest files, any over
 `max_file_kb`), then any BLOCK or WARN lines: an embedded repo the allowlist lets through, a tracked
-`.env`, files the root repo already tracks. Go through it all with the person, and resolve every
-BLOCK or WARN line before the first commit: add `/<dir>/` below the managed block for an embedded
-repo, `git rm --cached` for a tracked `.env`. Anything private or not the brain's to keep, and a file
-over `max_file_kb` (the guard would refuse it), is left out with a line in `.gitignore` below the
-managed block, never moved or deleted; a big file may instead go in `privacy.large_file_allow`. A
-path inside a nested repo should never be listed: if one is, stop. `git -C "<dir>" add -A --dry-run`
-shows the list again. Only on a yes:
+`.env`, files the root repo already tracks. Before the first commit, show the person what would be
+staged by top folder (`git -C "<dir>" add -A --dry-run`), every file over `max_file_kb` (the guard
+refuses it), any folder that looks private (`private/`, `secret*`, a third-party dump), and any
+uncommitted changes already in the folder's repository (`git -C "<dir>" status --short`), which the
+commit would sweep in. Resolve each, and every BLOCK or WARN line, on their yes: an ignore line below
+the managed block (`/<dir>/` for an embedded repo; a big file may go in `privacy.large_file_allow`), or
+`git rm -r --cached <path>` to untrack it (a tracked `.env` too); never move or delete a file. A path
+inside a nested repo should never be listed: if one is, stop. Only on a yes:
 
 ```bash
 git -C "<dir>" add -A

@@ -121,12 +121,13 @@ def _quoted_value(value: str, block: List[str], start: int) -> Tuple[str, int]:
 def parse_frontmatter(text: str) -> Tuple[dict[str, str], str]:
     """Split `text` into its leading `---` frontmatter and the body that follows.
 
-    Reads `key: value` pairs. A value is plain text (kept raw, so `[a, b]` stays a string), a
+    Reads `key: value` pairs. A value is plain text (kept raw, so `[a, b]` stays a string) whose
+    indented continuation lines are folded in with spaces (a blank line becomes a newline), a
     quoted string that may continue onto the next lines until its closing quote, or a block
     scalar: `>` folds its indented lines into one with spaces, `|` keeps the newlines, `-`
     drops the final newline and `+` keeps trailing blank lines. Nothing else is read: nested
-    mappings, comments and a plain value's continuation lines are skipped. Quoted strings are
-    not unescaped. Without a closed block the whole text is the body.
+    mappings, lists and comments are skipped. Quoted strings are not unescaped. Without a
+    closed block the whole text is the body.
     """
     text = text[1:] if text.startswith("﻿") else text
     lines = text.split("\n")  # not splitlines(): a stray U+2028 in a value must not end the line
@@ -152,6 +153,12 @@ def parse_frontmatter(text: str) -> Tuple[dict[str, str], str]:
             elif value[:1] in ("'", '"'):
                 meta[key], n = _quoted_value(value, block, n)
             else:
+                run_end = _indented_run(block, n)
+                more = [line.strip(" \t") for line in block[n:run_end]]
+                first = next((line for line in more if line), "")
+                if value or not (_KEY_VALUE.match(first) or first == "-" or first.startswith("- ")):
+                    value = _fold([value] + more)  # a plain value runs on over its indented lines, as in YAML
+                    n = run_end
                 meta[key] = value
         return meta, "\n".join(lines[end + 1:])
     return {}, text

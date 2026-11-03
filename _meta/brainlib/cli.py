@@ -15,6 +15,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "env-sync": ("envsync", "add the key names .env.example lists to .env; never prints a value"),
     "gate": ("gate", "the skill gate: record, check, waive, status"),
     "hook": ("hook", "the pre-commit privacy guard: pre-commit, install, self-test"),
+    "init": ("cmd_init", "turn a copy of the template into a brain (a dry run with --dry-run)"),
     "lint": ("lint", "check skills and the routing map"),
     "new": ("cmd_new", "make a brain from this template checkout (a dry run with --dry-run)"),
     "practices": ("practices", "check, index and search the practices store"),

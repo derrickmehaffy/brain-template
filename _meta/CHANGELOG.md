@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.1 — 2026-11-03
+
+- `mods sync`, `mods new` and `mods link` refuse to act when a folder on the way (`mods/`, a mod's folder, its `hooks/`, `.claude/skills/`) is a link, so a mod copied from elsewhere cannot make them delete or write outside the brain. A `hooks/kit` that is itself a link is still replaced: only the link is removed.
+
 ## 0.4.0 — 2026-11-03
 
 - Setup offers a quick setup or an interview ("grill me"): the brain's goals, the work that recurs, where it lives, its systems (names of keys only), the people involved, its words and what must never happen. Each answer lands through the skill that owns it: `CLAUDE.md` sections, the glossary (`brain-write-practice`), systems (`brain-write-script`), unclassified rows (`brain-retro`), a first skill (`brain-write-skill`). `brain-setup` keeps the question bank in `references/interview.md`.

@@ -7,6 +7,7 @@ contains a space (see helpers.py). Anything more detailed belongs in a test of t
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import unittest
 
@@ -59,6 +60,12 @@ class SmokeTest(TempDirCase):
         self.assertEqual(skill_names(brain, "brain-"), shipped)
         self.assertEqual(skill_names(brain, "template-"), [])
         self.assertFalse((brain / "tests").exists())
+        tracked = self.git(brain, "ls-files").split()
+        self.assertIn(".mcp.json", tracked)
+        self.assertIn("docs/GLOSSARY.md", tracked)
+        brief = self.run_brain(brain, "doctor", "--brief")
+        self.assertEqual(brief.returncode, 0, brief.stdout + brief.stderr)
+        self.assertNotIn("ok ", brief.stdout)  # only what needs attention
 
     def test_new_dry_run_writes_nothing(self):
         template = self.copy_template()
@@ -80,6 +87,8 @@ class SmokeTest(TempDirCase):
         self.assertEqual((recorded.returncode, recorded.stdout, recorded.stderr), (0, "", ""))
         allowed = self.check_write(brain, target)
         self.assertEqual((allowed.returncode, allowed.stdout, allowed.stderr), (0, "", ""))
+        usage = self.run_brain(brain, "usage")
+        self.assertRegex(usage.stdout, r"brain-write-skill\s+1\s+last ")
 
     def test_hook_self_test_passes(self):
         brain = self.make_brain()
@@ -106,6 +115,25 @@ class SmokeTest(TempDirCase):
         self.assertIn("BLOCK  env-file: .env", refused.stdout + refused.stderr)
         self.assertNotIn(ENV_VALUE, refused.stdout + refused.stderr)
         self.assertEqual(self.git(brain, "rev-parse", "HEAD"), before)
+
+    def test_secret_run_hands_values_to_the_command_and_prints_none(self):
+        brain = self.make_brain()
+        (brain / ".env").write_text(f"LAB_PLAIN={ENV_VALUE}\nLAB_REF=op://vault/item/field\n", encoding="utf-8")
+        tools = self.tmp / "fake tools"
+        tools.mkdir()
+        op = tools / "op"  # stands in for 1Password's CLI
+        op.write_text('#!/bin/sh\n[ "$3" = "op://vault/item/field" ] && printf "%s" "from-op-' + "7" * 8 + '"\n',
+                      encoding="utf-8")
+        op.chmod(0o755)
+        self.env = {**self.env, "PATH": f"{tools}{os.pathsep}{self.env.get('PATH', '')}"}
+        child = ("import os, sys; ok = os.environ['LAB_PLAIN'] == sys.argv[1] and "
+                 "os.environ['LAB_REF'] == 'from-op-' + '7' * 8; print('match' if ok else 'differ')")
+        ran = self.run_brain(brain, "secret", "run", "LAB_PLAIN,LAB_REF", "python3", "-c", child, ENV_VALUE)
+        self.assertEqual((ran.returncode, ran.stdout.strip()), (0, "match"), ran.stderr)
+        missing = self.run_brain(brain, "secret", "run", "LAB_ABSENT", "true")
+        self.assertEqual(missing.returncode, 1)
+        self.assertIn("LAB_ABSENT is not set", missing.stderr)
+        self.assertNotIn(ENV_VALUE, missing.stdout + missing.stderr)
 
     # -- adopt ------------------------------------------------------------
 

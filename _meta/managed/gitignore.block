@@ -1,0 +1,17 @@
+/*
+!/.gitignore
+!/brain.json
+!/CLAUDE.md
+!/README.md
+!/.env.example
+!/.claude/
+!/_meta/
+!/docs/
+!/scripts/
+.env
+.env.*
+!.env.example
+/.claude/settings.local.json
+__pycache__/
+*.pyc
+.DS_Store

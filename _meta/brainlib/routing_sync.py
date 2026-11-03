@@ -349,6 +349,14 @@ def _update(root: Path, rel: str, transform: Callable[[str], str], check: bool,
     return True
 
 
+def _has_block(path: Path) -> bool:
+    """Whether the file holds a generated begin marker; True when it cannot be read, so it is still looked at."""
+    try:
+        return BEGIN in path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return True
+
+
 class SyncRefused(Exception):
     """`sync` could not look at, or could not write, something, and the caller gave no `problems` list to
     collect that in. `findings` are the BROKEN findings (the same ones the command prints), `changed` the paths
@@ -403,6 +411,8 @@ def _sync(root: Path, cfg: Config, check: bool) -> Tuple[List[str], List[Finding
     for skill in owned_skills(cfg, list_skills(root)):
         view, view_rules, (up, down) = shipped if skill.name.startswith(SHIPPED_PREFIX) else own
         node = view.nodes.get(skill.name)
+        if check and node is None and skill.name not in view.not_drawn and not _has_block(skill.path):
+            continue  # drawn nowhere and never synced (an adopted skill): lint reports it as a GAP, not this
         block = render_block(skill.name, up.get(skill.name, set()), down.get(skill.name, set()),
                              node is not None and node.cls == "gate", _reserved(view_rules, skill.name),
                              view.not_drawn.get(skill.name), node is not None)

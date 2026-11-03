@@ -175,6 +175,10 @@ _ANSI_ESCAPES = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n":
                  "v": "\v", "\\": "\\", "'": "'", '"': '"', "?": "?"}
 _ANSI_WIDTH = {"x": 2, "u": 4, "U": 8}
 MAX_EXPANSIONS = 128  # alternatives one word may brace-expand to
+MAX_BRACE_WORD = 4096  # a longer word, or one with more than MAX_BRACE_GROUPS braces, is taken literally
+MAX_BRACE_GROUPS = 64
+MAX_NESTING = 32  # `$(` inside `$(`: deeper than this is read as plain text
+MAX_HEREDOCS = 64  # here-documents opened on one line
 MAX_MATCHES = 256  # names one glob may expand to
 GLOB_SECONDS = 0.25  # how long one glob may spend looking
 
@@ -184,11 +188,13 @@ class _Word(str):
     quoted, escaped or decoded (so no brace or glob meaning), "0" where bash would read it as syntax."""
 
     mask: str = ""
+    subs: Tuple = ()  # the commands inside the `$(...)` and `<(...)` the word holds, as token lists
 
 
-def _word(chars: List[str], flags: List[str]) -> _Word:
+def _word(chars: List[str], flags: List[str], subs: Optional[List[Any]] = None) -> _Word:
     word = _Word("".join(chars))
     word.mask = "".join(flags)
+    word.subs = tuple(subs or ())
     return word
 
 
@@ -231,45 +237,68 @@ def _ansi_c(command: str, i: int) -> Tuple[str, int]:
 def _skip_heredoc(command: str, start: int, delimiter: str, strip_tabs: bool) -> int:
     """The index after the body of a here-document that starts at `start`; `start` itself when its closing
     line is missing, so a stray `<<` hides nothing."""
+    closing = re.compile(("^\t*" if strip_tabs else "^") + re.escape(delimiter) + "\r?$", re.MULTILINE)
+    found = closing.search(command, start)
+    return start if found is None else min(found.end() + 1, len(command))
+
+
+Token = Tuple[str, bool, bool]  # (text, is_operator, attached)
+
+
+def _skip_group(command: str, start: int, opener: str, closer: str, depth: int) -> int:
+    """The index after the `closer` that brings `depth` open groups to none, scanning from `start`."""
     n = len(command)
-    position = start
-    while position < n:
-        end = command.find("\n", position)
-        end = n if end < 0 else end
-        line = command[position:end].rstrip("\r")
-        if (line.lstrip("\t") if strip_tabs else line) == delimiter:
-            return min(end + 1, n)
-        position = end + 1
-    return start
+    while start < n:
+        if command[start] == opener:
+            depth += 1
+        elif command[start] == closer:
+            depth -= 1
+            if depth == 0:
+                return start + 1
+        start += 1
+    return n
 
 
-def _tokens(command: str) -> List[Tuple[str, bool, bool]]:
-    """(text, is_operator, attached) for each shell word and operator of `command`.
+def _scan(command: str, i: int, depth: int = 0) -> Tuple[List[Token], int]:
+    """(tokens, index after them) for the shell text from `command[i]`.
+
+    A call with `depth` above 0 reads the inside of a `$(...)` or `<(...)` and stops after its closing
+    parenthesis; each substitution is scanned by such a call, with its own quotes, comments and
+    here-documents, whether it stands in a command or inside double quotes, and hangs on the word it
+    belongs to (`_Word.subs`).
 
     Quotes and backslashes are resolved, so a quoted `>` is a word and not a redirection; `$'...'` is
-    decoded and `$"..."` is a double-quoted string; a comment (a `#` that starts a word, outside backticks,
-    `$(...)` and `${...}`) runs to the end of its line; the body of a here-document is skipped; a newline
-    ends a command; a quote left open runs to the end of the text (the shell would refuse to run it). Words
-    are `_Word`s that remember which letters were quoted. `attached` is true for an operator that touches
-    the word before it (`2>&1`).
+    decoded and `$"..."` is a double-quoted string; a comment (a `#` that starts a word, outside `${...}`;
+    inside backticks it ends at the closing backtick) runs to the end of its line; the body of a
+    here-document is skipped; arithmetic (`$((...))`, `((...))`, `$[...]`) is skipped, so a `<<` in it is a
+    shift; a newline ends a command; a quote left open runs to the end of the text (the shell would refuse
+    to run it). Words are `_Word`s that remember which letters were quoted. `attached` is true for an
+    operator that touches the word before it (`2>&1`).
     """
-    tokens: List[Tuple[str, bool, bool]] = []
+    nested = depth > 0
+    tokens: List[Token] = []
     word: List[str] = []
     flags: List[str] = []
+    subs: List[Any] = []
     in_word = False
-    ticks = subst = param = 0  # open backticks (0 or 1), `$(` depth, `${` depth
+    ticks = param = paren = 0  # open backticks (0 or 1), `${` depth, plain `(` depth
     heredoc: Optional[bool] = None  # a `<<` is waiting for its delimiter; True when it is `<<-`
     waiting: List[Tuple[str, bool]] = []  # here-documents whose bodies start after this line
-    i, n = 0, len(command)
+    n = len(command)
 
     def end_word() -> None:
-        nonlocal word, flags, in_word, heredoc
-        text = _word(word, flags)
+        nonlocal word, flags, subs, in_word, heredoc
+        text = _word(word, flags, subs)
         tokens.append((text, False, False))
         if heredoc is not None:
-            waiting.append((str(text), heredoc))
+            if len(waiting) < MAX_HEREDOCS:
+                waiting.append((str(text), heredoc))
             heredoc = None
-        word, flags, in_word = [], [], False
+        word, flags, subs, in_word = [], [], [], False
+
+    def command_position() -> bool:
+        """True where a command may start: after an operator, a reserved word, or `for`."""
+        return not tokens or tokens[-1][1] or str(tokens[-1][0]) in _RESERVED or str(tokens[-1][0]) == "for"
 
     while i < n:
         char = command[i]
@@ -283,22 +312,34 @@ def _tokens(command: str) -> List[Tuple[str, bool, bool]]:
                 for delimiter, strip_tabs in waiting:
                     i = _skip_heredoc(command, i, delimiter, strip_tabs)
                 waiting = []
-            elif char in " \t\r":
+                continue
+            if char in " \t\r":
                 i += 1
-            else:
-                operator = _OPERATOR.match(command, i).group()
-                tokens.append((operator, True, attached))
-                if operator in ("<<", "<<-"):
-                    heredoc = operator == "<<-"
-                elif operator == "`":
-                    ticks ^= 1
-                elif operator == "(" and (subst or command[i - 1:i] == "$"):
-                    subst += 1
-                elif operator == ")" and subst:
-                    subst -= 1
-                i += len(operator)
-        elif char == "#" and not in_word and not (ticks or subst or param):
-            while i < n and command[i] != "\n":  # the newline itself still ends the command
+                continue
+            operator = _OPERATOR.match(command, i).group()
+            heredoc = (operator == "<<-") if operator in ("<<", "<<-") else None
+            if operator in (">", "<") and command.startswith("(", i + 1) and depth < MAX_NESTING:
+                inner, i = _scan(command, i + 2, depth + 1)  # `>(cmd)`: a word standing for a pipe
+                word, flags, subs, in_word = list(operator + "()"), ["1"] * 3, [inner], True
+                continue
+            if operator == "`":
+                ticks ^= 1
+            elif operator == "(":
+                if command.startswith("((", i) and command_position():  # `(( a << 1 ))`: arithmetic
+                    i = _skip_group(command, i + 2, "(", ")", 2)
+                    tokens.append((_word(list("(())"), ["1"] * 4), False, False))
+                    continue
+                paren += 1
+            elif operator == ")":
+                if paren:
+                    paren -= 1
+                elif nested:
+                    return tokens, i + 1
+            tokens.append((operator, True, attached))
+            i += len(operator)
+        elif char == "#" and not in_word and not param:
+            stop = "\n`" if ticks else "\n"
+            while i < n and command[i] not in stop:  # the newline (or backtick) itself still counts
                 i += 1
         elif char == "\\":
             if i + 1 < n and command[i + 1] != "\n":  # a backslash before a newline joins the lines
@@ -313,6 +354,18 @@ def _tokens(command: str) -> List[Tuple[str, bool, bool]]:
             in_word = True
         elif char == "$" and command.startswith('$"', i):
             i += 1  # `$"..."` is a double-quoted string, translated if there is a catalogue
+        elif char == "$" and (command.startswith("$((", i) or command.startswith("$[", i)):
+            arithmetic = command.startswith("$((", i)
+            i = _skip_group(command, i + 3, "(", ")", 2) if arithmetic else _skip_group(command, i + 2, "[", "]", 1)
+            word.extend("$(())")
+            flags.extend("11111")
+            in_word = True
+        elif char == "$" and command.startswith("$(", i) and depth < MAX_NESTING:
+            inner, i = _scan(command, i + 2, depth + 1)
+            subs.append(inner)
+            word.extend("$()")
+            flags.extend("111")
+            in_word = True
         elif char == "'":
             end = command.find("'", i + 1)
             end = n if end < 0 else end
@@ -329,6 +382,15 @@ def _tokens(command: str) -> List[Tuple[str, bool, bool]]:
                         word.append(command[i + 1])
                         flags.append("1")
                     i += 2
+                elif command.startswith("$((", i):
+                    i = _skip_group(command, i + 3, "(", ")", 2)
+                    word.extend("$(())")
+                    flags.extend("11111")
+                elif command.startswith("$(", i) and depth < MAX_NESTING:
+                    inner, i = _scan(command, i + 2, depth + 1)  # its own quotes, comments, here-documents
+                    subs.append(inner)
+                    word.extend("$()")
+                    flags.extend("111")
                 else:
                     word.append(command[i])
                     flags.append("1")
@@ -345,12 +407,18 @@ def _tokens(command: str) -> List[Tuple[str, bool, bool]]:
             i += 1
     if in_word:
         end_word()
-    return tokens
+    return tokens, n
+
+
+def _tokens(command: str) -> List[Token]:
+    return _scan(command, 0)[0]
 
 
 def _brace_expand(word: str) -> List[str]:
     """`word` with its simple `{a,b}` groups expanded, as bash does before it opens a file. Quoted or
     escaped braces and `${` are left alone; the number of results is capped."""
+    if len(word) > MAX_BRACE_WORD or word.count("{") > MAX_BRACE_GROUPS:
+        return [word]
     mask = getattr(word, "mask", "0" * len(word))
     for start, char in enumerate(word):
         if char != "{" or mask[start] != "0" or (start and word[start - 1] == "$"):
@@ -531,7 +599,7 @@ def _bash_targets(command: str) -> List[_Target]:
     found: List[_Target] = []
 
     def add(target: _Target) -> None:
-        if not target.word:
+        if not target.word or target.word in ("<()", ">()"):  # a process substitution is an argument, not a file
             return
         for position, known in enumerate(found):
             if known.word == target.word:
@@ -540,33 +608,41 @@ def _bash_targets(command: str) -> List[_Target]:
                 return
         found.append(target)
 
-    words: List[str] = []
-    tokens = _tokens(command)
-    i = 0
-    while i < len(tokens):
-        text, operator, attached = tokens[i]
-        i += 1
-        if not operator:
-            words.extend(_brace_expand(text))  # before cp and mv pick their operands: `cp a{,.bak}`
-            continue
-        if attached and text[0] in "<>" and words and words[-1].isdigit():
-            words.pop()  # `2>&1`, `2>/dev/null`: the digits name a file descriptor, not an operand
-        following = tokens[i][0] if i < len(tokens) and not tokens[i][1] else None  # the next word, if any
-        if text.startswith((">", "&>")):  # an output redirection takes the next word
-            if following is not None:
-                i += 1
-                if not (text.startswith(">&") and (following.isdigit() or following == "-")):
-                    for alternative in _brace_expand(following):  # (`2>&1` copies a descriptor; it writes no file)
-                        add(_Target(alternative))
-        elif text.startswith("<"):
-            if following is not None:
-                i += 1  # an input redirection or a here-document marker, not a word of the command
-        else:  # ; && || | & ( ) `: the command ends here
-            for target in _command_targets(words):
-                add(target)
-            words = []
-    for target in _command_targets(words):
-        add(target)
+    def collect(tokens: List[Token]) -> None:
+        words: List[str] = []
+        i = 0
+        while i < len(tokens):
+            text, operator, attached = tokens[i]
+            i += 1
+            if not operator:
+                for inner in getattr(text, "subs", ()):  # what runs to make this word comes first
+                    collect(inner)
+                words.extend(_brace_expand(text))  # before cp and mv pick their operands: `cp a{,.bak}`
+                continue
+            if attached and text[0] in "<>" and words and words[-1].isdigit():
+                words.pop()  # `2>&1`, `2>/dev/null`: the digits name a file descriptor, not an operand
+            following = tokens[i][0] if i < len(tokens) and not tokens[i][1] else None  # the next word, if any
+            if text.startswith((">", "&>")):  # an output redirection takes the next word
+                if following is not None:
+                    i += 1
+                    for inner in getattr(following, "subs", ()):
+                        collect(inner)
+                    if not (text.startswith(">&") and (following.isdigit() or following == "-")):
+                        for alternative in _brace_expand(following):  # (`2>&1` copies a descriptor)
+                            add(_Target(alternative))
+            elif text.startswith("<"):
+                if following is not None:
+                    i += 1  # an input redirection or a here-document marker, not a word of the command
+                    for inner in getattr(following, "subs", ()):
+                        collect(inner)
+            else:  # ; && || | & ( ) `: the command ends here
+                for target in _command_targets(words):
+                    add(target)
+                words = []
+        for target in _command_targets(words):
+            add(target)
+
+    collect(_tokens(command))
     return found
 
 

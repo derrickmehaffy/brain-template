@@ -310,8 +310,32 @@ class SkillGateTest(GateCase):
             # A # inside backticks, $(...) or ${...} is not a comment.
             ("echo `true #` > docs/ROUTING.md", "docs/ROUTING.md"),
             ("v=`git describe #tag`; echo $v > docs/ROUTING.md", "docs/ROUTING.md"),
-            ("echo $(true #) > docs/ROUTING.md", "docs/ROUTING.md"),
             ("echo ${x:- #} > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("v=`git describe # don't fail`; echo $v > docs/ROUTING.md", "docs/ROUTING.md"),
+            # Inside $(...) a # that starts a word IS a comment, as in bash: quotes and parentheses in it mean nothing.
+            ("n=$(\n  grep -c x docs/a.md  # it's a count\n)\necho $n >> docs/RETRO-LOG.md", "docs/RETRO-LOG.md"),
+            ("v=$(git describe --tags # don't fail on untagged\n)\necho \"$v\" > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("v=$(git log -1  # last commit (for the record\n)\n# don't touch it\necho \"$v\" > docs/ROUTING.md",
+             "docs/ROUTING.md"),
+            # A here-document inside "$(...)" is parsed as one, whatever quotes its body holds.
+            ("git commit -m \"$(cat <<'EOF'\nFix the \"user's\" path\nEOF\n)\" && cp a scripts/x.py", "scripts/x.py"),
+            ("git commit -m \"$(cat <<'EOF'\nline > one\n--> two\n# three (\nEOF\n)\"\ncp a scripts/x.py", "scripts/x.py"),
+            ("git commit -m \"$(cat <<EOF\nit's\nEOF\n)\" ; echo x > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("echo \"a $(cat <<'E'\n\"\nE\n) b\" > docs/ROUTING.md", "docs/ROUTING.md"),
+            # Commands inside a substitution run, quoted or not, and the word around it is still an operand.
+            ('echo "$(cp a scripts/x.py)"', "scripts/x.py"),
+            ("echo $(cp a scripts/x.py)", "scripts/x.py"),
+            ('cp a "$(date)" docs/ROUTING.md', "docs/ROUTING.md"),
+            ("cp $(echo a) docs/ROUTING.md", "docs/ROUTING.md"),
+            ("tee >(cat) scripts/x.py", "scripts/x.py"),
+            ("cat <(echo a) > docs/ROUTING.md", "docs/ROUTING.md"),
+            # << inside arithmetic is a shift, not a here-document.
+            ("x=$((1<<2))\ncp a scripts/x.py", "scripts/x.py"),
+            ("(( y = 1 << 3 ))\necho x > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("for ((i=0; i<3; i++)); do echo x >> docs/RETRO-LOG.md; done", "docs/RETRO-LOG.md"),
+            ("echo $[1<<2]\ncp a scripts/x.py", "scripts/x.py"),
+            ("echo $(( 1 << 2 )) $((3 << 4)) > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("while (( n << 1 )); do cp a scripts/x.py; done", "scripts/x.py"),
             ("echo $((1 + 2)) # it's\ncp a scripts/x.py", "scripts/x.py"),  # balanced, so the comment is a comment
             # One target that cannot be resolved does not hide the others.
             ("echo x > $'\\uD800'; echo x > docs/ROUTING.md", "docs/ROUTING.md"),
@@ -444,7 +468,14 @@ class SkillGateTest(GateCase):
                         "cat docs/ROUTING.md 2>&1", "cp docs/ROUTING.md /tmp/out 2>&1",
                         "if true; then echo hi; fi", "for f in a; do echo $f; done", "{ echo hi; }", "echo done fi then",
                         "while read x; do echo $x; done < docs/ROUTING.md", "cp docs/ROUTING.md{.bak,} /tmp/",
-                        "echo `true #` | cat", "echo $(true #)", "cat <<EOF\ncp a scripts/x.py\nEOF"):
+                        "echo `true #` | cat", "cat <<EOF\ncp a scripts/x.py\nEOF",
+                        # the commit idiom, with a body of every awkward kind, writes no ruled file
+                        "git commit -m \"$(cat <<'EOF'\nFix the \"user's\" path\nEOF\n)\"",
+                        "git commit -m \"$(cat <<'EOF'\nUpdate docs/ROUTING.md > scripts/x.py\n--> arrows # and (\nEOF\n)\"",
+                        "git commit -m \"$(cat <<'EOF'\ncp a scripts/x.py\necho x > docs/ROUTING.md\nEOF\n)\" && git status",
+                        "v=$(cat <<EOF\nit's\nEOF\n)\necho \"$v\"", "x=$((1<<2))", "(( y = 1 << 3 ))\necho $y",
+                        "echo $[1<<2]", "n=$(grep -c x docs/a.md  # it's a count\n)\necho $n", "cat <(echo a)",
+                        "echo \"$(date)\" docs/ROUTING.md"):
             with self.subTest(command=command):
                 self.assert_silent(self.bash(root, command))
 
@@ -1072,8 +1103,27 @@ class GateFunctionsTest(GateCase):
             ("cat <<-\"EOF\" > f.md\n\t\tbody\n\tEOF\ncp a g.md", ["f.md", "g.md"]),
             ("echo `true #` > a.md", ["a.md"]),
             ("v=`git describe #tag`; echo $v > a.md", ["a.md"]),
-            ("echo $(true #) > a.md", ["a.md"]),
             ("echo ${x:- #} > a.md", ["a.md"]),
+            ("v=`git describe # don't fail`; echo $v > a.md", ["a.md"]),
+            ("n=$(\n  grep -c x docs/a.md  # it's a count\n)\necho $n >> b.md", ["b.md"]),
+            ("v=$(git log -1  # last commit (for the record\n)\n# don't touch it\necho $v > c.md", ["c.md"]),
+            ("echo $(true #) > a.md", []),  # the comment swallows the ")": bash cannot parse this either
+            ("git commit -m \"$(cat <<'EOF'\nFix the \"user's\" path\nEOF\n)\" && cp a b.md", ["b.md"]),
+            ("git commit -m \"$(cat <<'EOF'\nFix the \"user's\" path > x\nEOF\n)\"", []),
+            ("echo \"$(cp a b.md; echo hi > c.md)\" > d.md", ["b.md", "c.md", "d.md"]),
+            ("echo $(echo $(cp a b.md))", ["b.md"]),
+            ("cp a \"$(date)\" docs/b.md", ["docs/b.md"]),
+            ("cp $(echo a) docs/b.md", ["docs/b.md"]),
+            ("x=$(cp a b.md) && cp c d.md", ["b.md", "d.md"]),
+            ("tee >(cat > a.md) b.md", ["a.md", "b.md"]),  # >(..) is an argument, not a file
+            ("cat <(echo a) <(echo b) > c.md", ["c.md"]),
+            ("x=$((1<<2))\ncp a b.md", ["b.md"]),
+            ("(( y = 1 << 3 ))\necho x > a.md", ["a.md"]),
+            ("echo $((1 + (2 * 3))) > a.md", ["a.md"]),
+            ("echo $[1<<2] > a.md", ["a.md"]),
+            ("for ((i=0; i<3; i++)); do cp a b.md; done", ["b.md"]),
+            ("cat << > a.md", ["a.md"]),  # no delimiter word: no here-document
+            ("cat <<EOF > a.md\nx\nEOF", ["a.md"]),
             ("echo $((1 + 2)) # it's\ncp a b.md", ["b.md"]),
             ("(true # it's\n) > a.md", ["a.md"]),  # in a plain subshell it is a comment
             # reserved words
@@ -1096,6 +1146,32 @@ class GateFunctionsTest(GateCase):
         for command, expected in cases:
             with self.subTest(command=command):
                 self.assertEqual(gate.bash_targets(command), expected)
+
+    def test_huge_or_deeply_nested_commands_are_cheap(self):
+        # A hook that runs long fails open (the tool call times out), so pathological words must stay cheap.
+        import time
+        cases = {
+            "20k open braces": "echo x > " + "{" * 20000,
+            "20k groups": "echo x > " + "{a,b}" * 20000,
+            "65 groups": "echo x > " + "{a,b}" * 65,
+            "64 groups": "echo x > " + "{a,b}" * 64,
+            "long word": "echo x > " + "a" * 200000,
+            "deep $(": "echo " + "$(" * 5000 + "cp a b.md" + ")" * 5000,
+            "deep (": "(" * 5000 + "cp a b.md" + ")" * 5000,
+            "deep ${": "echo " + "${" * 5000 + " > a.md",
+            "many heredocs": "cat <<E" * 3000 + "\nE\n" * 3000,
+        }
+        for label, command in cases.items():
+            with self.subTest(label=label):
+                started = time.monotonic()
+                found = gate.bash_targets(command)
+                self.assertLess(time.monotonic() - started, 2.0)
+                self.assertLessEqual(len(found), 256)
+        self.assertEqual(gate.bash_targets("echo x > " + "{" * 5000), ["{" * 5000])  # over the limit: taken literally
+        self.assertEqual(gate.bash_targets("echo x > " + "{a,b}" * 65), ["{a,b}" * 65])
+        self.assertEqual(len(gate.bash_targets("echo x > " + "{a,b}" * 64)), 128)  # at the limit: expanded, capped
+        self.assertEqual(gate.bash_targets("echo x > {" + "a" * 5000 + ",b}"), ["{" + "a" * 5000 + ",b}"])
+        self.assertEqual(gate.bash_targets("cp a b.md; echo " + "$(" * 40 + ")" * 40), ["b.md"])  # deeper than the limit
 
     def test_targets_resolve_inside_the_brain(self):
         root = self.fake_brain()

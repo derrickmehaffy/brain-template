@@ -149,10 +149,27 @@ last refusal. Use it when a refusal is a surprise: the skill most often ran in a
 - **Not a review.** It knows that a skill ran in this session, not that its steps were followed or
   that the output is right. The checks and a real run cover that.
 - **Not complete.** It sees Write and Edit, and the usual shell writes: redirections, `tee`, `cp`,
-  `mv`, `sed -i`. It does not see a target held in a variable, a command run through `bash -c`, or
-  a script or program that opens the file itself.
+  `mv`, `sed -i`. Known gaps, where a write to a ruled path goes through unseen:
+  - a target held in a variable or a substitution (`$VAR`, `${...}`, `$(...)`), since the gate reads
+    the command's text and never runs it;
+  - a command passed as a string to `bash -c` or `eval`;
+  - a program that opens the file itself: python, `perl -pi`, `sed` run from a script;
+  - any other program that writes a file is not recognised (for example `dd of=`, `rsync`,
+    `curl -o`, `patch`, `truncate`, `touch`, `install`, `xargs`, `find -exec`, `git checkout --`,
+    `sh -c`): only the writers named above are;
+  - `cd X && ...`: the gate does not follow the `cd`, so a relative target is read against the
+    folder the session started in;
+  - `exec 3<> file`, which opens the file for writing on a descriptor;
+  - a backtick substitution inside double quotes;
+  - case-insensitive filesystems: a rule's path matches case-sensitively, so `Docs/Practices/x.md`
+    is not `docs/practices/x.md` to the gate while the disk treats them as one;
+  - run-state forgery: which skills ran is kept in `$XDG_RUNTIME_DIR/brain-gate` when that is a
+    folder the person owns, else in the OS temporary folder, and a shell can write there.
+
+  One case is the opposite of a gap: a command nested more than 32 levels deep (`$(` inside `$(`
+  and so on) cannot be read, so the gate refuses it outright.
 - **Only for sessions started at the brain root**, where `.claude/settings.json` is read.
-- **Per session.** Runs are kept in the OS temporary folder against the session id; a new session
-  has run nothing.
+- **Per session.** Runs are kept in that state folder against the session id; a new session has run
+  nothing.
 - **Open on its own failure.** If the gate itself errors, the write goes through with a visible
   warning instead of blocking every tool call.

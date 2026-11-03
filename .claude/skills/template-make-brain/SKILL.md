@@ -37,8 +37,7 @@ files → `adopt`; holding a `brain.json` → a brain already, which `brain-setu
 4. **anything that must never be committed**, one pattern each (private hostnames, unreleased
    project names), kept in the brain's ignored `.brain-private`: never in a tracked file or commit.
 
-The rest takes the defaults in `brain.json`. Only when its scripts need packages beyond the standard
-library: `--python <interpreter> --packages allowed`.
+The rest takes the defaults in `brain.json`; scripts that need packages add `--python <interpreter> --packages allowed`.
 
 ## 2. The dry run, shown before anything is written
 
@@ -70,12 +69,15 @@ before committing.
 
 ## 4. Adopt: the staging list, then the first commit
 
-`adopt` prints what `git add -A` would stage: file count, total size, the largest files, any over
-`max_file_kb`. Go through it with the person. Anything private or not the brain's to keep is left
-out with a line in `.gitignore` below the managed block, never moved or deleted. A file over
-`max_file_kb`, which the guard would refuse, is left out the same way, or the person lists it in
-`brain.json` `privacy.large_file_allow`. A path inside a nested repo should never be listed: if one
-is, stop and say so. `git -C "<dir>" add -A --dry-run` shows the list again. Only on a yes:
+`adopt` prints what `git add -A` would stage (file count, total size, the largest files, any over
+`max_file_kb`), then any BLOCK or WARN lines: an embedded repo the allowlist lets through, a tracked
+`.env`, files the root repo already tracks. Go through it all with the person, and resolve every
+BLOCK or WARN line before the first commit: add `/<dir>/` below the managed block for an embedded
+repo, `git rm --cached` for a tracked `.env`. Anything private or not the brain's to keep, and a file
+over `max_file_kb` (the guard would refuse it), is left out with a line in `.gitignore` below the
+managed block, never moved or deleted; a big file may instead go in `privacy.large_file_allow`. A
+path inside a nested repo should never be listed: if one is, stop. `git -C "<dir>" add -A --dry-run`
+shows the list again. Only on a yes:
 
 ```bash
 git -C "<dir>" add -A
@@ -95,18 +97,18 @@ yes and leave it uncommitted, for the first session in the brain to commit throu
 
 ## 6. Hand over
 
-Name the folder to open a session in: the brain root. Claude Code reads `.claude/settings.json` only
-from the folder a session starts in, so a session started inside a nested project repo misses the
-skill gate and the `.env` deny and may not see the brain's skills; `claude --add-dir "<dir>"` brings
-in the skills only. Nothing more is done to the brain from here.
+Name the folder to open a session in: the brain root. `.claude/settings.json` is read only from the
+folder a session starts in, so a session started inside a nested project repo misses the skill gate
+and the `.env` deny and may not see the brain's skills; `claude --add-dir "<dir>"` brings in the
+skills only.
 
 ## Done when
 
 - The person answered the four questions and saw the dry run before anything was written.
 - `new`: the brain has its first commit, and `doctor` shows no BLOCK.
 - `adopt`: the inventory was read out, naming each nested repo with no remote or unpushed commits as
-  work they would lose; the staging list was reviewed; the first commit, with the subject above, was
-  made on a yes; `doctor` shows no BLOCK; a folder map is drafted, or the person declined one.
+  work they would lose; the staging list was reviewed and each BLOCK or WARN line under it resolved;
+  the first commit was made on a yes; `doctor` shows no BLOCK; a folder map is drafted or declined.
 - No file already in the folder was moved, renamed, overwritten or deleted, and no private pattern
   reached a tracked file.
 - The person knows the folder to open a session in, and what `--add-dir` does and does not bring.

@@ -84,7 +84,7 @@ open-source plugin maintainer brain (a few plugin repos plus test apps), and a h
 | **Template-owned** | In a brain: `_meta/**`, `.claude/skills/brain-*/**`, and the managed block in `CLAUDE.md` and `.gitignore`. Overwritten by updates. Never edited inside a brain; a change one needs becomes an upstream suggestion. |
 | **Brain-owned** | Everything else in the brain repo: `brain.json`, `CLAUDE.md` outside the managed block, the brain's own skills, `docs/`, `scripts/`, `.gitignore` outside the managed block. Never touched by updates. |
 | **Prefix** | Short lowercase name for the brain's own skills (`se2-`, `lab-`). Shipped skills are always `brain-*`; `brain` and `template` are refused as a brain's prefix. |
-| **Upstream suggestion** | One proposed change to a shipped file, recorded in a brain's `docs/UPSTREAM.md` by `brain-upstream` and answered in the template's `CHANGELOG.md`. |
+| **Upstream suggestion** | One proposed change to a shipped file, recorded in a brain's `docs/UPSTREAM.md` by `brain-upstream` and answered in the template's `_meta/CHANGELOG.md`. |
 | **Project folder** | Anything inside the brain folder that is not part of the brain: nested repos, assets, backups. Ignored by the brain's git. |
 | **Practice** | One verified fact, with its level of evidence, when it was verified, and the command that re-checks it. |
 
@@ -271,6 +271,9 @@ first and the skill shows the result before anything is written.
 4. Append the brain's path to the template's `local/brains.txt`.
 5. Run `doctor`; print what to do next (open a session in `<dir>`).
 
+Steps 2 and 3 happen in a temporary folder beside `<dir>`, which is moved into place only when the
+first commit succeeded; on any failure it is removed and nothing is left. `--dry-run` rehearses
+the real build in an OS temporary folder, reports the pre-commit guard's verdict, and discards it.
 ### Turn a copy of the template into a brain
 
 `_meta/brain init --name N --prefix P [...] [--dry-run]`, run inside the copy.
@@ -281,7 +284,9 @@ first and the skill shows the result before anything is written.
    ignored. This is what stops `init` converting the template itself.
 2. Remove the template-only paths (§3), then write the skeleton, `brain.json`, managed blocks and
    manifest. Record `template.source` (the copy's `origin` when that is the template, otherwise the
-   canonical location from the template's own `brain.json`) and `template.version`.
+   canonical location from the template's own `brain.json`) and `template.version`. A clone of a
+   local template checkout tracks the canonical source and writes the local path to the ignored
+   `brain.local.json`, as `new` and `adopt` do, so no machine's path is committed.
 3. History: a plain clone of the template has the template's commits and its `origin`; start a
    fresh history so the brain does not carry them, but only when every commit is on that remote,
    so nothing is lost. A repo made with "Use this template", or a folder with no repo, keeps or
@@ -310,9 +315,12 @@ managed blocks.
 5. `git init` if the root is not a repo; install the hook; append the folder's path to the
    template's `local/brains.txt`.
 6. **Stop before committing.** Print what `git add -A` would stage (file count, total size, the
-   largest files, any file over `max_file_kb`). `template-make-brain` walks through that list with
-   the person and makes the first commit only on a yes, then drafts the folder map in the brain's
-   `CLAUDE.md` from the inventory.
+   largest files, any file over `max_file_kb`), then a BLOCK or WARN line for each thing that needs
+   the person's call: an embedded repo the allowlist lets through, a tracked `.env`, files the root
+   repo already tracks. `adopt` still exits 0 once it has written. `template-make-brain` walks
+   through the list and every such line with the person (e.g. add `/<dir>/` below the managed block
+   for an embedded repo, `git rm --cached` for a tracked `.env`), makes the first commit only on a
+   yes, then drafts the folder map in the brain's `CLAUDE.md` from the inventory.
 
 `--dry-run` makes no change at all, including no `git init`; a test asserts it writes nothing.
 
@@ -335,7 +343,7 @@ directory that is removed afterwards (temporary files are not "writing outside t
 4. Write `_meta/MANIFEST.sha256` from the files just copied (`new` and `adopt` do the same), so the
    local-edit check always compares against what was actually installed.
 5. Record `brain.json` `template.version` as `<VERSION>+<short sha>`. Print the diff summary, the
-   `CHANGELOG.md` entries newer than the previous version, and which of this brain's open upstream
+   `_meta/CHANGELOG.md` entries newer than the previous version, and which of this brain's open upstream
    suggestions they answer. **Do not commit**; `brain-sync` does.
 
 A skeleton change does not reach existing brains (skeleton files are brain-owned once copied);
@@ -359,7 +367,7 @@ exchange suggestions by reading each other:
 2. **In the template**, `template-intake` collects open entries from the brains in
    `local/brains.txt` (or a path it is given, such as a clone of a brain kept on another machine).
    For each one the person accepts, it makes the change in the template, with its tests, and adds a
-   `CHANGELOG.md` entry citing the id. A declined suggestion gets a `CHANGELOG.md` line with the id
+   `_meta/CHANGELOG.md` entry citing the id. A declined suggestion gets a `_meta/CHANGELOG.md` line with the id
    and a one-line reason. Committing in the template is enough; there is no release step.
 3. **Back in the brain**, the next `update` reports the answered ids, and `brain-sync` marks each
    entry `landed <version>` or `declined: <reason>` in the same `meta(brain)` commit.
@@ -386,7 +394,7 @@ macOS (no GNU-only flags when shelling out; prefer Python).
 | `hook pre-commit`, `hook install`, `hook self-test` | Privacy guard (§7.3) |
 | `practices lint\|index [--check]\|candidates\|search` | Practices store (§7.4) |
 | `rename-skill OLD NEW [--apply]` | Rename a skill everywhere (§7.5) |
-| `env-sync` | Add keys missing from `.env.example` to `.env` as empty lines; never print values |
+| `env-sync [--add KEY \| --list]` | Add keys missing from `.env.example` to `.env` as empty lines; `--add KEY` appends one name to both files (the `.env.*` deny keeps the agent from editing `.env.example`); `--list` prints each name as `set`, `empty` or `missing`; never prints a value |
 
 ### 7.1 `doctor`
 
@@ -436,7 +444,12 @@ Blocking. Checks only staged content:
 - Staged `.env` or `.env.*` other than `.env.example`.
 - Credential shapes: private key headers, common token prefixes (GitHub, AWS, Slack, OpenAI and
   Anthropic style keys), `password=`/`token=`/`api_key=` followed by a literal value.
-- Any `privacy.deny_patterns` match.
+- Any `privacy.deny_patterns` match, and any private term from `.brain-private`. A staged file
+  under a shipped path whose content is byte-identical to its `_meta/MANIFEST.sha256` entry skips
+  these two content scans: unmodified template text is public and the person cannot edit it, so a
+  private term that happens to appear in it must not block every new brain and every update.
+  Credential shapes and file names are still checked, an edited template file is scanned like any
+  other, and the template itself, which has no manifest, is scanned throughout.
 - A staged file over `max_file_kb` not in `large_file_allow`.
 - A staged path inside a nested git repo (should be impossible with the allowlist; defence in
   depth).
@@ -511,9 +524,9 @@ errors:
   decision, a person acting, a store.
 - Ids are shared across every diagram in both files: the same id in two diagrams is the same node.
   That is how one diagram continues another, so it must be deliberate.
-- Each node gets a class on first appearance, from a fixed set: `entry`, `gate`, `work`,
-  `optional`, `decision`, `state`, `human`. `routing sync` inserts the style lines, so authors only
-  write `:::gate`.
+- Each node gets a class from a fixed set: `entry`, `gate`, `work`, `optional`, `decision`, `state`,
+  `human`. A node may take it on any appearance, not only its first, so a diagram can use a node
+  another diagram declared. `routing sync` inserts the style lines, so authors only write `:::gate`.
 - `-->` is a call; `-.->` a call that happens only sometimes; `|label|` says when.
   **Edges are calls, not cross-references.** A skill's "Does NOT … that is X" clause is a boundary
   and is not drawn; a map built by grepping skill names says nothing.
@@ -586,7 +599,8 @@ that failed. It is friction and visibility, not a security boundary: anything wi
 round it, and the point is that doing so is deliberate, single-use and visible.
 
 - **Wiring** (in `.claude/settings.json`): `PostToolUse` on `Skill` runs `_meta/brain gate record`,
-  which notes the skill against the session id in the OS temp directory. `PreToolUse` on `Write`,
+  which notes the skill against the session id in `$XDG_RUNTIME_DIR/brain-gate` when that is a
+  folder the person owns, else in the OS temp directory. `PreToolUse` on `Write`,
   `Edit` and `Bash` runs `gate check`. For `Bash` it pulls the target out of redirections, `tee`,
   `cp`, `mv` and `sed -i`; a heuristic, deliberately, because a gate whose easiest bypass is the
   tool you reach for anyway is not a gate.
@@ -692,7 +706,7 @@ the tree, not by topic.
 | Skill | Does | Does NOT |
 | --- | --- | --- |
 | `template-make-brain` | Create a brain (`new`) or adopt a folder (`adopt`): ask the setup questions (§6); show the dry run; for adopt, walk through the inventory and staging list and get a yes before the first commit, then draft the brain's `CLAUDE.md` folder map from the inventory; end by saying which folder to open a session in. | Set up a copy of the template (`brain-setup`, run in the copy); repair an existing brain (`brain-setup`, run in that brain) |
-| `template-intake` | Collect open upstream suggestions from the brains in `local/brains.txt` or a path given, skipping ids `CHANGELOG.md` already answers; with the person, accept or decline each; make an accepted change through `brain-write-skill` or `brain-write-script`, written for any brain, with tests; add the `CHANGELOG.md` entry citing the id. Read-only toward brains. | Write into a brain; commit (`brain-sync`) |
+| `template-intake` | Collect open upstream suggestions from the brains in `local/brains.txt` or a path given, skipping ids `_meta/CHANGELOG.md` already answers; with the person, accept or decline each; make an accepted change through `brain-write-skill` or `brain-write-script`, written for any brain, with tests; add the `_meta/CHANGELOG.md` entry citing the id. Read-only toward brains. | Write into a brain; commit (`brain-sync`) |
 
 In the template, sessions use the shipped `brain-*` skills on the template itself. There
 `brain-write-skill` asks whether a new skill ships (`brain-*`) or stays in the template
@@ -715,7 +729,7 @@ Harness tests in `tests/` (Python `unittest`, stdlib), all in temporary director
   staging preview excludes nested repos, the large folder and `.env`.
 - `update` changes only template-owned paths; refuses on a locally edited template file; removes a
   file the template deleted; never copies an uncommitted template edit; reports which open
-  `docs/UPSTREAM.md` ids the new `CHANGELOG.md` entries answer.
+  `docs/UPSTREAM.md` ids the new `_meta/CHANGELOG.md` entries answer.
 - `hook self-test` passes; each rule has a planted case.
 - `practices lint` accepts the skeleton's example and rejects each missing required field;
   README/schema parity.
@@ -737,8 +751,9 @@ Harness tests in `tests/` (Python `unittest`, stdlib), all in temporary director
 - `new`, `adopt` and `init` wire the gate hooks and `.env` deny entries into
   `.claude/settings.json` and keep any entries already there; `update` refreshes only those.
 - **Origin check:** no tracked, shipped file mentions the source brains' organisation, products,
-  systems or people. The term list lives in `local/` (ignored) so the check itself leaks nothing;
-  the test skips with a notice when that file is absent.
+  systems or people, and none holds an absolute home path (read from the password database, since
+  tests redirect `HOME`). The term list lives in `local/` (ignored) so the check itself leaks
+  nothing; the test skips with a notice when that file is absent.
 
 **Skill scenarios.** `lint` proves only a skill's shape. Each skill, shipped and template-only, is
 also run once by a fresh subagent on a scripted scenario in a brain made by `new` in a temporary
@@ -830,7 +845,7 @@ portability (`.agents/skills/` with a symlink).
     the same reason; `brain-setup` keeps the copy route and the in-brain repair work.
 13. Upstream path: a brain records suggestions in its own tracked `docs/UPSTREAM.md`
     (`brain-upstream`); the template reads them (`template-intake`, brain paths in its ignored
-    `local/brains.txt`) and answers in `CHANGELOG.md`, which `update` already brings back. Neither
+    `local/brains.txt`) and answers in `_meta/CHANGELOG.md`, which `update` already brings back. Neither
     side writes into the other.
 14. `init` guards against converting the template itself by refusing when `local/` exists, and
     starts a fresh history for a plain clone only when every commit is on the template's remote.
@@ -855,3 +870,19 @@ portability (`.agents/skills/` with a symlink).
     than under `~/.claude`.
 21. Left behind from the source brains' routing: exceptions for one-line header edits, waiver
     labels for who armed them, opt-in packs, and any fixed layout for work records.
+
+### Changes during the build
+
+Rulings made while building, which the text above now reflects:
+
+- **R16** A node may take its class on any appearance, not only its first (§7.7).
+- **R38** The pre-commit guard skips the private-term and deny-pattern content scans for a staged
+  shipped file that is byte-identical to its `MANIFEST.sha256` entry (§7.3).
+- **R39** `new` builds the brain aside and moves it into place, so a failed run leaves nothing;
+  `--dry-run` rehearses the real build (§6).
+- **R42** `init` of a clone of a local template tracks the canonical `template.source` and writes
+  the local path to `brain.local.json` (§6).
+- **R44** `adopt` prints BLOCK and WARN lines under its staging preview, resolved with the person
+  before the first commit, and exits 0 once it has written (§6).
+- `env-sync` gained `--add KEY` and `--list` (§7 table).
+- The changelog lives at `_meta/CHANGELOG.md`, and the template's own prefix is `template`.

@@ -183,7 +183,7 @@ def secret(name: str, env_file: Optional[Path] = None) -> str:
         value = read_env_file(env_file or brain_root() / ".env").get(name, "")
     if not value:
         raise EnvError(f"{name} is not set: add the name with `_meta/brain env-sync --add {name}` "
-                       f"and ask the person to fill in its value, or an op:// reference, in .env")
+                       f"and `env-sync --open` for the person to fill in its value, or an op:// reference")
     if value.startswith("op://"):
         value = _op_read(name, value)
     _seen.add(value)

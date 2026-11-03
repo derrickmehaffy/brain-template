@@ -79,8 +79,9 @@ Read `references/conventions.md`; copy its docstring, root finding, `.env` loade
 - Anything that is not one of these scripts (a CLI tool, an MCP server, a one-off command) gets its
   secrets through `_meta/brain secret run KEY[,KEY] COMMAND [ARG...]`: the loader's rules, and the
   values go only into that command's environment.
-- A new secret name: `_meta/brain env-sync --add KEY`, then ask the person to fill in its value in
-  `.env`. `_meta/brain env-sync --list` shows which are set; never read, write or print a value.
+- A new secret name: `_meta/brain env-sync --add KEY`, then `_meta/brain env-sync --open`, which
+  opens `.env` in the person's text editor to paste the value after the `=`. Never ask for a value in
+  the chat. `_meta/brain env-sync --list` shows which are set; never read, write or print a value.
 - Run another program with an argument list, never a shell string: a path with a space breaks it.
 - Follow `brain.json` `scripts.packages`: `stdlib-only` means the standard library and nothing
   else; `allowed` means a third-party package that earns its place, named in the docstring.
@@ -112,12 +113,13 @@ and note which of them write. Declare it with its secrets through `secret run`, 
 `.mcp.json` reads the environment Claude Code started in, never `.env`:
 
 ```json
-{"mcpServers": {"<system>": {"command": "_meta/brain",
-  "args": ["secret", "run", "SYSTEM_TOKEN", "<server command>", "<arg>"]}}}
+{"mcpServers": {"<system>": {"command": "sh", "args": ["-c",
+  "exec \"$CLAUDE_PROJECT_DIR/_meta/brain\" secret run SYSTEM_TOKEN <server command> <arg>"]}}}
 ```
 
-The command path is relative to the brain root, where sessions start. A remote server that needs a
-token runs the same way through a local bridge command. Then record its `docs/CAPABILITIES.md` row as
+`sh -c` because Claude Code sets `CLAUDE_PROJECT_DIR` in the server's environment but does not
+expand it in `.mcp.json`, and does not promise the server's working directory. A remote server that
+needs a token runs the same way through a local bridge command. Then record its `docs/CAPABILITIES.md` row as
 in step 6, its tools that write under Can, and hand to `brain-sync`. The person approves a project
 server the first time Claude Code starts it.
 

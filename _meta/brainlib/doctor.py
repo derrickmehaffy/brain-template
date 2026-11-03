@@ -179,9 +179,10 @@ def _never_prompt(root: Path) -> Iterator[None]:
                 os.environ[key] = value
 
 
-def _moved_on(recorded: str, shown: str, latest: str, way: str) -> Finding:
-    """`way` is "behind", "ahead of" or "differs from": only a brain behind its source is told to update."""
-    advice = "; run update (brain-setup walks through it)" if way == "behind" else ""
+def _moved_on(recorded: str, shown: str, latest: str, way: str, hint: str = "") -> Finding:
+    """`way` is "behind", "ahead of" or "differs from": only a brain behind its source is told to update,
+    and `hint` (what to run to look) is for one that differs from it."""
+    advice = "; run update (brain-setup walks through it)" if way == "behind" else hint if way == "differs from" else ""
     return _warn("source", f"this brain {'is ' if way != 'differs from' else ''}{way} {shown}: it was set up from "
                            f"{recorded}, and {shown} is at {latest}{advice}")
 
@@ -233,7 +234,8 @@ def _url_source(root: Path, source: str, recorded: str, shown: str) -> Finding:
     if head.startswith(sha) or sha.startswith(head):
         return _ok("source", f"up to date with {shown} (at {head[:max(7, len(sha))]})")
     # the source's history is not on this machine, so which of the two is newer cannot be told
-    return _moved_on(recorded, shown, head[:max(7, len(sha))], "differs from")
+    return _moved_on(recorded, shown, head[:max(7, len(sha))], "differs from",
+                     "; run _meta/brain update --dry-run to see what changed")
 
 
 def _source(root: Path, cfg: Config, quick: bool) -> List[Finding]:

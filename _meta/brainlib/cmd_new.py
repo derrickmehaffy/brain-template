@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from . import config, gitutil, hook, install, managed, manifest, paths
-from .report import WARN, Finding, emit
+from .report import BLOCK, WARN, Finding, emit
 
 _EXPECTED = (install.InstallError, managed.ManagedError, hook.HookError, config.ConfigError, gitutil.GitError, OSError)
 # Variables that point git at one particular repository. Set (a git hook exports them), they would send `git init`
@@ -266,6 +266,21 @@ def _dry_run(dest: Path, template: Path, plan: _Plan) -> int:
     return 1
 
 
+def _doctor_summary(dest: Path) -> None:
+    """What doctor finds in the new brain: the lines that block, if any, then its summary line (the warnings
+    are one `_meta/brain doctor` away). The brain is made and stays made whatever doctor says, and a doctor that
+    cannot run is only a warning."""
+    from . import doctor
+
+    try:
+        found = doctor.diagnose(dest, quick=False)
+    except Exception as exc:  # noqa: BLE001 - nothing doctor does may turn a finished new into a traceback
+        emit([Finding(WARN, "new", f"doctor could not run ({type(exc).__name__}); run _meta/brain doctor in {dest}")])
+        return
+    emit([f for f in found if f.severity == BLOCK])
+    print(doctor.summary(found))
+
+
 def _real_run(dest: Path, template: Path, plan: _Plan) -> int:
     target = Path(os.path.realpath(str(dest)))  # a link to an empty folder is filled where it points
     created: List[Path] = []
@@ -301,6 +316,7 @@ def _real_run(dest: Path, template: Path, plan: _Plan) -> int:
                                    f"{template / 'local' / 'brains.txt'}: {exc.strerror or exc}")])
     print(f"wrote {len(plan.listed)} files into {dest}")
     print(f"first commit {sha}: {plan.message}")
+    _doctor_summary(dest)
     print(f"open a session in {dest}")
     return 0
 

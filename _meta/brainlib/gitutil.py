@@ -28,7 +28,7 @@ class GitError(Exception):
         super().__init__(f"git {shown} failed: {stderr.strip() or 'no message'}")
 
 
-def _run(cwd, args: Tuple[str, ...]) -> subprocess.CompletedProcess:
+def _run(cwd, args: Tuple[str, ...], timeout: Optional[float] = None) -> subprocess.CompletedProcess:
     cwd = Path(cwd)
     if not cwd.is_dir():
         raise GitError(args, f"{cwd} is not a directory")
@@ -39,18 +39,23 @@ def _run(cwd, args: Tuple[str, ...]) -> subprocess.CompletedProcess:
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            timeout=timeout,
         )
+    except subprocess.TimeoutExpired:  # run() has already killed git
+        raise GitError(args, f"timed out after {timeout:g} seconds")
     except OSError as exc:  # git is not installed, or not executable
         raise GitError(args, f"cannot run git: {exc.strerror or exc}")
 
 
-def git(cwd, *args: str, check: bool = True, binary: bool = False) -> Union[str, bytes]:
+def git(cwd, *args: str, check: bool = True, binary: bool = False,
+        timeout: Optional[float] = None) -> Union[str, bytes]:
     """Run `git <args>` in `cwd`; return stdout (text decoded as UTF-8 with replacement, or bytes).
 
     With `check` (the default) a non-zero exit raises GitError carrying git's stderr; without it the
-    stdout is returned whatever the exit status was (empty when git printed nothing).
+    stdout is returned whatever the exit status was (empty when git printed nothing). With `timeout` (seconds)
+    a git that is still running then is killed and GitError is raised, whatever `check` says.
     """
-    done = _run(cwd, tuple(args))
+    done = _run(cwd, tuple(args), timeout)
     if check and done.returncode != 0:
         raise GitError(tuple(args), done.stderr.decode("utf-8", errors="replace"), done.returncode)
     return done.stdout if binary else done.stdout.decode("utf-8", errors="replace")

@@ -91,6 +91,10 @@ class CreateTest(NewCase):
             self.assertFalse((dest / rel).exists(), rel)
         self.assertEqual(sorted(p.name for p in (dest / ".claude" / "skills").glob("template-*")), [])
 
+        # a new brain is healthy: doctor finds nothing that blocks
+        doctor = self.run_brain(dest, "doctor")
+        self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
+
         # one commit, the pinned message, and a clean tree
         subjects = self.git(dest, "log", "--format=%s").splitlines()
         self.assertEqual(subjects, [f"meta(brain): initialise from template v{raw['template']['version']}"])
@@ -160,6 +164,18 @@ class CreateTest(NewCase):
         r = self.new(template, dest)
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertEqual(r.stdout.rstrip("\n").splitlines()[-1], f"open a session in {dest}")
+
+    def test_new_prints_the_doctor_summary_before_the_next_step(self):
+        template = self.copy_template()
+        dest = self.tmp / "my brain"
+        r = self.new(template, dest)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        lines = r.stdout.rstrip("\n").splitlines()
+        self.assertRegex(lines[-2], r"^doctor: 0 block, \d+ warn$")
+        self.assertEqual(lines[-1], f"open a session in {dest}")
+        # the summary is the doctor's own count for this brain
+        again = self.run_brain(dest, "doctor")
+        self.assertEqual(again.stdout.rstrip("\n").splitlines()[-1], lines[-2])
 
     def test_the_new_brain_commits_through_its_own_guard(self):
         _, dest = self.made()

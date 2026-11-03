@@ -10,6 +10,7 @@ from . import paths
 # name -> (module under brainlib, one-line help). Each module exposes
 # add_arguments(parser) and run(args) -> int; it is imported only when its command is chosen.
 COMMANDS: dict[str, tuple[str, str]] = {
+    "doctor": ("doctor", "read-only health check of this brain (--quick skips tests, nested repos, the network)"),
     "env-sync": ("envsync", "add the key names .env.example lists to .env; never prints a value"),
     "gate": ("gate", "the skill gate: record, check, waive, status"),
     "hook": ("hook", "the pre-commit privacy guard: pre-commit, install, self-test"),

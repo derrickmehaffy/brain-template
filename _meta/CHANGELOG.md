@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1 — 2026-11-03
+
+- The template is public, under the MIT License, at https://github.com/derrickmehaffy/brain-template, which is now its `template.source`. `_meta/LICENSE` carries the licence for the harness and the `brain-*` skills into every brain.
+- `init` removes the public repository's own files from a copy, as it does the template's tests and docs: `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md` and `.github/`, so a brain made with "Use this template" does not run the template's CI or carry its issue forms.
+
 ## 0.3.0 — 2026-11-03
 
 - Setup for people who do not use git or a terminal: `brain-setup` and `template-make-brain` check the computer first (Python, git, a name and email for the saved history), work out the name, prefix and description instead of asking, ask one plain question about what must never be saved, ask once about an online backup (`gh`, or a private, empty repository), and say how to open the brain's folder. The template has `docs/guides/start-here.md`.

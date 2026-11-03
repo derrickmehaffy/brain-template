@@ -4,7 +4,7 @@
   "role": "template",
   "description": "The template every brain is made from",
   "template": {
-    "source": null,
+    "source": "https://github.com/derrickmehaffy/brain-template",
     "version": null
   },
   "scripts": {

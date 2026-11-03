@@ -15,7 +15,9 @@ This folder is the template, not a brain: `brain.json` has `role: template` and 
   template and stay in it. A new skill asks first: does it ship (`brain-*`) or stay (`template-*`)?
 - **Shipped means copied into brains:** `_meta/**` and `.claude/skills/brain-*/**`, plus the managed
   blocks and the skeleton in `_meta/skeleton/`. Everything else here is template-only: this file,
-  `README.md`, `brain.json`, `tests/`, `docs/`, `local/`. Skeleton files that are dotfiles or sit
+  `README.md`, `brain.json`, `tests/`, `docs/`, `local/`, and the public repo's `LICENSE`,
+  `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md` and `.github/` (`init` removes them all from a
+  copy; `_meta/LICENSE` carries the licence into every brain). Skeleton files that are dotfiles or sit
   under `.claude/` are stored renamed (`gitignore`, `env.example`, `claude-settings.json`,
   `mcp.json`).
 - **Run the test suite before committing:**

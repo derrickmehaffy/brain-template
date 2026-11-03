@@ -23,14 +23,19 @@ change, so nothing it learns is lost and any change can be undone.
 
 ## 1. Get the template
 
-Either way works:
+The template lives at <https://github.com/derrickmehaffy/brain-template>. Any of these works:
 
-- **Let Claude download it.** In the Code tab, open your Documents folder (as in step 2), and say:
-  "Download the brain template from <the template's GitHub address> into a new folder called
-  `Brains/<a name for it>`."
-- **Download it yourself.** On the template's GitHub page, click Code, then Download ZIP. Unzip it
-  and move the folder somewhere you will find it again, such as Documents, and rename it to what
-  the brain is for.
+- **Your own copy on GitHub (best: it is backed up from the start).** With a free GitHub account,
+  open the template's page, click **Use this template**, then **Create a new repository**. Name it
+  after what the brain is for and choose **Private**. Then, in the Code tab with your Documents
+  folder open (as in step 2), say: "Download my repository <its address> into a folder called
+  `Brains/<its name>`." Claude walks you through signing in to GitHub if it needs to.
+- **Let Claude download the template.** In the Code tab, open your Documents folder (as in step 2),
+  and say: "Download the brain template from https://github.com/derrickmehaffy/brain-template into a
+  new folder called `Brains/<a name for it>`."
+- **Download it yourself.** On the template's page, click Code, then Download ZIP. Unzip it and move
+  the folder somewhere you will find it again, such as Documents, and rename it to what the brain is
+  for.
 
 ## 2. Open the folder in Claude
 

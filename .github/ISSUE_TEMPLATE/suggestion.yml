@@ -1,0 +1,22 @@
+name: Suggestion
+description: A change every brain would benefit from, to a meta skill, the harness, a check or setup.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What keeps going wrong, or takes too long
+      description: In a real brain, if you have one. Say what happened, not only what you want.
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: The change you suggest
+    validations:
+      required: true
+  - type: textarea
+    id: upstream
+    attributes:
+      label: From a brain's docs/UPSTREAM.md
+      description: If `brain-upstream` recorded this in a brain, paste its entry; it is written to hold nothing private.

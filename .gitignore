@@ -7,6 +7,11 @@
 !/_meta/
 !/tests/
 !/docs/
+!/.github/
+!/LICENSE
+!/CONTRIBUTING.md
+!/SECURITY.md
+!/CODE_OF_CONDUCT.md
 __pycache__/
 *.pyc
 /.claude/settings.local.json

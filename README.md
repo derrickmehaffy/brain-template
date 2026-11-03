@@ -1,5 +1,8 @@
 # Brain template
 
+[![tests](https://github.com/derrickmehaffy/brain-template/actions/workflows/tests.yml/badge.svg)](https://github.com/derrickmehaffy/brain-template/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A **brain** is a folder you start Claude Code sessions in, whose root is a git repo holding what
 Claude needs to do one kind of work well: skills, the rules that bite, what has been learned, and
 small scripts. The project repos and large files the work produces sit inside the same folder but
@@ -12,8 +15,12 @@ and it can pull later improvements from the template without merge conflicts, be
 replaces only the files the template owns and refuses, rather than merges, when one was edited.
 
 Requirements: Python 3.9+ (standard library only, no packages) and `git`, on macOS or Linux (on
-Windows, inside WSL). **Never used git or a terminal?** Start with
-[docs/guides/start-here.md](docs/guides/start-here.md): Claude does the technical parts.
+Windows, inside WSL).
+
+**Quick start:** click **Use this template** on GitHub and create a **private** repository, open your
+copy in Claude Code, and say "set this up as a brain for <what you do>". **Never used git or a
+terminal?** [docs/guides/start-here.md](docs/guides/start-here.md) walks through every click, and
+Claude does the technical parts.
 
 ## Setting up a brain
 
@@ -164,4 +171,11 @@ names are still checked, and an edited template file is scanned like any other.
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . -v
 ```
 
-The design is in `docs/superpowers/specs/`.
+The design is in `docs/superpowers/specs/`. [CONTRIBUTING.md](CONTRIBUTING.md) covers setting up a
+checkout, the checks and how changes are proposed; report vulnerabilities as
+[SECURITY.md](SECURITY.md) says, and see the [code of conduct](CODE_OF_CONDUCT.md).
+
+## License
+
+[MIT](LICENSE). A brain made from the template carries the licence for the harness and the
+`brain-*` skills in `_meta/LICENSE`; everything else in a brain is its owner's own.

@@ -1,0 +1,35 @@
+name: Bug report
+description: Setup, the harness or a brain-* skill did not do what its documentation says.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Leave out anything private: hostnames, addresses, client or project names, secrets, and paths that hold your username.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did or asked Claude to do, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The command's output, or `_meta/brain doctor`'s, with anything private removed.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Template version
+      description: The output of `_meta/brain --version`.
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform
+      description: macOS, a Linux distribution or WSL; the Python version; the Claude Code desktop app or CLI.
+    validations:
+      required: true

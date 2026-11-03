@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Setting up your first brain
+    url: https://github.com/derrickmehaffy/brain-template/blob/main/docs/guides/start-here.md
+    about: From nothing to a working brain, with Claude doing the technical parts.
+  - name: Report a vulnerability
+    url: https://github.com/derrickmehaffy/brain-template/security/advisories/new
+    about: Privately, never in a public issue.

@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="508" viewBox="0 0 1200 508" role="img" aria-labelledby="title desc">
+  <title id="title">The boxes you will see</title>
+  <desc id="desc">Three boxes that pop up while you work, and what to answer. First, Trust folder: Do you trust the files in this folder? with the buttons Yes, I trust it and No. Answer yes: it's yours. Second, Permission: Allow Claude to run _meta/brain doctor? with the buttons Allow and Deny. During setup, commands starting with _meta/brain or git are fine to allow. Third, MCP server: Use the MCP server 'tracker' from this project? with the buttons Approve and Reject. Approve the ones you asked Claude to connect.</desc>
+  <style>
+    .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .box { fill: #FFFCF6; stroke: #E3D8C2; stroke-width: 2; }
+    .bar { fill: #EFE7D7; }
+    .wintitle { font-size: 14.5px; fill: #8A8274; }
+    .ask { font-size: 18px; fill: #1E1D1A; }
+    .yes { fill: #2B7A74; }
+    .yestext { font-size: 16px; font-weight: 600; fill: #FFFCF6; }
+    .no { fill: #FFFCF6; stroke: #D8CCB4; stroke-width: 1.5; }
+    .notext { font-size: 16px; fill: #57524A; }
+    .answer { fill: #FFFCF6; stroke: #2B7A74; stroke-width: 2; }
+    .say { font-size: 17px; fill: #1E1D1A; }
+    .down { stroke: #8A8274; stroke-width: 2.5; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#DED3BD"/>
+    </pattern>
+    <filter id="lift" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#5A4A2E" flood-opacity="0.16"/>
+    </filter>
+    <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8A8274"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="508" rx="24" fill="#F6F1E6"/>
+  <rect width="1200" height="508" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="506" rx="23" fill="none" stroke="#E3D8C2" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#B5522B">THE BOXES YOU WILL SEE</text>
+  <text x="1156" y="56" class="sans" font-size="15" fill="#8A8274" text-anchor="end">what each one asks, and what to answer</text>
+
+  <!-- a: trust the folder -->
+  <g filter="url(#lift)"><rect class="box" x="44" y="92" width="340" height="204" rx="16"/></g>
+  <path class="bar" d="M45 107 a15 15 0 0 1 15 -15 h308 a15 15 0 0 1 15 15 v25 h-338 z"/>
+  <circle cx="66" cy="112" r="5.5" fill="#D98466"/><circle cx="84" cy="112" r="5.5" fill="#DDB45F"/><circle cx="102" cy="112" r="5.5" fill="#7FB0A6"/>
+  <text x="214" y="117" class="mono wintitle" text-anchor="middle">Trust folder</text>
+  <text class="sans ask"><tspan x="68" y="176">Do you trust the files</tspan><tspan x="68" y="202">in this folder?</tspan></text>
+  <rect class="yes" x="68" y="234" width="164" height="38" rx="10"/>
+  <text x="150" y="258" class="sans yestext" text-anchor="middle">Yes, I trust it</text>
+  <rect class="no" x="244" y="234" width="72" height="38" rx="10"/>
+  <text x="280" y="258" class="sans notext" text-anchor="middle">No</text>
+
+  <line class="down" x1="214" y1="304" x2="214" y2="346" marker-end="url(#arrow)"/>
+  <rect class="answer" x="44" y="358" width="340" height="104" rx="24"/>
+  <text x="214" y="416" class="sans say" text-anchor="middle"><tspan font-weight="700" fill="#2B7A74">Yes:</tspan> it's yours.</text>
+
+  <!-- b: allow a command -->
+  <g filter="url(#lift)"><rect class="box" x="430" y="92" width="340" height="204" rx="16"/></g>
+  <path class="bar" d="M431 107 a15 15 0 0 1 15 -15 h308 a15 15 0 0 1 15 15 v25 h-338 z"/>
+  <circle cx="452" cy="112" r="5.5" fill="#D98466"/><circle cx="470" cy="112" r="5.5" fill="#DDB45F"/><circle cx="488" cy="112" r="5.5" fill="#7FB0A6"/>
+  <text x="600" y="117" class="mono wintitle" text-anchor="middle">Permission</text>
+  <text class="sans ask"><tspan x="454" y="176">Allow Claude to run</tspan><tspan x="454" y="202"><tspan class="mono" font-size="17">_meta/brain doctor</tspan>?</tspan></text>
+  <rect class="yes" x="454" y="234" width="96" height="38" rx="10"/>
+  <text x="502" y="258" class="sans yestext" text-anchor="middle">Allow</text>
+  <rect class="no" x="562" y="234" width="88" height="38" rx="10"/>
+  <text x="606" y="258" class="sans notext" text-anchor="middle">Deny</text>
+
+  <line class="down" x1="600" y1="304" x2="600" y2="346" marker-end="url(#arrow)"/>
+  <rect class="answer" x="430" y="358" width="340" height="104" rx="24"/>
+  <text class="sans say" text-anchor="middle">
+    <tspan x="600" y="392">During setup, commands</tspan>
+    <tspan x="600" y="416">starting with <tspan class="mono" font-size="16">_meta/brain</tspan> or <tspan class="mono" font-size="16">git</tspan></tspan>
+    <tspan x="600" y="440">are fine to allow.</tspan>
+  </text>
+
+  <!-- c: approve an MCP server -->
+  <g filter="url(#lift)"><rect class="box" x="816" y="92" width="340" height="204" rx="16"/></g>
+  <path class="bar" d="M817 107 a15 15 0 0 1 15 -15 h308 a15 15 0 0 1 15 15 v25 h-338 z"/>
+  <circle cx="838" cy="112" r="5.5" fill="#D98466"/><circle cx="856" cy="112" r="5.5" fill="#DDB45F"/><circle cx="874" cy="112" r="5.5" fill="#7FB0A6"/>
+  <text x="986" y="117" class="mono wintitle" text-anchor="middle">MCP server</text>
+  <text class="sans ask"><tspan x="840" y="176">Use the MCP server 'tracker'</tspan><tspan x="840" y="202">from this project?</tspan></text>
+  <rect class="yes" x="840" y="234" width="112" height="38" rx="10"/>
+  <text x="896" y="258" class="sans yestext" text-anchor="middle">Approve</text>
+  <rect class="no" x="964" y="234" width="96" height="38" rx="10"/>
+  <text x="1012" y="258" class="sans notext" text-anchor="middle">Reject</text>
+
+  <line class="down" x1="986" y1="304" x2="986" y2="346" marker-end="url(#arrow)"/>
+  <rect class="answer" x="816" y="358" width="340" height="104" rx="24"/>
+  <text class="sans say" text-anchor="middle">
+    <tspan x="986" y="404">Approve the ones you asked</tspan>
+    <tspan x="986" y="428">Claude to connect.</tspan>
+  </text>
+</svg>

@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="472" viewBox="0 0 1200 472" role="img" aria-labelledby="title desc">
+  <title id="title">How a brain's mod is built and loaded</title>
+  <desc id="desc">Three steps. The kit: the template's mod kit in _meta/modkit, which update refreshes. Your mod: mods new copies the starter and the kit into mods/lab-health, where Claude writes the mod and its tests. Every session: a link in .claude/skills loads the mod in each session started at the brain, and reloads it when a file is saved. Underneath: mods sync copies a new kit into every mod, lint warns about a stale copy, and brain-sync commits.</desc>
+  <style>
+    .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .card { fill: #FFFCF6; stroke: #E3D8C2; stroke-width: 2; }
+    .head { font-size: 28px; fill: #1E1D1A; }
+    .body { font-size: 17px; fill: #57524A; }
+    .tree { font-size: 14.5px; fill: #57524A; }
+    .tag { font-size: 14.5px; fill: #57524A; }
+    .num { font-size: 18px; fill: #FFFCF6; font-weight: 700; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#DED3BD"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8A8274"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="472" rx="24" fill="#F6F1E6"/>
+  <rect width="1200" height="472" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="470" rx="23" fill="none" stroke="#E3D8C2" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#B5522B">HOW A MOD IS BUILT AND LOADED</text>
+
+  <!-- arrows -->
+  <g stroke="#8A8274" stroke-width="2.5" marker-end="url(#arrow)">
+    <line x1="392" y1="200" x2="420" y2="200"/>
+    <line x1="780" y1="200" x2="808" y2="200"/>
+  </g>
+  <text x="406" y="184" class="mono" font-size="13" fill="#8A8274" text-anchor="middle">new</text>
+  <text x="794" y="184" class="mono" font-size="13" fill="#8A8274" text-anchor="middle">link</text>
+
+  <!-- 1 The kit -->
+  <rect class="card" x="44" y="84" width="344" height="262" rx="16"/>
+  <circle cx="80" cy="124" r="18" fill="#C9962E"/>
+  <text x="80" y="130" class="sans num" text-anchor="middle">1</text>
+  <text x="108" y="134" class="serif head">The kit</text>
+  <text class="sans body"><tspan x="66" y="180">Pieces and layouts that look</tspan><tspan x="66" y="204">right in the terminal and the</tspan><tspan x="66" y="228">app, and a starter mod.</tspan></text>
+  <text class="sans body"><tspan x="66" y="262">From the template; update</tspan><tspan x="66" y="286">keeps it current.</tspan></text>
+  <rect x="66" y="304" width="150" height="26" rx="13" fill="#EFE7D7"/>
+  <text x="141" y="322" class="mono tag" text-anchor="middle">_meta/modkit/</text>
+
+  <!-- 2 Your mod -->
+  <rect class="card" x="428" y="84" width="344" height="262" rx="16"/>
+  <circle cx="464" cy="124" r="18" fill="#2B7A74"/>
+  <text x="464" y="130" class="sans num" text-anchor="middle">2</text>
+  <text x="492" y="134" class="serif head">Your mod</text>
+  <text class="mono tree">
+    <tspan x="450" y="176" fill="#1E1D1A">mods/lab-health/</tspan>
+    <tspan x="466" y="200">hooks/register.tsx</tspan>
+    <tspan x="466" y="222">hooks/kit/  <tspan fill="#8A8274">a copy</tspan></tspan>
+    <tspan x="466" y="244">tests/</tspan>
+    <tspan x="466" y="266">README.md</tspan>
+  </text>
+  <text class="sans body"><tspan x="450" y="300">Claude writes it with</tspan><tspan x="450" y="322">brain-write-mod, and tests it.</tspan></text>
+
+  <!-- 3 Every session -->
+  <rect class="card" x="812" y="84" width="344" height="262" rx="16"/>
+  <circle cx="848" cy="124" r="18" fill="#7A4E7E"/>
+  <text x="848" y="130" class="sans num" text-anchor="middle">3</text>
+  <text x="876" y="134" class="serif head">Every session</text>
+  <text class="sans body"><tspan x="834" y="180">A link loads it in each session</tspan><tspan x="834" y="204">started at the brain, and</tspan><tspan x="834" y="228">reloads it when a file is saved.</tspan></text>
+  <text class="sans body"><tspan x="834" y="262">Every clone gets it; an opt-in</tspan><tspan x="834" y="286">mod waits to be turned on.</tspan></text>
+  <rect x="834" y="304" width="236" height="26" rx="13" fill="#EFE7D7"/>
+  <text x="952" y="322" class="mono tag" text-anchor="middle">.claude/skills/lab-health</text>
+
+  <!-- underneath -->
+  <rect x="44" y="370" width="1112" height="66" rx="14" fill="#EFE7D7"/>
+  <circle cx="80" cy="403" r="18" fill="#B5522B"/>
+  <text x="80" y="409" class="sans num" text-anchor="middle">↻</text>
+  <text x="112" y="398" class="sans" font-size="17" fill="#1E1D1A">A new kit arrives with update: <tspan class="mono" font-size="15">mods sync</tspan> copies it into every mod,</text>
+  <text x="112" y="422" class="sans" font-size="17" fill="#1E1D1A">lint warns about a copy that is stale, and brain-sync commits.</text>
+</svg>

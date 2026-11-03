@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="530" viewBox="0 0 1200 530" role="img" aria-labelledby="title desc">
+  <title id="title">An online backup</title>
+  <desc id="desc">On your computer sits the brain folder my-homelab, holding .claude/skills, docs and scripts, and two project folders, dashboard and nas-tools, each its own repo. A teal arrow, saved when you ask (a push), runs from the brain to your private copy on GitHub: only you can see it. Each project folder has its own arrow to its own separate copy: projects keep their own backups. Or: keep it on this computer only, and the reminder stops.</desc>
+  <style>
+    .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .card { fill: #24211C; stroke: #3A352D; stroke-width: 2; }
+    .repo { fill: #24211C; stroke: #7D7567; stroke-width: 2; stroke-dasharray: 6 5; }
+    .row { font-size: 15.5px; fill: #CFC6B7; }
+    .proj { font-size: 16px; font-weight: 700; fill: #F0EAE0; }
+    .push { stroke: #5BBDB2; stroke-width: 3.5; fill: none; }
+    .own { stroke: #A39A8B; stroke-width: 2.5; fill: none; stroke-dasharray: 7 6; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#2E2A23"/>
+    </pattern>
+    <marker id="teal" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5BBDB2"/>
+    </marker>
+    <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#A39A8B"/>
+    </marker>
+    <path id="cloud" d="M14 34 a12 12 0 0 1 1 -24 a16 16 0 0 1 30 -4 a11 11 0 0 1 14 12 a9 9 0 0 1 -1 16 z"/>
+    <path id="folder" d="M3 0 h12 l4 5 h16 a3 3 0 0 1 3 3 v10 a3 3 0 0 1 -3 3 h-32 a3 3 0 0 1 -3 -3 v-15 a3 3 0 0 1 3 -3 z" fill="#E2B653"/>
+  </defs>
+
+  <rect width="1200" height="530" rx="24" fill="#1B1915"/>
+  <rect width="1200" height="530" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="528" rx="23" fill="none" stroke="#3A352D" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#E57D50">AN ONLINE BACKUP</text>
+
+  <!-- the computer -->
+  <rect x="60" y="88" width="460" height="304" rx="18" fill="#3A352D"/>
+  <rect x="74" y="102" width="432" height="276" rx="10" fill="#24211C"/>
+  <path d="M30 392 h520 l-10 16 a6 6 0 0 1 -5 3 h-490 a6 6 0 0 1 -5 -3 z" fill="#4A443A"/>
+  <rect x="250" y="392" width="80" height="6" rx="3" fill="#6B6152"/>
+
+  <!-- the brain folder on it -->
+  <rect x="92" y="120" width="396" height="240" rx="12" fill="#2A2620" stroke="#4A443A" stroke-width="1.5"/>
+  <use href="#folder" x="110" y="134"/>
+  <text x="158" y="152" class="mono" font-size="19" font-weight="700" fill="#F0EAE0">my-homelab/</text>
+  <g class="mono row">
+    <text x="112" y="206">.claude/skills/</text>
+    <text x="112" y="240">docs/</text>
+    <text x="112" y="274">scripts/</text>
+  </g>
+  <rect class="repo" x="300" y="234" width="170" height="44" rx="10"/>
+  <text x="385" y="262" class="mono proj" text-anchor="middle">dashboard/</text>
+  <rect class="repo" x="300" y="296" width="170" height="44" rx="10"/>
+  <text x="385" y="324" class="mono proj" text-anchor="middle">nas-tools/</text>
+
+  <!-- saved when you ask -->
+  <line class="push" x1="472" y1="146" x2="748" y2="146" marker-end="url(#teal)"/>
+  <rect x="526" y="108" width="204" height="30" rx="15" fill="#1B1915"/>
+  <text x="628" y="129" class="sans" font-size="17" font-weight="700" fill="#5BBDB2" text-anchor="middle">saved when you ask</text>
+  <text x="628" y="176" class="mono" font-size="15" fill="#A39A8B" text-anchor="middle">push</text>
+
+  <!-- your private copy -->
+  <rect class="card" x="760" y="92" width="396" height="112" rx="16" style="stroke: #5BBDB2; stroke-width: 2.5"/>
+  <use href="#cloud" transform="translate(782 124) scale(0.9)" fill="#5BBDB2"/>
+  <text class="sans" font-size="17.5" fill="#CFC6B7"><tspan x="852" y="142" font-weight="700" fill="#F0EAE0">your private copy on GitHub:</tspan><tspan x="852" y="168">only you can see it</tspan></text>
+
+  <!-- projects keep their own -->
+  <path class="own" d="M476 256 H748" marker-end="url(#arrow)"/>
+  <path class="own" d="M476 318 H748" marker-end="url(#arrow)"/>
+  <rect class="card" x="760" y="232" width="396" height="48" rx="14"/>
+  <use href="#cloud" transform="translate(780 245) scale(0.5)" fill="#A39A8B"/>
+  <text x="824" y="262" class="sans" font-size="16.5" fill="#CFC6B7"><tspan class="mono" font-weight="700" fill="#F0EAE0">dashboard/</tspan> has its own copy</text>
+  <rect class="card" x="760" y="294" width="396" height="48" rx="14"/>
+  <use href="#cloud" transform="translate(780 307) scale(0.5)" fill="#A39A8B"/>
+  <text x="824" y="324" class="sans" font-size="16.5" fill="#CFC6B7"><tspan class="mono" font-weight="700" fill="#F0EAE0">nas-tools/</tspan> has its own copy</text>
+  <text x="760" y="378" class="sans" font-size="16.5" font-style="italic" fill="#CFC6B7">projects keep their own backups</text>
+
+  <!-- the alternative -->
+  <rect x="318" y="448" width="564" height="44" rx="22" fill="#2E2A24"/>
+  <text x="600" y="476" class="sans" font-size="17" fill="#CFC6B7" text-anchor="middle">or: keep it on this computer only, and the reminder stops.</text>
+</svg>

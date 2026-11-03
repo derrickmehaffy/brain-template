@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="764" viewBox="0 0 1200 764" role="img" aria-labelledby="title desc">
+  <title id="title">Four shapes of brain</title>
+  <desc id="desc">Four shapes a brain can take. Single project: one project you keep coming back to. A folder called my-site holds the site-* skills and site, the project's own repo; the skills point at it. Multi-project: several repos that belong together. A folder called acme holds the acme-* skills, repos/api and repos/web, each its own repo, and a shared work folder. Massive brain: many repos and several kinds of work. Several entry points each lead into a chain of small skills, one through a router that fans out to three, all over the brain's repos and work folders. Brain of brains: one place to ask, which hands work to your other brains. A hub sits beside three other brains, homelab, game-mod and shop-inbox, with an arrow to each.</desc>
+  <style>
+    .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .card { fill: #24211C; stroke: #3A352D; stroke-width: 2; }
+    .stage { fill: #2E2A24; }
+    .head { font-size: 28px; fill: #F0EAE0; }
+    .body { font-size: 17.5px; fill: #CFC6B7; }
+    .num { font-size: 18px; fill: #24211C; font-weight: 700; }
+    .folder { fill: #24211C; stroke: #4A443A; stroke-width: 1.5; }
+    .repo { fill: #24211C; stroke: #7D7567; stroke-width: 2; stroke-dasharray: 6 5; }
+    .work { fill: #2A2620; stroke: #4A443A; stroke-width: 1.5; }
+    .pill { fill: #2E2A24; }
+    .name { font-size: 17px; font-weight: 700; fill: #F0EAE0; }
+    .label { font-size: 15.5px; fill: #F0EAE0; }
+    .skill { font-size: 15px; fill: #5BBDB2; }
+    .muted { font-size: 15px; fill: #A39A8B; }
+    .link { stroke: #A39A8B; stroke-width: 2.5; fill: none; }
+    .chain { stroke: #7D7567; stroke-width: 2; fill: none; }
+    .node { fill: #24211C; stroke: #5BBDB2; stroke-width: 2.5; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#2E2A23"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#A39A8B"/>
+    </marker>
+    <marker id="terra" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#E57D50"/>
+    </marker>
+    <path id="folder" d="M3 0 h12 l4 5 h16 a3 3 0 0 1 3 3 v10 a3 3 0 0 1 -3 3 h-32 a3 3 0 0 1 -3 -3 v-15 a3 3 0 0 1 3 -3 z" fill="#E2B653"/>
+  </defs>
+
+  <rect width="1200" height="764" rx="24" fill="#1B1915"/>
+  <rect width="1200" height="764" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="762" rx="23" fill="none" stroke="#3A352D" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#E57D50">FOUR SHAPES OF BRAIN</text>
+
+  <!-- 1 Single project -->
+  <rect class="card" x="44" y="84" width="544" height="310" rx="16"/>
+  <circle cx="86" cy="128" r="18" fill="#5BBDB2"/>
+  <text x="86" y="134" class="sans num" text-anchor="middle">1</text>
+  <text x="116" y="138" class="serif head">Single project</text>
+  <text x="68" y="176" class="sans body">One project you keep coming back to.</text>
+  <rect class="stage" x="64" y="218" width="504" height="156" rx="12"/>
+  <rect class="folder" x="80" y="232" width="472" height="128" rx="10"/>
+  <use href="#folder" x="96" y="246"/>
+  <text x="146" y="263" class="mono name">my-site/</text>
+  <rect class="pill" x="96" y="290" width="156" height="34" rx="17"/>
+  <text x="174" y="312" class="mono skill" text-anchor="middle">site-* skills</text>
+  <line class="link" x1="262" y1="307" x2="326" y2="307" marker-end="url(#arrow)"/>
+  <rect class="repo" x="338" y="268" width="198" height="78" rx="10"/>
+  <text x="356" y="298" class="mono name">site/</text>
+  <text x="356" y="328" class="sans muted">its own repo</text>
+
+  <!-- 2 Multi-project -->
+  <rect class="card" x="612" y="84" width="544" height="310" rx="16"/>
+  <circle cx="654" cy="128" r="18" fill="#E2B653"/>
+  <text x="654" y="134" class="sans num" text-anchor="middle">2</text>
+  <text x="684" y="138" class="serif head">Multi-project</text>
+  <text x="636" y="176" class="sans body">Several repos that belong together.</text>
+  <rect class="stage" x="632" y="218" width="504" height="156" rx="12"/>
+  <rect class="folder" x="648" y="232" width="472" height="128" rx="10"/>
+  <use href="#folder" x="664" y="246"/>
+  <text x="714" y="263" class="mono name">acme/</text>
+  <rect class="pill" x="954" y="244" width="150" height="30" rx="15"/>
+  <text x="1029" y="264" class="mono skill" text-anchor="middle">acme-* skills</text>
+  <rect class="repo" x="664" y="292" width="140" height="52" rx="10"/>
+  <text x="734" y="323" class="mono label" text-anchor="middle">repos/api</text>
+  <rect class="repo" x="816" y="292" width="140" height="52" rx="10"/>
+  <text x="886" y="323" class="mono label" text-anchor="middle">repos/web</text>
+  <rect class="work" x="968" y="292" width="136" height="52" rx="10"/>
+  <text x="1036" y="323" class="mono label" text-anchor="middle">work/</text>
+
+  <!-- 3 Massive brain -->
+  <rect class="card" x="44" y="418" width="544" height="310" rx="16"/>
+  <circle cx="86" cy="462" r="18" fill="#E57D50"/>
+  <text x="86" y="468" class="sans num" text-anchor="middle">3</text>
+  <text x="116" y="472" class="serif head">Massive brain</text>
+  <text x="68" y="510" class="sans body">Many repos and several kinds of work.</text>
+  <rect class="stage" x="64" y="552" width="504" height="156" rx="12"/>
+  <g stroke="#E57D50" stroke-width="2.5" marker-end="url(#terra)">
+    <line x1="84" y1="574" x2="124" y2="574"/>
+    <line x1="84" y1="608" x2="124" y2="608"/>
+    <line x1="84" y1="642" x2="124" y2="642"/>
+  </g>
+  <!-- chains -->
+  <path class="chain" d="M146 574 H376"/>
+  <path class="chain" d="M146 608 H262 M262 608 L478 588 M262 608 H478 M262 608 L478 628"/>
+  <path class="chain" d="M146 642 H262"/>
+  <circle class="node" cx="146" cy="574" r="8"/>
+  <circle class="node" cx="262" cy="574" r="8"/>
+  <circle class="node" cx="376" cy="574" r="8"/>
+  <circle class="node" cx="146" cy="608" r="8"/>
+  <rect x="253" y="599" width="18" height="18" transform="rotate(45 262 608)" fill="#E2B653"/>
+  <circle class="node" cx="478" cy="588" r="7"/>
+  <circle class="node" cx="478" cy="608" r="7"/>
+  <circle class="node" cx="478" cy="628" r="7"/>
+  <circle class="node" cx="146" cy="642" r="8"/>
+  <circle class="node" cx="262" cy="642" r="8"/>
+  <!-- what the chains work over -->
+  <rect class="repo" x="80" y="664" width="228" height="32" rx="8"/>
+  <text x="194" y="686" class="mono label" text-anchor="middle">repos/</text>
+  <rect class="work" x="324" y="664" width="228" height="32" rx="8"/>
+  <text x="438" y="686" class="mono label" text-anchor="middle">work/</text>
+
+  <!-- 4 Brain of brains -->
+  <rect class="card" x="612" y="418" width="544" height="310" rx="16"/>
+  <circle cx="654" cy="462" r="18" fill="#BE90C2"/>
+  <text x="654" y="468" class="sans num" text-anchor="middle">4</text>
+  <text x="684" y="472" class="serif head">Brain of brains</text>
+  <text class="sans body"><tspan x="636" y="510">One place to ask.</tspan><tspan x="636" y="534">It hands work to your other brains.</tspan></text>
+  <rect class="stage" x="632" y="552" width="504" height="156" rx="12"/>
+  <rect x="656" y="592" width="156" height="76" rx="12" fill="#24211C" stroke="#E2B653" stroke-width="3"/>
+  <text x="734" y="636" class="mono name" text-anchor="middle">hub/</text>
+  <path class="link" d="M818 624 C 850 624, 860 581, 896 581" marker-end="url(#arrow)"/>
+  <line class="link" x1="818" y1="630" x2="896" y2="630" marker-end="url(#arrow)"/>
+  <path class="link" d="M818 636 C 850 636, 860 679, 896 679" marker-end="url(#arrow)"/>
+  <rect class="folder" x="908" y="562" width="208" height="38" rx="10"/>
+  <text x="1012" y="587" class="mono label" text-anchor="middle">homelab/</text>
+  <rect class="folder" x="908" y="611" width="208" height="38" rx="10"/>
+  <text x="1012" y="636" class="mono label" text-anchor="middle">game-mod/</text>
+  <rect class="folder" x="908" y="660" width="208" height="38" rx="10"/>
+  <text x="1012" y="685" class="mono label" text-anchor="middle">shop-inbox/</text>
+</svg>

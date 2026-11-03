@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="672" viewBox="0 0 1200 672" role="img" aria-labelledby="title desc">
+  <title id="title">Where your answers go</title>
+  <desc id="desc">Where your interview answers go. The interview, run by brain-setup, asks about seven things, and each answer is written somewhere. Your goal goes to how the brain talks and what it's for, in CLAUDE.md. Work that repeats goes to routines to write, in docs/UNCLASSIFIED-LOG.md. Where it lives goes to the brain's shape and folders, the CLAUDE.md folder map. Systems and keys, names only, go to what each app can do, in docs/CAPABILITIES.md and the .env names. People go to rules that bite, in CLAUDE.md. Words that mean something go to the glossary, docs/GLOSSARY.md. What must never happen goes to rules that bite, in CLAUDE.md, and to never-saved names, in .brain-private.</desc>
+  <style>
+    .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .card { fill: #FFFCF6; stroke: #E3D8C2; stroke-width: 2; }
+    .stage { fill: #EFE7D7; }
+    .head { font-size: 24px; fill: #1E1D1A; }
+    .ask { font-size: 18px; fill: #1E1D1A; }
+    .num { font-size: 15px; fill: #FFFCF6; font-weight: 700; }
+    .label { font-size: 17.5px; font-weight: 700; fill: #1E1D1A; }
+    .detail { font-size: 14.5px; fill: #8A8274; }
+    .goes { stroke: #A89F8E; stroke-width: 2.5; fill: none; }
+    .never { stroke: #B5522B; stroke-width: 2.5; fill: none; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#DED3BD"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#A89F8E"/>
+    </marker>
+    <marker id="terra" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#B5522B"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="672" rx="24" fill="#F6F1E6"/>
+  <rect width="1200" height="672" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="670" rx="23" fill="none" stroke="#E3D8C2" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#B5522B">WHERE YOUR ANSWERS GO</text>
+  <text x="44" y="116" class="serif head">The interview</text>
+  <text x="236" y="115" class="mono detail">brain-setup</text>
+  <text x="712" y="116" class="serif head">Where each answer goes</text>
+
+  <!-- arrows -->
+  <path class="goes" d="M422 171 C 566 171, 562 169, 704 169" marker-end="url(#arrow)"/>
+  <path class="goes" d="M422 241 C 566 241, 562 241, 704 241" marker-end="url(#arrow)"/>
+  <path class="goes" d="M422 311 C 566 311, 562 313, 704 313" marker-end="url(#arrow)"/>
+  <path class="goes" d="M422 381 C 566 381, 562 385, 704 385" marker-end="url(#arrow)"/>
+  <path class="goes" d="M422 451 C 566 451, 562 520, 704 520" marker-end="url(#arrow)"/>
+  <path class="goes" d="M422 521 C 566 521, 562 457, 704 457" marker-end="url(#arrow)"/>
+  <path class="never" d="M422 591 C 566 591, 562 538, 704 538" marker-end="url(#terra)"/>
+  <path class="never" d="M422 591 C 566 591, 562 601, 704 601" marker-end="url(#terra)"/>
+
+  <!-- the questions -->
+  <rect class="card" x="44" y="146" width="372" height="50" rx="25" style="stroke: #E3D8C2"/>
+  <circle cx="70" cy="171" r="15" fill="#1E1D1A"/>
+  <text x="70" y="176" class="sans num" text-anchor="middle">1</text>
+  <text x="98" y="177" class="sans ask">Your goal</text>
+  <rect class="card" x="44" y="216" width="372" height="50" rx="25" style="stroke: #E3D8C2"/>
+  <circle cx="70" cy="241" r="15" fill="#1E1D1A"/>
+  <text x="70" y="246" class="sans num" text-anchor="middle">2</text>
+  <text x="98" y="247" class="sans ask">Work that repeats</text>
+  <rect class="card" x="44" y="286" width="372" height="50" rx="25" style="stroke: #E3D8C2"/>
+  <circle cx="70" cy="311" r="15" fill="#1E1D1A"/>
+  <text x="70" y="316" class="sans num" text-anchor="middle">3</text>
+  <text x="98" y="317" class="sans ask">Where it lives</text>
+  <rect class="card" x="44" y="356" width="372" height="50" rx="25" style="stroke: #E3D8C2"/>
+  <circle cx="70" cy="381" r="15" fill="#1E1D1A"/>
+  <text x="70" y="386" class="sans num" text-anchor="middle">4</text>
+  <text x="98" y="387" class="sans ask">Systems and keys<tspan fill="#8A8274"> (names only)</tspan></text>
+  <rect class="card" x="44" y="426" width="372" height="50" rx="25" style="stroke: #E3D8C2"/>
+  <circle cx="70" cy="451" r="15" fill="#1E1D1A"/>
+  <text x="70" y="456" class="sans num" text-anchor="middle">5</text>
+  <text x="98" y="457" class="sans ask">People</text>
+  <rect class="card" x="44" y="496" width="372" height="50" rx="25" style="stroke: #E3D8C2"/>
+  <circle cx="70" cy="521" r="15" fill="#1E1D1A"/>
+  <text x="70" y="526" class="sans num" text-anchor="middle">6</text>
+  <text x="98" y="527" class="sans ask">Words that mean something</text>
+  <rect class="card" x="44" y="566" width="372" height="50" rx="25" style="stroke: #B5522B"/>
+  <circle cx="70" cy="591" r="15" fill="#B5522B"/>
+  <text x="70" y="596" class="sans num" text-anchor="middle">7</text>
+  <text x="98" y="597" class="sans ask">What must never happen</text>
+
+  <!-- where they go -->
+  <rect class="card" x="712" y="138" width="444" height="62" rx="14"/>
+  <text x="734" y="165" class="sans label">how the brain talks and what it's for</text>
+  <text x="734" y="187" class="sans detail"><tspan class="mono">CLAUDE.md</tspan></text>
+  <rect class="card" x="712" y="210" width="444" height="62" rx="14"/>
+  <text x="734" y="237" class="sans label">routines to write</text>
+  <text x="734" y="259" class="sans detail"><tspan class="mono">docs/UNCLASSIFIED-LOG.md</tspan></text>
+  <rect class="card" x="712" y="282" width="444" height="62" rx="14"/>
+  <text x="734" y="309" class="sans label">the brain's shape and folders</text>
+  <text x="734" y="331" class="sans detail"><tspan class="mono">CLAUDE.md</tspan> folder map</text>
+  <rect class="card" x="712" y="354" width="444" height="62" rx="14"/>
+  <text x="734" y="381" class="sans label">what each app can do</text>
+  <text x="734" y="403" class="sans detail"><tspan class="mono">docs/CAPABILITIES.md</tspan>, <tspan class="mono">.env</tspan> names</text>
+  <rect class="card" x="712" y="426" width="444" height="62" rx="14"/>
+  <text x="734" y="453" class="sans label">the glossary</text>
+  <text x="734" y="475" class="sans detail"><tspan class="mono">docs/GLOSSARY.md</tspan></text>
+  <rect class="card" x="712" y="498" width="444" height="62" rx="14"/>
+  <text x="734" y="525" class="sans label">rules that bite</text>
+  <text x="734" y="547" class="sans detail"><tspan class="mono">CLAUDE.md</tspan></text>
+  <rect class="card" x="712" y="570" width="444" height="62" rx="14"/>
+  <text x="734" y="597" class="sans label">never-saved names</text>
+  <text x="734" y="619" class="sans detail"><tspan class="mono">.brain-private</tspan></text>
+</svg>

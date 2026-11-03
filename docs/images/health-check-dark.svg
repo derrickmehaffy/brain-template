@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="512" viewBox="0 0 1200 512" role="img" aria-labelledby="title desc">
+  <title id="title">Every chat starts with a health check</title>
+  <desc id="desc">A new chat in the brain my-homelab. Claude opens with: Before we start, two things need attention. 3 changes aren't saved yet. Want me to save them? 1 hand-off from hub: Renew the certificates. Start on it? The person replies: Yes to both. It only speaks up when something needs you. On a healthy brain, it says nothing.</desc>
+  <style>
+    .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .lead { font-size: 18px; fill: #F0EAE0; }
+    .item { font-size: 17.5px; fill: #F0EAE0; }
+    .ask { fill: #CFC6B7; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#2E2A23"/>
+    </pattern>
+    <filter id="lift" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="512" rx="24" fill="#1B1915"/>
+  <rect width="1200" height="512" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="510" rx="23" fill="none" stroke="#3A352D" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#E57D50">EVERY CHAT STARTS WITH A HEALTH CHECK</text>
+
+  <!-- the chat window -->
+  <g filter="url(#lift)">
+    <rect x="160" y="84" width="880" height="342" rx="18" fill="#24211C" stroke="#3A352D" stroke-width="2"/>
+  </g>
+  <path d="M160 102 a18 18 0 0 1 18 -18 h844 a18 18 0 0 1 18 18 v24 h-880 z" fill="#2E2A24"/>
+  <circle cx="186" cy="105" r="6" fill="#D98466"/>
+  <circle cx="206" cy="105" r="6" fill="#DDB45F"/>
+  <circle cx="226" cy="105" r="6" fill="#7FB0A6"/>
+  <text x="600" y="111" class="mono" font-size="15" fill="#A39A8B" text-anchor="middle">my-homelab · new chat</text>
+
+  <!-- Claude's opening message -->
+  <rect x="192" y="150" width="680" height="140" rx="14" fill="#2A2620" stroke="#3A352D" stroke-width="1.5"/>
+  <text x="216" y="186" class="sans lead">Before we start, two things need attention:</text>
+  <circle cx="226" cy="221" r="6" fill="#E2B653"/>
+  <text x="244" y="227" class="sans item">3 changes aren't saved yet. <tspan class="ask">Want me to save them?</tspan></text>
+  <circle cx="226" cy="259" r="6" fill="#E2B653"/>
+  <text x="244" y="265" class="sans item">1 hand-off from hub: Renew the certificates. <tspan class="ask">Start on it?</tspan></text>
+
+  <!-- the reply -->
+  <rect x="852" y="310" width="156" height="48" rx="14" fill="#F0EAE0"/>
+  <text x="930" y="340" class="sans" font-size="17.5" fill="#1B1915" text-anchor="middle">Yes to both.</text>
+
+  <!-- the reply box -->
+  <rect x="192" y="372" width="816" height="38" rx="19" fill="#24211C" stroke="#4A443A" stroke-width="1.5"/>
+  <rect x="214" y="387" width="120" height="8" rx="4" fill="#3A352D"/>
+
+  <text x="600" y="472" class="serif" font-size="21" font-style="italic" fill="#5BBDB2" text-anchor="middle">It only speaks up when something needs you. On a healthy brain, it says nothing.</text>
+</svg>

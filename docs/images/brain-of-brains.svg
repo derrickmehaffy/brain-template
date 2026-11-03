@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
+  <title id="title">A brain of brains</title>
+  <desc id="desc">A folder called Brains holds four sibling brains side by side: hub, homelab, game-mod and shop-inbox. Homelab, game-mod and shop-inbox are each their own brain, with lab-*, mod-* and shop-* skills. The hub is highlighted; its brain.json lists ../homelab, ../game-mod and ../shop-inbox. A warning on the hub: put it beside the other brains, never above them, because a parent folder's CLAUDE.md loads in every chat below it. The hub hands work on in two ways. Defer, in teal: the hub tells you which brain to open and what to say: Open homelab and say: Renew the NAS certificates. Push, dashed in terracotta: the hub writes a hand-off into that brain's inbox, and it waits there. Here it writes into homelab's docs/INBOX.md a heading, 2026-11-03 · from hub · Renew the certificates, with the line status: open. From that file, homelab's next chat sees 1 open hand-off and offers to start it.</desc>
+  <style>
+    .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .card { fill: #FFFCF6; stroke: #E3D8C2; stroke-width: 2; }
+    .brain { fill: #FFFCF6; stroke: #D8CCB4; stroke-width: 1.5; }
+    .name { font-size: 20px; font-weight: 700; fill: #1E1D1A; }
+    .skills { font-size: 15px; fill: #2B7A74; }
+    .muted { font-size: 16px; fill: #8A8274; }
+    .body { font-size: 16.5px; fill: #57524A; }
+    .list { font-size: 15.5px; fill: #1E1D1A; }
+    .file { font-size: 15px; fill: #1E1D1A; }
+    .defer { stroke: #2B7A74; stroke-width: 3; fill: none; }
+    .push { stroke: #B5522B; stroke-width: 3; fill: none; stroke-dasharray: 8 7; }
+    .lead { stroke: #A89F8E; stroke-width: 1.5; stroke-dasharray: 2 5; fill: none; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#DED3BD"/>
+    </pattern>
+    <marker id="teal" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#2B7A74"/>
+    </marker>
+    <marker id="terra" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#B5522B"/>
+    </marker>
+    <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8A8274"/>
+    </marker>
+    <path id="folder" d="M3 0 h12 l4 5 h16 a3 3 0 0 1 3 3 v10 a3 3 0 0 1 -3 3 h-32 a3 3 0 0 1 -3 -3 v-15 a3 3 0 0 1 3 -3 z" fill="#C9962E"/>
+  </defs>
+
+  <rect width="1200" height="650" rx="24" fill="#F6F1E6"/>
+  <rect width="1200" height="650" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="648" rx="23" fill="none" stroke="#E3D8C2" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#B5522B">BRAIN OF BRAINS</text>
+
+  <!-- the Brains/ folder and its four siblings -->
+  <rect x="44" y="84" width="1112" height="216" rx="16" fill="#EFE7D7"/>
+  <use href="#folder" x="66" y="102"/>
+  <text x="114" y="121" class="mono name">Brains/</text>
+
+  <!-- warning tag on the hub -->
+  <rect x="232" y="98" width="748" height="32" rx="16" fill="#FFFCF6" stroke="#B5522B" stroke-width="1.5"/>
+  <path d="M296 130 l8 9 l8 -9 z" fill="#B5522B"/>
+  <circle cx="252" cy="114" r="11" fill="#B5522B"/>
+  <text x="252" y="119" class="sans" font-size="14.5" font-weight="700" fill="#FFFCF6" text-anchor="middle">!</text>
+  <text x="272" y="120" class="sans" font-size="16" fill="#57524A"><tspan font-weight="700" fill="#1E1D1A">beside them, never above:</tspan> a parent folder's CLAUDE.md loads in every chat below it</text>
+
+  <rect x="64" y="142" width="340" height="140" rx="14" fill="#FFFCF6" stroke="#C9962E" stroke-width="3"/>
+  <text x="88" y="176" class="mono name">hub/</text>
+  <text x="88" y="206" class="sans body"><tspan class="mono" fill="#1E1D1A">brain.json</tspan> lists</text>
+  <text class="mono list"><tspan x="88" y="234">../homelab, ../game-mod,</tspan><tspan x="88" y="258">../shop-inbox</tspan></text>
+
+  <rect class="brain" x="428" y="142" width="220" height="140" rx="14"/>
+  <text x="450" y="176" class="mono name">homelab/</text>
+  <text x="450" y="204" class="mono skills">lab-* skills</text>
+  <text x="450" y="230" class="sans muted">its own brain</text>
+
+  <rect class="brain" x="672" y="142" width="220" height="140" rx="14"/>
+  <text x="694" y="176" class="mono name">game-mod/</text>
+  <text x="694" y="204" class="mono skills">mod-* skills</text>
+  <text x="694" y="230" class="sans muted">its own brain</text>
+
+  <rect class="brain" x="916" y="142" width="220" height="140" rx="14"/>
+  <text x="938" y="176" class="mono name">shop-inbox/</text>
+  <text x="938" y="204" class="mono skills">shop-* skills</text>
+  <text x="938" y="230" class="sans muted">its own brain</text>
+
+  <!-- Defer: you carry it -->
+  <path class="defer" d="M150 286 L150 344" marker-end="url(#teal)"/>
+  <text x="166" y="324" class="sans" font-size="18" font-weight="700" fill="#2B7A74">Defer</text>
+  <rect x="64" y="356" width="372" height="132" rx="16" fill="#FFFCF6" stroke="#2B7A74" stroke-width="2"/>
+  <circle cx="98" cy="398" r="11" fill="#2B7A74"/>
+  <path d="M80 432 a18 16 0 0 1 36 0 z" fill="#2B7A74"/>
+  <text x="130" y="392" class="sans body">Open <tspan class="mono" fill="#1E1D1A">homelab</tspan> and say:</text>
+  <rect x="128" y="410" width="292" height="46" rx="14" fill="#1E1D1A"/>
+  <text x="144" y="439" class="sans" font-size="16" fill="#F6F1E6">Renew the NAS certificates.</text>
+
+  <!-- Push: the hub leaves a hand-off -->
+  <path class="push" d="M380 286 C 380 360, 420 400, 498 400" marker-end="url(#terra)"/>
+  <text x="406" y="330" class="sans" font-size="18" font-weight="700" fill="#B5522B">Push</text>
+  <path class="lead" d="M538 284 V336"/>
+  <rect class="card" x="502" y="338" width="560" height="122" rx="14"/>
+  <path d="M503 352 a13 13 0 0 1 13 -13 h532 a13 13 0 0 1 13 13 v22 h-558 z" fill="#EFE7D7"/>
+  <text x="522" y="364" class="mono" font-size="15" fill="#57524A">homelab/docs/INBOX.md</text>
+  <text x="522" y="408" class="mono file"><tspan fill="#8A8274">## </tspan>2026-11-03 · from hub · Renew the certificates</text>
+  <text x="522" y="436" class="mono file">- status: <tspan fill="#B5522B">open</tspan></text>
+
+  <!-- what homelab does with it -->
+  <line x1="782" y1="462" x2="782" y2="494" stroke="#8A8274" stroke-width="2.5" marker-end="url(#arrow)"/>
+  <rect x="502" y="504" width="560" height="48" rx="14" fill="#F3ECDF" stroke="#D8CCB4" stroke-width="1.5"/>
+  <text x="522" y="534" class="sans" font-size="16.5" fill="#57524A"><tspan font-weight="700" fill="#1E1D1A">homelab's next chat:</tspan> 1 open hand-off, offer to start</text>
+
+  <!-- legend -->
+  <line x1="64" y1="588" x2="108" y2="588" class="defer" marker-end="url(#teal)"/>
+  <text x="122" y="594" class="sans" font-size="17" fill="#1E1D1A"><tspan font-weight="700">Defer</tspan><tspan dx="8" fill="#57524A">the hub tells you which brain to open and what to say</tspan></text>
+  <line x1="64" y1="618" x2="108" y2="618" class="push" marker-end="url(#terra)"/>
+  <text x="122" y="624" class="sans" font-size="17" fill="#1E1D1A"><tspan font-weight="700">Push</tspan><tspan dx="8" fill="#57524A">the hub writes a hand-off into that brain's inbox, and it waits there</tspan></text>
+</svg>

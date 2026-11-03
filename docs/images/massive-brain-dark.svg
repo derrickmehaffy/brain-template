@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="620" viewBox="0 0 1200 620" role="img" aria-labelledby="title desc">
+  <title id="title">A massive brain</title>
+  <desc id="desc">A massive brain, for many repos and several kinds of work. Four things start work, each leading into its own short chain of skills. A release is due: plan-release, then cut-release, then post-notes. An incident: triage-alert, then a router that fans out to check-logs, check-db or page-owner. A customer question: find-account, then draft-reply. The weekly report: pull-numbers, then write-report. Every chain sits over one shared layer: one glossary, one capabilities file, practices and scripts. Beside them are what the skills work on: repos, several of them, each its own repo, such as api, web, ops and data; work/&lt;area&gt;, a working folder for each area; systems reached through MCP servers, such as the tracker, chat and the database; and agents, report-only helpers for big reads. A note: two areas that share no systems, words or people are two brains: use a hub.</desc>
+  <style>
+    .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .card { fill: #24211C; stroke: #3A352D; stroke-width: 2; }
+    .bubble { fill: #F0EAE0; }
+    .say { font-size: 16.5px; fill: #1B1915; }
+    .chip { fill: #2E2A24; }
+    .skill { font-size: 15px; fill: #5BBDB2; }
+    .step { stroke: #7D7567; stroke-width: 2; fill: none; }
+    .head { font-size: 18px; font-weight: 700; fill: #F0EAE0; }
+    .body { font-size: 16px; fill: #CFC6B7; }
+    .repo { fill: none; stroke: #7D7567; stroke-width: 2; stroke-dasharray: 6 5; }
+    .small { font-size: 14.5px; fill: #F0EAE0; }
+    .pill { fill: #2E2A24; }
+    .rule { stroke: #3A352D; stroke-width: 1.5; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#2E2A23"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#A39A8B"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="620" rx="24" fill="#1B1915"/>
+  <rect width="1200" height="620" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="618" rx="23" fill="none" stroke="#3A352D" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#E57D50">MASSIVE BRAIN</text>
+
+  <!-- the skills -->
+  <rect class="card" x="264" y="84" width="564" height="340" rx="16"/>
+
+  <!-- entry triggers -->
+  <g class="sans">
+    <rect class="bubble" x="44" y="102" width="196" height="44" rx="22"/>
+    <text x="142" y="130" class="say" text-anchor="middle">a release is due</text>
+    <rect class="bubble" x="44" y="190" width="196" height="44" rx="22"/>
+    <text x="142" y="218" class="say" text-anchor="middle">an incident</text>
+    <rect class="bubble" x="44" y="278" width="196" height="44" rx="22"/>
+    <text x="142" y="306" class="say" text-anchor="middle">a customer question</text>
+    <rect class="bubble" x="44" y="366" width="196" height="44" rx="22"/>
+    <text x="142" y="394" class="say" text-anchor="middle">the weekly report</text>
+  </g>
+  <g stroke="#A39A8B" stroke-width="2.5" marker-end="url(#arrow)">
+    <line x1="244" y1="124" x2="280" y2="124"/>
+    <line x1="244" y1="212" x2="280" y2="212"/>
+    <line x1="244" y1="300" x2="280" y2="300"/>
+    <line x1="244" y1="388" x2="280" y2="388"/>
+  </g>
+
+  <!-- chain links -->
+  <g class="step" marker-end="url(#arrow)">
+    <line x1="424" y1="124" x2="472" y2="124"/>
+    <line x1="616" y1="124" x2="664" y2="124"/>
+    <line x1="424" y1="212" x2="490" y2="212"/>
+    <path d="M524 212 C 556 212, 562 174, 594 174"/>
+    <line x1="524" y1="212" x2="594" y2="212"/>
+    <path d="M524 212 C 556 212, 562 250, 594 250"/>
+    <line x1="424" y1="300" x2="472" y2="300"/>
+    <line x1="424" y1="388" x2="472" y2="388"/>
+  </g>
+
+  <!-- skill chips -->
+  <g class="mono skill">
+    <rect class="chip" x="288" y="107" width="136" height="34" rx="17"/><text x="356" y="129" text-anchor="middle">plan-release</text>
+    <rect class="chip" x="480" y="107" width="136" height="34" rx="17"/><text x="548" y="129" text-anchor="middle">cut-release</text>
+    <rect class="chip" x="672" y="107" width="136" height="34" rx="17"/><text x="740" y="129" text-anchor="middle">post-notes</text>
+
+    <rect class="chip" x="288" y="195" width="136" height="34" rx="17"/><text x="356" y="217" text-anchor="middle">triage-alert</text>
+    <rect class="chip" x="600" y="159" width="128" height="30" rx="15"/><text x="664" y="179" text-anchor="middle">check-logs</text>
+    <rect class="chip" x="600" y="197" width="128" height="30" rx="15"/><text x="664" y="217" text-anchor="middle">check-db</text>
+    <rect class="chip" x="600" y="235" width="128" height="30" rx="15"/><text x="664" y="255" text-anchor="middle">page-owner</text>
+
+    <rect class="chip" x="288" y="283" width="136" height="34" rx="17"/><text x="356" y="305" text-anchor="middle">find-account</text>
+    <rect class="chip" x="480" y="283" width="136" height="34" rx="17"/><text x="548" y="305" text-anchor="middle">draft-reply</text>
+
+    <rect class="chip" x="288" y="371" width="136" height="34" rx="17"/><text x="356" y="393" text-anchor="middle">pull-numbers</text>
+    <rect class="chip" x="480" y="371" width="136" height="34" rx="17"/><text x="548" y="393" text-anchor="middle">write-report</text>
+  </g>
+  <text x="808" y="404" class="mono" font-size="15" fill="#A39A8B" text-anchor="end">.claude/skills/</text>
+  <!-- the router -->
+  <rect x="496" y="200" width="24" height="24" rx="3" transform="rotate(45 508 212)" fill="#E2B653"/>
+  <text x="508" y="250" class="sans" font-size="14.5" fill="#A39A8B" text-anchor="middle">router</text>
+
+  <!-- the shared band -->
+  <rect x="44" y="444" width="784" height="56" rx="14" fill="#2E2A24"/>
+  <text x="436" y="478" class="sans" font-size="17.5" fill="#F0EAE0" text-anchor="middle">one glossary · one capabilities file · practices · scripts</text>
+
+  <!-- what the skills work on -->
+  <rect class="card" x="852" y="84" width="304" height="416" rx="16"/>
+  <text x="874" y="118" class="mono head">repos/</text>
+  <rect class="repo" x="874" y="134" width="60" height="36" rx="8"/><text x="904" y="157" class="mono small" text-anchor="middle">api</text>
+  <rect class="repo" x="942" y="134" width="60" height="36" rx="8"/><text x="972" y="157" class="mono small" text-anchor="middle">web</text>
+  <rect class="repo" x="1010" y="134" width="60" height="36" rx="8"/><text x="1040" y="157" class="mono small" text-anchor="middle">ops</text>
+  <rect class="repo" x="1078" y="134" width="60" height="36" rx="8"/><text x="1108" y="157" class="mono small" text-anchor="middle">data</text>
+  <line class="rule" x1="868" y1="190" x2="1140" y2="190"/>
+
+  <text x="874" y="222" class="mono head">work/&lt;area&gt;/</text>
+  <text x="874" y="248" class="sans body">a working folder for each area</text>
+  <line class="rule" x1="868" y1="268" x2="1140" y2="268"/>
+
+  <text x="874" y="300" class="sans head">systems <tspan font-weight="400" fill="#CFC6B7">(MCP servers)</tspan></text>
+  <rect class="pill" x="874" y="316" width="84" height="32" rx="16"/><text x="916" y="337" class="sans body" text-anchor="middle">tracker</text>
+  <rect class="pill" x="966" y="316" width="62" height="32" rx="16"/><text x="997" y="337" class="sans body" text-anchor="middle">chat</text>
+  <rect class="pill" x="1036" y="316" width="100" height="32" rx="16"/><text x="1086" y="337" class="sans body" text-anchor="middle">database</text>
+  <line class="rule" x1="868" y1="368" x2="1140" y2="368"/>
+
+  <text x="874" y="400" class="sans head">agents</text>
+  <text class="sans body"><tspan x="874" y="426">report-only helpers</tspan><tspan x="874" y="450">for big reads</tspan></text>
+
+  <!-- when to split -->
+  <rect class="card" x="44" y="528" width="1112" height="56" rx="16"/>
+  <circle cx="80" cy="556" r="16" fill="#E2B653"/>
+  <text x="80" y="562" class="sans" font-size="18" font-weight="700" fill="#24211C" text-anchor="middle">!</text>
+  <text x="108" y="562" class="sans" font-size="17.5" fill="#CFC6B7">Two areas that share no systems, words or people are two brains: <tspan font-weight="700" fill="#F0EAE0">use a hub.</tspan></text>
+</svg>

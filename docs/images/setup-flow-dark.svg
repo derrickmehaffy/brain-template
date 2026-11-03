@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="680" viewBox="0 0 1200 680" role="img" aria-labelledby="title desc">
+  <title id="title">Setting up a brain</title>
+  <desc id="desc">Setting up a brain takes nine steps, in two rows. One: check the computer, for Python, git and a name for the history. Two: quick or interview, a few minutes, or 10 to 15 to tailor it. The interview asks about your goal, the work that recurs, where it lives, systems and keys (names only), people, words, and what must never happen. Three: pick the shape: one project, several, massive, or a hub. Four: never-saved names, such as servers, clients and unreleased projects. Five: keep the guides? They stay in the brain until you say. Six: rehearse, then yes: see everything before it's written. Seven: lay it out: folders, projects, CLAUDE.md and hand-offs. Eight: backup, to a private GitHub copy, or this computer only. Nine: start a new chat in the brain, so everything you set up loads, and ask it, What's in this brain?</desc>
+  <style>
+    .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .card { fill: #24211C; stroke: #3A352D; stroke-width: 2; }
+    .head { font-size: 22px; fill: #F0EAE0; }
+    .body { font-size: 16px; fill: #CFC6B7; }
+    .num { font-size: 18px; fill: #24211C; font-weight: 700; }
+    .pill { fill: #2E2A24; }
+    .item { font-size: 16px; fill: #F0EAE0; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#2E2A23"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#A39A8B"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="680" rx="24" fill="#1B1915"/>
+  <rect width="1200" height="680" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="678" rx="23" fill="none" stroke="#3A352D" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#E57D50">SETTING UP A BRAIN</text>
+
+  <!-- connectors: row one runs right, row two runs back left -->
+  <g stroke="#A39A8B" stroke-width="2.5" marker-end="url(#arrow)">
+    <line x1="246" y1="183" x2="266" y2="183"/>
+    <line x1="474" y1="183" x2="494" y2="183"/>
+    <line x1="702" y1="183" x2="722" y2="183"/>
+    <line x1="930" y1="183" x2="950" y2="183"/>
+    <line x1="1056" y1="284" x2="1056" y2="440"/>
+    <line x1="954" y1="545" x2="934" y2="545"/>
+    <line x1="726" y1="545" x2="706" y2="545"/>
+    <line x1="498" y1="545" x2="478" y2="545"/>
+  </g>
+
+  <!-- 1 -->
+  <rect class="card" x="44" y="84" width="200" height="198" rx="16"/>
+  <circle cx="80" cy="120" r="18" fill="#F0EAE0"/>
+  <text x="80" y="126" class="sans num" text-anchor="middle">1</text>
+  <text class="serif head"><tspan x="62" y="164">Check the</tspan><tspan x="62" y="190">computer</tspan></text>
+  <text class="sans body"><tspan x="62" y="222">Python, git, a name</tspan><tspan x="62" y="244">for the history</tspan></text>
+  <!-- 2 -->
+  <rect class="card" x="272" y="84" width="200" height="198" rx="16"/>
+  <circle cx="308" cy="120" r="18" fill="#E2B653"/>
+  <text x="308" y="126" class="sans num" text-anchor="middle">2</text>
+  <text class="serif head"><tspan x="290" y="164">Quick or</tspan><tspan x="290" y="190">interview</tspan></text>
+  <text class="sans body"><tspan x="290" y="222">a few minutes, or</tspan><tspan x="290" y="244">10–15 to tailor it</tspan></text>
+  <!-- 3 -->
+  <rect class="card" x="500" y="84" width="200" height="198" rx="16"/>
+  <circle cx="536" cy="120" r="18" fill="#F0EAE0"/>
+  <text x="536" y="126" class="sans num" text-anchor="middle">3</text>
+  <text class="serif head"><tspan x="518" y="164">Pick the</tspan><tspan x="518" y="190">shape</tspan></text>
+  <text class="sans body"><tspan x="518" y="222">one project,</tspan><tspan x="518" y="244">several, massive,</tspan><tspan x="518" y="266">or a hub</tspan></text>
+  <!-- 4 -->
+  <rect class="card" x="728" y="84" width="200" height="198" rx="16"/>
+  <circle cx="764" cy="120" r="18" fill="#F0EAE0"/>
+  <text x="764" y="126" class="sans num" text-anchor="middle">4</text>
+  <text class="serif head"><tspan x="746" y="164">Never-saved</tspan><tspan x="746" y="190">names</tspan></text>
+  <text class="sans body"><tspan x="746" y="222">servers, clients,</tspan><tspan x="746" y="244">unreleased projects</tspan></text>
+  <!-- 5 -->
+  <rect class="card" x="956" y="84" width="200" height="198" rx="16"/>
+  <circle cx="992" cy="120" r="18" fill="#F0EAE0"/>
+  <text x="992" y="126" class="sans num" text-anchor="middle">5</text>
+  <text class="serif head"><tspan x="974" y="164">Keep the</tspan><tspan x="974" y="190">guides?</tspan></text>
+  <text class="sans body"><tspan x="974" y="222">in the brain until</tspan><tspan x="974" y="244">you say</tspan></text>
+  <!-- 6 -->
+  <rect class="card" x="956" y="446" width="200" height="198" rx="16"/>
+  <circle cx="992" cy="482" r="18" fill="#F0EAE0"/>
+  <text x="992" y="488" class="sans num" text-anchor="middle">6</text>
+  <text class="serif head"><tspan x="974" y="526">Rehearse,</tspan><tspan x="974" y="552">then yes</tspan></text>
+  <text class="sans body"><tspan x="974" y="584">see everything</tspan><tspan x="974" y="606">before it's written</tspan></text>
+  <!-- 7 -->
+  <rect class="card" x="728" y="446" width="200" height="198" rx="16"/>
+  <circle cx="764" cy="482" r="18" fill="#F0EAE0"/>
+  <text x="764" y="488" class="sans num" text-anchor="middle">7</text>
+  <text class="serif head"><tspan x="746" y="526">Lay it out</tspan></text>
+  <text class="sans body"><tspan x="746" y="558">folders, projects,</tspan><tspan x="746" y="580">CLAUDE.md,</tspan><tspan x="746" y="602">hand-offs</tspan></text>
+  <!-- 8 -->
+  <rect class="card" x="500" y="446" width="200" height="198" rx="16"/>
+  <circle cx="536" cy="482" r="18" fill="#F0EAE0"/>
+  <text x="536" y="488" class="sans num" text-anchor="middle">8</text>
+  <text class="serif head"><tspan x="518" y="526">Backup</tspan></text>
+  <text class="sans body"><tspan x="518" y="558">a private GitHub</tspan><tspan x="518" y="580">copy, or this</tspan><tspan x="518" y="602">computer only</tspan></text>
+
+  <!-- 9: the wide last card -->
+  <rect class="card" x="44" y="446" width="428" height="198" rx="16" style="stroke: #5BBDB2; stroke-width: 2.5"/>
+  <circle cx="80" cy="482" r="18" fill="#5BBDB2"/>
+  <text x="80" y="488" class="sans num" text-anchor="middle">9</text>
+  <text x="62" y="530" class="serif" font-size="24" fill="#F0EAE0">Start a new chat in the brain</text>
+  <text x="62" y="562" class="sans body">so everything you set up loads</text>
+  <rect x="62" y="582" width="236" height="44" rx="14" fill="#F0EAE0"/>
+  <text x="80" y="610" class="sans" font-size="16" fill="#1B1915">What's in this brain?</text>
+
+  <!-- the interview, hanging off step 2 -->
+  <path d="M60 310 H361 L372 292 L383 310 H989 A16 16 0 0 1 1005 326 V404 A16 16 0 0 1 989 420 H60 A16 16 0 0 1 44 404 V326 A16 16 0 0 1 60 310 Z" fill="#24211C" stroke="#E2B653" stroke-width="2"/>
+  <text x="70" y="372" class="serif" font-size="22" font-style="italic" fill="#F0EAE0">the interview</text>
+  <rect class="pill" x="226" y="326" width="108" height="34" rx="17"/><text x="280" y="349" class="sans item" text-anchor="middle">your goal</text>
+  <rect class="pill" x="344" y="326" width="197" height="34" rx="17"/><text x="442.5" y="349" class="sans item" text-anchor="middle">the work that recurs</text>
+  <rect class="pill" x="551" y="326" width="138" height="34" rx="17"/><text x="620" y="349" class="sans item" text-anchor="middle">where it lives</text>
+  <rect class="pill" x="699" y="326" width="284" height="34" rx="17"/><text x="841" y="349" class="sans item" text-anchor="middle">systems and keys (names only)</text>
+  <rect class="pill" x="226" y="372" width="87" height="34" rx="17"/><text x="269.5" y="395" class="sans item" text-anchor="middle">people</text>
+  <rect class="pill" x="323" y="372" width="81" height="34" rx="17"/><text x="363.5" y="395" class="sans item" text-anchor="middle">words</text>
+  <rect class="pill" x="414" y="372" width="237" height="34" rx="17"/><text x="532.5" y="395" class="sans item" text-anchor="middle">what must never happen</text>
+</svg>

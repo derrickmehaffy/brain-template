@@ -31,7 +31,7 @@
   <!-- template -->
   <rect class="card" x="400" y="80" width="400" height="104" rx="16" style="stroke: #E2B653; stroke-width: 3"/>
   <text x="600" y="124" class="serif name" text-anchor="middle">brain-template</text>
-  <text x="600" y="156" class="sans small" text-anchor="middle">the harness and the seven brain-* skills</text>
+  <text x="600" y="156" class="sans small" text-anchor="middle">the harness and the eight brain-* skills</text>
 
   <!-- arrows: down (update) and up (suggestion) for each brain -->
   <path class="down" d="M470 186 C 420 240, 240 240, 200 316" marker-end="url(#teal)"/>

@@ -1,0 +1,168 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="512" viewBox="0 0 1200 512" role="img" aria-labelledby="title desc">
+  <title id="title">How a brain grows</title>
+  <desc id="desc">A timeline of five stops, each with a shelf that gets fuller. Day 1: eight meta skills, no routines of its own yet. Week 1: work that fits nothing gets noted, and a fact you checked gets recorded. Week 2: the second time a job comes up, it becomes a routine. Month 1: a handful of routines, a glossary, and what each app can and can't do. Later: routers for busy entry points, and unused routines merged away. On the shelves, mustard is the meta skills, teal is your routines, and plum is notes and facts. Nothing is written up front: it all grows from real work.</desc>
+  <style>
+    .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .card { fill: #24211C; stroke: #3A352D; stroke-width: 2; }
+    .stage { fill: #2E2A24; }
+    .head { font-size: 26px; fill: #F0EAE0; }
+    .body { font-size: 16px; fill: #CFC6B7; }
+    .tagtext { font-size: 14.5px; font-weight: 600; fill: #24211C; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#2E2A23"/>
+    </pattern>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#A39A8B"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="512" rx="24" fill="#1B1915"/>
+  <rect width="1200" height="512" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="510" rx="23" fill="none" stroke="#3A352D" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#E57D50">HOW A BRAIN GROWS</text>
+
+  <!-- legend -->
+  <g class="sans">
+    <rect x="780" y="38" width="112" height="28" rx="14" fill="#E2B653"/>
+    <text x="836" y="57" class="tagtext" text-anchor="middle">meta skills</text>
+    <rect x="902" y="38" width="96" height="28" rx="14" fill="#5BBDB2"/>
+    <text x="950" y="57" class="tagtext" text-anchor="middle">routines</text>
+    <rect x="1008" y="38" width="148" height="28" rx="14" fill="#BE90C2"/>
+    <text x="1082" y="57" class="tagtext" text-anchor="middle">notes and facts</text>
+  </g>
+
+  <!-- the timeline -->
+  <line x1="60" y1="104" x2="1146" y2="104" stroke="#A39A8B" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <!-- Day 1 -->
+  <circle cx="144" cy="104" r="9" fill="#24211C" stroke="#5BBDB2" stroke-width="3"/>
+  <rect class="card" x="44" y="136" width="200" height="290" rx="16"/>
+  <rect class="stage" x="54" y="150" width="180" height="114" rx="12"/>
+  <rect x="76" y="166" width="10" height="36" rx="2" fill="#E2B653"/>
+  <rect x="90" y="162" width="10" height="40" rx="2" fill="#E2B653"/>
+  <rect x="104" y="168" width="10" height="34" rx="2" fill="#E2B653"/>
+  <rect x="118" y="164" width="10" height="38" rx="2" fill="#E2B653"/>
+  <rect x="132" y="166" width="10" height="36" rx="2" fill="#E2B653"/>
+  <rect x="146" y="162" width="10" height="40" rx="2" fill="#E2B653"/>
+  <rect x="160" y="167" width="10" height="35" rx="2" fill="#E2B653"/>
+  <rect x="174" y="164" width="10" height="38" rx="2" fill="#E2B653"/>
+  <line x1="64" y1="203.5" x2="224" y2="203.5" stroke="#6B6152" stroke-width="3" stroke-linecap="round"/>
+  <line x1="64" y1="255.5" x2="224" y2="255.5" stroke="#6B6152" stroke-width="3" stroke-linecap="round"/>
+  <text x="62" y="306" class="serif head">Day 1</text>
+  <text class="sans body"><tspan x="62" y="338">Eight meta skills,</tspan><tspan x="62" y="360">no routines of its</tspan><tspan x="62" y="382">own yet.</tspan></text>
+  <!-- Week 1 -->
+  <circle cx="372" cy="104" r="9" fill="#24211C" stroke="#5BBDB2" stroke-width="3"/>
+  <rect class="card" x="272" y="136" width="200" height="290" rx="16"/>
+  <rect class="stage" x="282" y="150" width="180" height="114" rx="12"/>
+  <rect x="304" y="166" width="10" height="36" rx="2" fill="#E2B653"/>
+  <rect x="318" y="162" width="10" height="40" rx="2" fill="#E2B653"/>
+  <rect x="332" y="168" width="10" height="34" rx="2" fill="#E2B653"/>
+  <rect x="346" y="164" width="10" height="38" rx="2" fill="#E2B653"/>
+  <rect x="360" y="166" width="10" height="36" rx="2" fill="#E2B653"/>
+  <rect x="374" y="162" width="10" height="40" rx="2" fill="#E2B653"/>
+  <rect x="388" y="167" width="10" height="35" rx="2" fill="#E2B653"/>
+  <rect x="402" y="164" width="10" height="38" rx="2" fill="#E2B653"/>
+  <rect x="296" y="232" width="12" height="22" rx="2" fill="#24211C" stroke="#BE90C2" stroke-width="2"/>
+  <line x1="299" y1="239" x2="305" y2="239" stroke="#BE90C2" stroke-width="1.5"/>
+  <line x1="299" y1="245" x2="305" y2="245" stroke="#BE90C2" stroke-width="1.5"/>
+  <rect x="312" y="232" width="12" height="22" rx="2" fill="#24211C" stroke="#BE90C2" stroke-width="2"/>
+  <line x1="315" y1="239" x2="321" y2="239" stroke="#BE90C2" stroke-width="1.5"/>
+  <line x1="315" y1="245" x2="321" y2="245" stroke="#BE90C2" stroke-width="1.5"/>
+  <line x1="292" y1="203.5" x2="452" y2="203.5" stroke="#6B6152" stroke-width="3" stroke-linecap="round"/>
+  <line x1="292" y1="255.5" x2="452" y2="255.5" stroke="#6B6152" stroke-width="3" stroke-linecap="round"/>
+  <text x="290" y="306" class="serif head">Week 1</text>
+  <text class="sans body"><tspan x="290" y="338">Work that fits</tspan><tspan x="290" y="360">nothing gets noted.</tspan><tspan x="290" y="382">A fact you checked</tspan><tspan x="290" y="404">gets recorded.</tspan></text>
+  <!-- Week 2 -->
+  <circle cx="600" cy="104" r="9" fill="#24211C" stroke="#5BBDB2" stroke-width="3"/>
+  <rect class="card" x="500" y="136" width="200" height="290" rx="16"/>
+  <rect class="stage" x="510" y="150" width="180" height="114" rx="12"/>
+  <rect x="532" y="166" width="10" height="36" rx="2" fill="#E2B653"/>
+  <rect x="546" y="162" width="10" height="40" rx="2" fill="#E2B653"/>
+  <rect x="560" y="168" width="10" height="34" rx="2" fill="#E2B653"/>
+  <rect x="574" y="164" width="10" height="38" rx="2" fill="#E2B653"/>
+  <rect x="588" y="166" width="10" height="36" rx="2" fill="#E2B653"/>
+  <rect x="602" y="162" width="10" height="40" rx="2" fill="#E2B653"/>
+  <rect x="616" y="167" width="10" height="35" rx="2" fill="#E2B653"/>
+  <rect x="630" y="164" width="10" height="38" rx="2" fill="#E2B653"/>
+  <rect x="524" y="216" width="10" height="38" rx="2" fill="#5BBDB2"/>
+  <rect x="538" y="232" width="12" height="22" rx="2" fill="#24211C" stroke="#BE90C2" stroke-width="2"/>
+  <line x1="541" y1="239" x2="547" y2="239" stroke="#BE90C2" stroke-width="1.5"/>
+  <line x1="541" y1="245" x2="547" y2="245" stroke="#BE90C2" stroke-width="1.5"/>
+  <rect x="554" y="232" width="12" height="22" rx="2" fill="#24211C" stroke="#BE90C2" stroke-width="2"/>
+  <line x1="557" y1="239" x2="563" y2="239" stroke="#BE90C2" stroke-width="1.5"/>
+  <line x1="557" y1="245" x2="563" y2="245" stroke="#BE90C2" stroke-width="1.5"/>
+  <line x1="520" y1="203.5" x2="680" y2="203.5" stroke="#6B6152" stroke-width="3" stroke-linecap="round"/>
+  <line x1="520" y1="255.5" x2="680" y2="255.5" stroke="#6B6152" stroke-width="3" stroke-linecap="round"/>
+  <text x="518" y="306" class="serif head">Week 2</text>
+  <text class="sans body"><tspan x="518" y="338">The second time a</tspan><tspan x="518" y="360">job comes up, it</tspan><tspan x="518" y="382">becomes a routine.</tspan></text>
+  <!-- Month 1 -->
+  <circle cx="828" cy="104" r="9" fill="#24211C" stroke="#5BBDB2" stroke-width="3"/>
+  <rect class="card" x="728" y="136" width="200" height="290" rx="16"/>
+  <rect class="stage" x="738" y="150" width="180" height="114" rx="12"/>
+  <rect x="760" y="166" width="10" height="36" rx="2" fill="#E2B653"/>
+  <rect x="774" y="162" width="10" height="40" rx="2" fill="#E2B653"/>
+  <rect x="788" y="168" width="10" height="34" rx="2" fill="#E2B653"/>
+  <rect x="802" y="164" width="10" height="38" rx="2" fill="#E2B653"/>
+  <rect x="816" y="166" width="10" height="36" rx="2" fill="#E2B653"/>
+  <rect x="830" y="162" width="10" height="40" rx="2" fill="#E2B653"/>
+  <rect x="844" y="167" width="10" height="35" rx="2" fill="#E2B653"/>
+  <rect x="858" y="164" width="10" height="38" rx="2" fill="#E2B653"/>
+  <rect x="752" y="216" width="10" height="38" rx="2" fill="#5BBDB2"/>
+  <rect x="766" y="218" width="10" height="36" rx="2" fill="#5BBDB2"/>
+  <rect x="780" y="214" width="10" height="40" rx="2" fill="#5BBDB2"/>
+  <rect x="794" y="219" width="10" height="35" rx="2" fill="#5BBDB2"/>
+  <rect x="808" y="216" width="10" height="38" rx="2" fill="#5BBDB2"/>
+  <rect x="822" y="216" width="14" height="38" rx="2" fill="#BE90C2"/>
+  <line x1="825" y1="224" x2="833" y2="224" stroke="#24211C" stroke-width="2"/>
+  <rect x="840" y="220" width="14" height="34" rx="2" fill="#BE90C2"/>
+  <line x1="843" y1="228" x2="851" y2="228" stroke="#24211C" stroke-width="2"/>
+  <rect x="858" y="232" width="12" height="22" rx="2" fill="#24211C" stroke="#BE90C2" stroke-width="2"/>
+  <line x1="861" y1="239" x2="867" y2="239" stroke="#BE90C2" stroke-width="1.5"/>
+  <line x1="861" y1="245" x2="867" y2="245" stroke="#BE90C2" stroke-width="1.5"/>
+  <rect x="874" y="232" width="12" height="22" rx="2" fill="#24211C" stroke="#BE90C2" stroke-width="2"/>
+  <line x1="877" y1="239" x2="883" y2="239" stroke="#BE90C2" stroke-width="1.5"/>
+  <line x1="877" y1="245" x2="883" y2="245" stroke="#BE90C2" stroke-width="1.5"/>
+  <line x1="748" y1="203.5" x2="908" y2="203.5" stroke="#6B6152" stroke-width="3" stroke-linecap="round"/>
+  <line x1="748" y1="255.5" x2="908" y2="255.5" stroke="#6B6152" stroke-width="3" stroke-linecap="round"/>
+  <text x="746" y="306" class="serif head">Month 1</text>
+  <text class="sans body"><tspan x="746" y="338">A handful of</tspan><tspan x="746" y="360">routines, a glossary,</tspan><tspan x="746" y="382">what each app can</tspan><tspan x="746" y="404">and can't do.</tspan></text>
+  <!-- Later -->
+  <circle cx="1056" cy="104" r="9" fill="#24211C" stroke="#5BBDB2" stroke-width="3"/>
+  <rect class="card" x="956" y="136" width="200" height="290" rx="16"/>
+  <rect class="stage" x="966" y="150" width="180" height="114" rx="12"/>
+  <rect x="988" y="166" width="10" height="36" rx="2" fill="#E2B653"/>
+  <rect x="1002" y="162" width="10" height="40" rx="2" fill="#E2B653"/>
+  <rect x="1016" y="168" width="10" height="34" rx="2" fill="#E2B653"/>
+  <rect x="1030" y="164" width="10" height="38" rx="2" fill="#E2B653"/>
+  <rect x="1044" y="166" width="10" height="36" rx="2" fill="#E2B653"/>
+  <rect x="1058" y="162" width="10" height="40" rx="2" fill="#E2B653"/>
+  <rect x="1072" y="167" width="10" height="35" rx="2" fill="#E2B653"/>
+  <rect x="1086" y="164" width="10" height="38" rx="2" fill="#E2B653"/>
+  <rect x="980" y="216" width="10" height="38" rx="2" fill="#5BBDB2"/>
+  <rect x="994" y="218" width="10" height="36" rx="2" fill="#5BBDB2"/>
+  <rect x="1008" y="214" width="10" height="40" rx="2" fill="#5BBDB2"/>
+  <rect x="1022" y="214" width="16" height="40" rx="2" fill="#5BBDB2"/>
+  <line x1="1030" y1="220" x2="1030" y2="248" stroke="#24211C" stroke-width="1.5"/>
+  <rect x="1044" y="232" width="16" height="16" rx="2" transform="rotate(45 1052 240)" fill="#5BBDB2"/>
+  <rect x="1066" y="216" width="14" height="38" rx="2" fill="#BE90C2"/>
+  <line x1="1069" y1="224" x2="1077" y2="224" stroke="#24211C" stroke-width="2"/>
+  <rect x="1084" y="220" width="14" height="34" rx="2" fill="#BE90C2"/>
+  <line x1="1087" y1="228" x2="1095" y2="228" stroke="#24211C" stroke-width="2"/>
+  <rect x="1102" y="232" width="12" height="22" rx="2" fill="#24211C" stroke="#BE90C2" stroke-width="2"/>
+  <line x1="1105" y1="239" x2="1111" y2="239" stroke="#BE90C2" stroke-width="1.5"/>
+  <line x1="1105" y1="245" x2="1111" y2="245" stroke="#BE90C2" stroke-width="1.5"/>
+  <rect x="1118" y="232" width="12" height="22" rx="2" fill="#24211C" stroke="#BE90C2" stroke-width="2"/>
+  <line x1="1121" y1="239" x2="1127" y2="239" stroke="#BE90C2" stroke-width="1.5"/>
+  <line x1="1121" y1="245" x2="1127" y2="245" stroke="#BE90C2" stroke-width="1.5"/>
+  <line x1="976" y1="203.5" x2="1136" y2="203.5" stroke="#6B6152" stroke-width="3" stroke-linecap="round"/>
+  <line x1="976" y1="255.5" x2="1136" y2="255.5" stroke="#6B6152" stroke-width="3" stroke-linecap="round"/>
+  <text x="974" y="306" class="serif head">Later</text>
+  <text class="sans body"><tspan x="974" y="338">Routers for busy</tspan><tspan x="974" y="360">entry points;</tspan><tspan x="974" y="382">unused routines</tspan><tspan x="974" y="404">merged away.</tspan></text>
+
+  <rect x="244" y="450" width="712" height="40" rx="20" fill="#1B1915"/>
+  <text x="600" y="477" class="serif" font-size="22" font-style="italic" fill="#5BBDB2" text-anchor="middle">Nothing is written up front: it all grows from real work.</text>
+</svg>

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="712" viewBox="0 0 1200 712" role="img" aria-labelledby="title desc">
   <title id="title">What's inside a brain</title>
-  <desc id="desc">The folder of a brain called my-homelab. Yours: CLAUDE.md, where every session starts; README.md; your routines in .claude/skills/lab-*; docs/ROUTING.md, which skill runs when; docs/practices, facts you have checked; docs/GLOSSARY.md, your words; scripts, small helpers. From the template and kept up to date: the seven brain-* meta skills and _meta, the harness. Never saved in the brain: .env with keys and passwords, and your project repos and big files.</desc>
+  <desc id="desc">The folder of a brain called my-homelab. Yours: CLAUDE.md, where every session starts; README.md; your routines in .claude/skills/lab-*; docs/ROUTING.md, which skill runs when; docs/practices, facts you have checked; docs/GLOSSARY.md, your words; scripts, small helpers. From the template and kept up to date: the eight brain-* meta skills and _meta, the harness. Never saved in the brain: .env with keys and passwords, and your project repos and big files.</desc>
   <style>
     .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
     .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
@@ -66,7 +66,7 @@
     <text x="476" y="178">Where every session starts: how this brain works</text>
     <text x="476" y="220">What the brain is for, and things to say to it</text>
     <text x="476" y="304">Your routines, written the same way every time</text>
-    <text x="476" y="346">Seven meta skills that write, check and save the rest</text>
+    <text x="476" y="346">Eight meta skills that write, check and save the rest</text>
     <text x="476" y="430">The routing map: which skill runs when</text>
     <text x="476" y="472">Facts you have checked, with how to check them again</text>
     <text x="476" y="514">Your words, what they mean here, and words to avoid</text>

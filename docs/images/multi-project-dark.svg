@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="634" viewBox="0 0 1200 634" role="img" aria-labelledby="title desc">
+  <title id="title">A multi-project brain</title>
+  <desc id="desc">A brain called acme for several repos that belong together. Start every chat in the acme folder. Inside it, three skills, acme-release, acme-bump-deps and acme-triage-issue, have arrows fanning out to three nested repos, repos/api, repos/web and repos/infra, each with its own history. Another arrow, labelled outputs land here, runs to work: the shared working folder for scratch, exports and notes for a task, never saved. A side note, a chat in a repo: a chat started inside repos/web loads the brain's CLAUDE.md, but not its gate or MCP servers. Start at acme, or run claude --add-dir ../.. for the skills alone.</desc>
+  <style>
+    .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; }
+    .card { fill: #24211C; stroke: #3A352D; stroke-width: 2; }
+    .stage { fill: #2E2A24; }
+    .row { fill: #24211C; }
+    .repo { fill: none; stroke: #7D7567; stroke-width: 2; stroke-dasharray: 8 6; }
+    .panel { font-size: 16.5px; fill: #CFC6B7; }
+    .skill { font-size: 17px; fill: #5BBDB2; }
+    .name { font-size: 19px; font-weight: 700; fill: #F0EAE0; }
+    .muted { font-size: 16px; fill: #A39A8B; }
+    .body { font-size: 16.5px; fill: #CFC6B7; }
+    .note { font-size: 17px; fill: #CFC6B7; }
+    .code { font-size: 16px; fill: #F0EAE0; }
+    .uses { stroke: #5BBDB2; stroke-width: 2.5; fill: none; }
+    .out { stroke: #E2B653; stroke-width: 2.5; fill: none; }
+    .lead { stroke: #7D7567; stroke-width: 1.5; stroke-dasharray: 2 5; fill: none; }
+  </style>
+  <defs>
+    <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1.4" fill="#2E2A23"/>
+    </pattern>
+    <marker id="teal" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5BBDB2"/>
+    </marker>
+    <marker id="mustard" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#E2B653"/>
+    </marker>
+    <path id="folder" d="M3 0 h12 l4 5 h16 a3 3 0 0 1 3 3 v10 a3 3 0 0 1 -3 3 h-32 a3 3 0 0 1 -3 -3 v-15 a3 3 0 0 1 3 -3 z" fill="#E2B653"/>
+  </defs>
+
+  <rect width="1200" height="634" rx="24" fill="#1B1915"/>
+  <rect width="1200" height="634" rx="24" fill="url(#dots)"/>
+  <rect x="1" y="1" width="1198" height="632" rx="23" fill="none" stroke="#3A352D" stroke-width="2"/>
+  <text x="44" y="56" class="mono" font-size="16" letter-spacing="3" fill="#E57D50">MULTI-PROJECT</text>
+
+  <!-- the brain folder -->
+  <rect class="card" x="44" y="84" width="798" height="514" rx="16"/>
+  <path d="M45 100 a15 15 0 0 1 15 -15 h766 a15 15 0 0 1 15 15 v50 h-796 z" fill="#2E2A24"/>
+  <use href="#folder" x="70" y="107"/>
+  <text x="122" y="126" class="mono" font-size="22" font-weight="700" fill="#F0EAE0">acme/</text>
+  <text x="214" y="125" class="sans" font-size="17.5" font-weight="700" fill="#5BBDB2">start every chat here</text>
+
+  <!-- skills -->
+  <rect class="stage" x="76" y="176" width="280" height="200" rx="12"/>
+  <text x="96" y="207" class="mono panel">.claude/skills/</text>
+  <rect class="row" x="96" y="224" width="240" height="38" rx="19"/>
+  <text x="114" y="249" class="mono skill">acme-release</text>
+  <rect class="row" x="96" y="272" width="240" height="38" rx="19"/>
+  <text x="114" y="297" class="mono skill">acme-bump-deps</text>
+  <rect class="row" x="96" y="320" width="240" height="38" rx="19"/>
+  <text x="114" y="345" class="mono skill">acme-triage-issue</text>
+
+  <!-- skills fan into the repos -->
+  <path class="uses" d="M364 262 C 440 262, 436 211, 508 211" marker-end="url(#teal)"/>
+  <path class="uses" d="M364 280 C 436 280, 436 297, 508 297" marker-end="url(#teal)"/>
+  <path class="uses" d="M364 298 C 440 298, 436 383, 508 383" marker-end="url(#teal)"/>
+
+  <!-- outputs land in work/ -->
+  <path class="out" d="M216 384 C 216 470, 300 509, 508 509" marker-end="url(#mustard)"/>
+  <text x="300" y="550" class="sans" font-size="16.5" fill="#CFC6B7">outputs land here</text>
+
+  <!-- nested repos -->
+  <rect class="repo" x="520" y="176" width="298" height="70" rx="12"/>
+  <text x="542" y="206" class="mono name">repos/api</text>
+  <text x="542" y="232" class="sans muted">its own history</text>
+  <rect class="repo" x="520" y="262" width="298" height="70" rx="12"/>
+  <text x="542" y="292" class="mono name">repos/web</text>
+  <text x="542" y="318" class="sans muted">its own history</text>
+  <rect class="repo" x="520" y="348" width="298" height="70" rx="12"/>
+  <text x="542" y="378" class="mono name">repos/infra</text>
+  <text x="542" y="404" class="sans muted">its own history</text>
+
+  <!-- work/ -->
+  <rect x="520" y="442" width="298" height="132" rx="12" fill="#2A2620" stroke="#4A443A" stroke-width="1.5"/>
+  <text x="542" y="472" class="mono name">work/</text>
+  <text class="sans body"><tspan x="542" y="500">the shared working folder:</tspan><tspan x="542" y="524">scratch, exports, notes</tspan><tspan x="542" y="548">for a task; never saved</tspan></text>
+
+  <!-- side note -->
+  <path class="lead" d="M818 297 H866"/>
+  <rect class="card" x="866" y="176" width="290" height="398" rx="16"/>
+  <circle cx="902" cy="218" r="16" fill="#E2B653"/>
+  <text x="902" y="224" class="sans" font-size="18" font-weight="700" fill="#24211C" text-anchor="middle">!</text>
+  <text x="928" y="226" class="serif" font-size="24" fill="#F0EAE0">A chat in a repo</text>
+  <text class="sans note">
+    <tspan x="890" y="278">A chat started inside</tspan>
+    <tspan x="890" y="304"><tspan class="mono" fill="#F0EAE0">repos/web</tspan> loads the</tspan>
+    <tspan x="890" y="330">brain's <tspan class="mono" fill="#F0EAE0">CLAUDE.md</tspan>, but</tspan>
+    <tspan x="890" y="356">not its gate or MCP</tspan>
+    <tspan x="890" y="382">servers.</tspan>
+    <tspan x="890" y="432">Start at <tspan class="mono" fill="#F0EAE0">acme/</tspan>, or run</tspan>
+  </text>
+  <rect x="882" y="450" width="258" height="36" rx="18" fill="#2E2A24"/>
+  <text x="898" y="474" class="mono code">claude --add-dir ../..</text>
+  <text x="890" y="516" class="sans note">for the skills alone.</text>
+</svg>

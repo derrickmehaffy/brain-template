@@ -1,5 +1,9 @@
 # Brain template (for sessions working on the template)
 
+**No `local/` folder here?** Then this is a copy of the template that someone wants as their own
+brain, not a session developing the template: run `brain-setup` and ignore the rest of this file.
+Speak plainly; the person may not know git or a terminal (`docs/guides/start-here.md`).
+
 This folder is the template, not a brain: `brain.json` has `role: template` and prefix `template`.
 `README.md` says what the template is; this file says how to work on it.
 

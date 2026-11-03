@@ -11,7 +11,9 @@ grows through seven **meta skills** that write skills, scripts and facts the sam
 and it can pull later improvements from the template without merge conflicts, because `update`
 replaces only the files the template owns and refuses, rather than merges, when one was edited.
 
-Requirements: Python 3.9+ (standard library only, no packages) and `git`, on Linux or macOS.
+Requirements: Python 3.9+ (standard library only, no packages) and `git`, on macOS or Linux (on
+Windows, inside WSL). **Never used git or a terminal?** Start with
+[docs/guides/start-here.md](docs/guides/start-here.md): Claude does the technical parts.
 
 ## Setting up a brain
 
@@ -55,10 +57,10 @@ ignored). Everything else takes the defaults in `brain.json`.
 Open Claude Code **at the brain's root**. The `.env` deny, the skill gate and the brain's MCP servers
 are read from `.claude/settings.json` and `.mcp.json` there, and only there. Each session starts with
 `_meta/brain doctor --brief`, a hook that prints only what needs attention, so a brain that is behind
-its template or has unpushed work says so before the work begins. A session started in a plain subfolder should still
-find the brain's skills, but one started inside a nested project repo likely will not, and gets
-neither the deny nor the gate. Start it with `claude --add-dir <brain>` to load the brain's skills; the deny and the
-gate still need a session started at the root.
+its template or has unpushed work says so before the work begins. A session started inside a
+nested project repo gets neither the deny nor the gate, and likely not the brain's skills either, so
+start every session at the root. (In a terminal, `claude --add-dir <brain>` from a project folder
+loads the brain's skills, but still not the deny or the gate.)
 
 ## Keeping a brain current
 
@@ -125,7 +127,8 @@ on the person's say-so. The gate is friction and visibility, not a security boun
   secret or a 1Password reference (`op://vault/item/field`, read with `op read` when needed). Names
   go in with `_meta/brain env-sync --add KEY`. Scripts read secrets through their loader; anything
   else gets them through `_meta/brain secret run KEY[,KEY] COMMAND`, which puts them in that
-  command's environment and never prints one.
+  command's environment and never prints one itself (a command that prints its environment
+  would, so never run one).
 - **MCP servers** a brain needs go in its `.mcp.json`, not in user settings, where every session
   everywhere would load their tools. A server that needs a secret runs under `secret run`.
 - **Agents** (`.claude/agents/<prefix>-*.md`) are helpers a skill dispatches: explicit tools, a
@@ -141,9 +144,10 @@ A pre-commit hook, installed by `new`, `adopt` and `init`, blocks a commit that 
 
 - a `.env` file (other than `.env.example`);
 - a credential shape: a private key header, a common token prefix, `password=` followed by a value;
-- a private term from `.brain-private` (ignored; one regular expression per line, matched
-  case-insensitively, and an invalid one is a BLOCK: hostnames, unreleased project names), or a
-  match of the `deny_patterns` in `brain.json`;
+- a private term from `.brain-private` (ignored): one term per line, written as a person would say
+  it (a hostname, an address, a client or project name), matched in any case as a whole word; a
+  line starting `re:` is a regular expression instead, and an invalid one is a BLOCK. Or a match of
+  the `deny_patterns` in `brain.json`;
 - a file over `max_file_kb` that is not in `large_file_allow`;
 - a path inside a nested git repo.
 

@@ -22,9 +22,10 @@ really part of work an existing brain already covers: give that brain a skill in
   clone or copy of the template: `init`.
 - **The prefix.** 2 to 16 lowercase letters or digits, starting with a letter. Every skill of the
   brain starts with it (`lab-check-backups`), so keep it short and unlike any other brain's.
-- **Private terms.** Hostnames, address ranges, unreleased names, client or customer names: one
-  regular expression per line in `.brain-private`, which setup creates and git ignores. The
-  pre-commit guard then refuses any commit that holds one.
+- **Private terms.** Hostnames, addresses, unreleased names, client or customer names, written as
+  you would say them. Setup keeps them in `.brain-private`, which git ignores, and the pre-commit
+  guard refuses any commit that holds one. A family of names or an address range becomes one
+  pattern, which Claude writes for you.
 - **Where it is pushed.** A brain that holds infrastructure or customer detail goes to a private
   remote. The guard is the second line of defence, not the first.
 
@@ -32,7 +33,8 @@ really part of work an existing brain already covers: give that brain a skill in
 
 Open Claude Code at the brain's root: the skill gate, the `.env` deny and the brain's MCP servers
 load only from there. The session starts with `doctor --brief`, which prints only what needs
-attention; on a new brain that is usually "no remote". Add one and push.
+attention; on a new brain that is usually "no online backup". Say "Back this brain up online", or
+"Keep it on this computer only".
 
 ## Let it grow from real work
 
@@ -63,7 +65,7 @@ skills, `brain-write-skill` writes a router that picks by rule rather than by re
   brain that uses it.
 - **Secrets.** `.env` holds them, ignored by git and denied to Claude. Each value can be the secret
   itself or a 1Password reference (`op://vault/item/field`). Add a name with
-  `_meta/brain env-sync --add KEY` and fill in the value yourself. Scripts read secrets through their
+  `_meta/brain env-sync --add KEY`; `env-sync --open` opens the file for you to paste the value. Scripts read secrets through their
   loader; anything else (an MCP server, a CLI) gets them through `_meta/brain secret run KEY COMMAND`.
 - **What each system can't do** is the most useful line in `docs/CAPABILITIES.md`. A dated "cannot"
   stops the next session walking into the same wall.
@@ -81,6 +83,5 @@ skills, `brain-write-skill` writes a router that picks by rule rather than by re
 Each brain has its own skills, MCP servers and secrets, so start each session at the root of the
 brain the work belongs to. Brains share only the `brain-*` skills that come from the template. A
 domain skill two brains both want is copied, and each copy then changes on its own. To work in a
-project repo nested inside a brain, start at the brain's root, or use
-`claude --add-dir <brain>` from the project to load the brain's skills (the gate and the deny still
-need a session started at the root).
+project nested inside a brain, still start the session at the brain's root: the project is inside
+it, and a session started in the project misses the brain's safety checks.

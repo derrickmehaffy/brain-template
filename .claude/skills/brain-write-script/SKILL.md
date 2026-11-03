@@ -1,6 +1,6 @@
 ---
 name: brain-write-script
-description: Write or change a script in this brain's scripts/ when a query or API call is worth keeping instead of regenerating, or a system needs probing. Places it by the system it touches, keeps it read-only unless its name says otherwise, takes secrets from the environment, probes the system first and records what it can and cannot do in docs/CAPABILITIES.md, and adds tests. Use when you are about to write a query you have written before, or when the skill gate refuses a write under scripts/. Does NOT write skills, which is brain-write-skill; does NOT record a fact, which is brain-write-practice; and does NOT change _meta/, which is brain-upstream.
+description: Write or change a script in this brain's scripts/ when a query or API call is worth keeping instead of regenerating, or a system needs probing, or connect a system through an MCP server in .mcp.json. Places it by the system it touches, keeps it read-only unless its name says otherwise, takes secrets from the environment, probes the system first and records what it can and cannot do in docs/CAPABILITIES.md, and adds tests. Use when you are about to write a query you have written before, when a system should be reached through an MCP server, or when the skill gate refuses a write under scripts/ or to .mcp.json. Does NOT write skills, which is brain-write-skill; does NOT record a fact, which is brain-write-practice; and does NOT change _meta/, which is brain-upstream.
 ---
 
 # brain-write-script
@@ -16,13 +16,16 @@ unless its name says otherwise, secrets from the environment, tested, and backed
 
 **Hand to next:** `brain-sync`
 
+**Reserved output:** writing `.mcp.json` needs this skill to have run.
+
 **Reserved output:** writing `docs/CAPABILITIES.md` needs this skill to have run.
 
 **Reserved output:** writing `scripts/**` needs this skill to have run.
 <!-- where:end -->
 
-**Call it directly when:** you are about to write a query or API call you have written before, or
-the gate refused a write under `./scripts/` or to `docs/CAPABILITIES.md`; nothing has to run first.
+**Call it directly when:** you are about to write a query or API call you have written before, a
+system should be reached through an MCP server, or the gate refused a write under `./scripts/`, to
+`docs/CAPABILITIES.md` or to `.mcp.json`; nothing has to run first.
 
 ## 1. Does it earn a file?
 
@@ -34,6 +37,8 @@ Make it a file when any one of these holds; otherwise run it inline and carry on
 - it took minutes to work out.
 
 Look first in `./scripts/` and `docs/CAPABILITIES.md`: changing a script beats writing a second one.
+When the system has an MCP server that already does the job, connecting it can beat a script: see
+"An MCP server" below.
 
 ## 2. Probe before writing logic
 
@@ -66,10 +71,14 @@ Read `references/conventions.md`; copy its docstring, root finding, `.env` loade
   change and changes nothing without `--apply`. Never run it, or anything destructive, unless the
   person asked for that run.
 - Secrets come from the environment through the loader in `./scripts/common/env.py`, which reads
-  `.env` itself: you are denied reading `.env`, deliberately. Never take a secret as an argument
+  `.env` itself: you are denied reading `.env`, deliberately. A value there may be an `op://`
+  1Password reference, which the loader reads with `op read`. Never take a secret as an argument
   (argv shows in `ps`, shell history and this transcript), never print one, and pass any output that
   could echo one (an error body, a URL, an exception) through `env.redact` first.
 - A private endpoint (hostname, internal address) is configuration: take it from the environment too.
+- Anything that is not one of these scripts (a CLI tool, an MCP server, a one-off command) gets its
+  secrets through `_meta/brain secret run KEY[,KEY] COMMAND [ARG...]`: the loader's rules, and the
+  values go only into that command's environment.
 - A new secret name: `_meta/brain env-sync --add KEY`, then ask the person to fill in its value in
   `.env`. `_meta/brain env-sync --list` shows which are set; never read, write or print a value.
 - Run another program with an argument list, never a shell string: a path with a space breaks it.
@@ -94,6 +103,24 @@ gives: what it can do, what it cannot, the day the probe ran (today if you probe
 date without a check), and how you checked; never a secret or a hostname. Then hand to
 `brain-sync`, which runs the checks and commits.
 
+## An MCP server
+
+A system with a usable MCP server can be connected instead of scripted. A server only this brain
+needs goes in the brain's `.mcp.json`, never in the person's user settings, where every session in
+every folder would load its tools. Probe it as in step 2: list its tools, call only ones that read,
+and note which of them write. Declare it with its secrets through `secret run`, because `${VAR}` in
+`.mcp.json` reads the environment Claude Code started in, never `.env`:
+
+```json
+{"mcpServers": {"<system>": {"command": "_meta/brain",
+  "args": ["secret", "run", "SYSTEM_TOKEN", "<server command>", "<arg>"]}}}
+```
+
+The command path is relative to the brain root, where sessions start. A remote server that needs a
+token runs the same way through a local bridge command. Then record its `docs/CAPABILITIES.md` row as
+in step 6, its tools that write under Can, and hand to `brain-sync`. The person approves a project
+server the first time Claude Code starts it.
+
 ## In the template
 
 When `brain.json` `role` is `template`, a harness change in `_meta/` that `template-intake` accepted
@@ -109,4 +136,6 @@ not apply; the template's tests pass.
   read-only, pass under `scripts.python`.
 - `docs/CAPABILITIES.md` has the system's row, dated the day the probe ran, with what it cannot do.
 - No secret is in the script, its arguments or any output; new names went in through `env-sync --add`.
+- An MCP server is in `.mcp.json` with its secrets through `secret run`, and its CAPABILITIES row
+  names the tools that write.
 - Handed to `brain-sync`.

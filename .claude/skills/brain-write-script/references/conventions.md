@@ -77,8 +77,10 @@ from common import env  # noqa: E402
 
 Create `scripts/common/__init__.py`, this file and its test (below) before the first script that needs
 a secret. Values come from the environment first, then from `.env` at the brain root, which the loader
-reads itself: the agent is denied reading `.env`, and that is deliberate. Every message names a key or
-a line number, never a value.
+reads itself: the agent is denied reading `.env`, and that is deliberate. A value written as a
+1Password reference (`op://vault/item/field`) is read with `op read` when asked for, so `.env` can hold
+references instead of values. Every message names a key or a line number, never a value.
+`_meta/brain secret run` follows the same rules for anything that is not a script.
 
 ```python
 # scripts/common/env.py
@@ -87,7 +89,7 @@ arguments, and the values live in the brain's .env, which the agent is denied re
 .env for them and never shows a value: its errors name a key or a line number, nothing else.
 
 Usage:   from common import env; forge_token = env.secret("FORGE_TOKEN")
-Reads:   the environment, then .env at the brain root.
+Reads:   the environment, then .env at the brain root; an op:// value through `op read`.
 Writes:  nothing.
 Env:     whichever names the caller asks for.
 """
@@ -95,6 +97,8 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Set
 
@@ -152,8 +156,25 @@ def read_env_file(path: Path) -> Dict[str, str]:
     return values
 
 
+def _op_read(name: str, reference: str) -> str:
+    """The value a 1Password reference points at, read with `op read`. op's own messages go to stderr
+    as they are; they never hold the value."""
+    op = shutil.which("op")
+    if op is None:
+        raise EnvError(f"{name} is a 1Password reference, but the `op` command is not installed")
+    try:
+        done = subprocess.run([op, "read", "--no-newline", reference], stdin=subprocess.DEVNULL,
+                              stdout=subprocess.PIPE, timeout=120)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise EnvError(f"{name}: `op read` could not run ({type(exc).__name__})") from None
+    if done.returncode != 0 or not done.stdout:
+        raise EnvError(f"{name}: `op read` failed (exit {done.returncode}); is 1Password unlocked?")
+    return os.fsdecode(done.stdout)
+
+
 def secret(name: str, env_file: Optional[Path] = None) -> str:
-    """The value of `name`: the environment first, then the brain's .env (or `env_file`).
+    """The value of `name`: the environment first, then the brain's .env (or `env_file`); a value
+    written op://vault/item/field is read from 1Password.
 
     Raises EnvError, naming the key and never a value, when it is unset or empty.
     """
@@ -162,7 +183,9 @@ def secret(name: str, env_file: Optional[Path] = None) -> str:
         value = read_env_file(env_file or brain_root() / ".env").get(name, "")
     if not value:
         raise EnvError(f"{name} is not set: add the name with `_meta/brain env-sync --add {name}` "
-                       f"and ask the person to fill in its value in .env")
+                       f"and ask the person to fill in its value, or an op:// reference, in .env")
+    if value.startswith("op://"):
+        value = _op_read(name, value)
     _seen.add(value)
     return value
 
@@ -368,6 +391,15 @@ class Env(unittest.TestCase):
                     env.secret(key, self.file)
                 self.assertIn(key, str(caught.exception))
                 self.assertNotIn(VALUE, str(caught.exception))
+
+    def test_an_op_reference_is_read_with_op(self):
+        self.write("LAB_A=op://vault/item/field\n")
+        done = mock.Mock(returncode=0, stdout=VALUE.encode("utf-8"))
+        with mock.patch.dict(os.environ), mock.patch.object(env.shutil, "which", return_value="/bin/op"), \
+                mock.patch.object(env.subprocess, "run", return_value=done) as run:
+            os.environ.pop("LAB_A", None)
+            self.assertEqual(env.secret("LAB_A", self.file), VALUE)
+        self.assertEqual(run.call_args[0][0][1:], ["read", "--no-newline", "op://vault/item/field"])
 
     def test_a_bad_line_is_named_by_number_not_shown(self):
         self.write(f"LAB_A={VALUE}\n{VALUE}\n")

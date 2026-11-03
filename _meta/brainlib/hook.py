@@ -15,7 +15,7 @@ from datetime import date
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-from . import config, gitutil, globs, lint, paths, practices, routing_sync
+from . import config, gitutil, globs, paths
 from .config import Config
 from .report import BLOCK, BROKEN, OK, Finding, emit, exit_code
 
@@ -24,27 +24,33 @@ SHIM = f'#!/bin/sh\n{SHIM_MARKER}\nexec "$(git rev-parse --show-toplevel)/_meta/
 
 # (rule, pattern), tried on every line of every staged text file.
 CREDENTIAL_PATTERNS: List[Tuple[str, "re.Pattern[str]"]] = [
-    ("private-key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+    ("private-key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY(?: BLOCK)?-----")),
     ("github-token", re.compile(r"\bgh[pousr]_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{50,}\b")),
-    ("aws-key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("aws-key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
     ("slack-token", re.compile(r"\bxox[abprs]-[A-Za-z0-9-]{10,}")),
     ("anthropic-key", re.compile(r"\bsk-ant-[A-Za-z0-9_-]{20,}")),
     ("openai-key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}")),
-    # A quoted literal assigned to a secret-sounding name. Unquoted right-hand sides are expressions
-    # (`os.environ[...]`, a call, a lookup), not secrets, so only the dotenv form below reads them.
+    # A quoted literal of 8+ characters assigned to a secret-sounding name: a bare or compound name
+    # (`db_password`, `client_secret`, `SECRET_KEY`), in code (`=`, `:`), a PHP array (`=>`) or with the name
+    # itself quoted (JSON). A value that is a reference (`$`, `<`, `{`) or not quoted is not a literal.
+    # The name may carry up to 64 characters on either side; the bound keeps a long line from costing time
+    # in proportion to its square.
     (
         "assignment",
         re.compile(
-            r'''(?i)\b(?:password|passwd|token|api[_-]?key|secret)\b\s*[:=]\s*(["'])(?![$<{])[^"'\s]{8,}\1'''
+            r'''(?i)(?<![A-Za-z0-9])[A-Za-z0-9_-]{0,64}(?:password|passwd|token|api[_-]?key|secret)'''
+            r'''(?:[_-]?key)?["']?\s*(?:[:=]|=>)\s*(["'])(?![$<{])[^"'\s]{8,}\1'''
         ),
     ),
-    # A dotenv-style line (NAME=value, the whole line) with an unquoted value. The NAME is upper case:
-    # with (?i) as well, an ordinary line such as `tokens = _tokens(command)` is a finding.
+    # A dotenv-style line: an UPPER_CASE name and an unquoted (or quoted) value, optionally a compose list item
+    # (`- NAME=value`), a Dockerfile `ENV NAME=value`, `export NAME=value` or a YAML `NAME: value`, and a
+    # trailing comment. The name is upper case because lower case is ordinary code (`tokens = _tokens(x)`).
     (
         "assignment",
         re.compile(
-            r'''(?m)^\s*(?:export\s+)?[A-Z0-9_]*(?:PASSWORD|PASSWD|TOKEN|API_KEY|SECRET)[A-Z0-9_]*'''
-            r'''\s*=\s*(?![$<{])[^\s"'#]{8,}\s*$'''
+            r'''(?m)^\s*(?:-\s+)?(?:export\s+|ENV\s+)?[A-Z0-9_]{0,64}(?:PASSWORD|PASSWD|TOKEN|API_KEY|SECRET)'''
+            r'''[A-Z0-9_]{0,64}(?:=(["']?)(?![$<{])[^\s"'#]{8,}\1|\s*[=:]\s*(?![$<{"'])[^\s"'#]{8,})'''
+            r'''\s*(?:#.*)?$'''
         ),
     ),
 ]
@@ -52,6 +58,7 @@ CREDENTIAL_PATTERNS: List[Tuple[str, "re.Pattern[str]"]] = [
 # Every rule the guard can block on. `self_test` plants one case for each.
 RULES: Tuple[str, ...] = (
     "env-file",
+    "private-file",
     *dict.fromkeys(name for name, _pattern in CREDENTIAL_PATTERNS),  # `assignment` has two patterns
     "deny-pattern",
     "private-pattern",
@@ -68,6 +75,8 @@ _ROUTING_MAPS = ("docs/ROUTING.md", "_meta/ROUTING-META.md")
 _PRACTICES_PREFIX = "docs/practices/"
 _PRACTICES_INDEX = "docs/practices/INDEX.md"
 _ENV_EXAMPLE = ".env.example"
+_PRIVATE_FILES = (config.PRIVATE_FILE, config.LOCAL_JSON)  # this machine's settings: never committed, at any depth
+_MASK = "***"
 
 
 class HookError(Exception):
@@ -91,11 +100,13 @@ def _text_of(data: bytes) -> Optional[str]:
 
 
 def _hits(text: str, rules: Sequence[Tuple[str, "re.Pattern[str]"]]) -> List[Tuple[str, int]]:
-    """(rule, 1-based line) for each line each pattern matches, in line order."""
+    """(rule, 1-based line) once for each rule that matches a line, in line order."""
     found: List[Tuple[str, int]] = []
     for number, line in enumerate(text.split("\n"), 1):
+        seen = set()  # two patterns of one rule (`assignment`) can both fit a line: one finding
         for name, pattern in rules:
-            if pattern.search(line):
+            if name not in seen and pattern.search(line):
+                seen.add(name)
                 found.append((name, number))
     return found
 
@@ -146,21 +157,39 @@ class _Scan:
     def _block(self, rule: str, message: str) -> None:
         self.findings.append(Finding(BLOCK, rule, message))
 
+    def _display(self, path: str) -> str:
+        """`path` as it is printed. A private or deny match inside a name is replaced, so a finding about a
+        file never repeats the very term that makes its name private."""
+        masked = path
+        for _rule, pattern in self.private + self.deny:
+            masked = pattern.sub(lambda match: _MASK if match.group(0) else "", masked)
+        return _shown(masked)
+
+    def _name_findings(self, path: str, shown: str) -> None:
+        """A private or deny term in a file name is committed with the name, whatever the file holds."""
+        for rule, patterns in (("private-pattern", self.private), ("deny-pattern", self.deny)):
+            if any(pattern.search(path) for _rule, pattern in patterns):
+                self._block(rule, f"{shown} (in the file name)")
+
     def _too_big(self, path: str, size: int) -> bool:
         limit = self.cfg.max_file_kb * 1024
         return size > limit and not any(globs.match(pattern, path) for pattern in self.cfg.large_file_allow)
 
     def file(self, entry: gitutil.StagedEntry) -> None:
-        path, shown = entry.path, _shown(entry.path)
+        path = entry.path
+        shown = self._display(path)
+        self._name_findings(path, shown)
         if entry.mode == gitutil.GITLINK_MODE:
             self._block("nested-repo", f"{shown} (a repository inside this one)")
             return
         above = self._repo_above(path)
         if above is not None:
-            self._block("nested-repo", f"{shown} (inside the repository at {_shown(above)})")
+            self._block("nested-repo", f"{shown} (inside the repository at {self._display(above)})")
         name = path.rsplit("/", 1)[-1]
         if (name == ".env" or name.startswith(".env.")) and name != _ENV_EXAMPLE:
             self._block("env-file", f"{shown} (secrets belong in an ignored .env, never in a commit)")
+        if name in _PRIVATE_FILES:
+            self._block("private-file", f"{shown} (this machine's private settings are never committed)")
         try:
             size = gitutil.staged_size(self.root, path)
             if self._too_big(path, size):
@@ -204,13 +233,21 @@ def _guarded(rule: str, check: Callable[[], List[Finding]]) -> List[Finding]:
         return [Finding(BLOCK, rule, f"the check could not run: {why}")]
 
 
+# The modules below are imported by the check that needs them, inside `_guarded`: a commit that touches no
+# skills or practices must not depend on them loading, and one that does gets a finding, not a traceback.
+
+
 def _lint_findings(root: Path, cfg: Config) -> List[Finding]:
+    from . import lint
+
     # `all_findings` includes the routing map, the gate rules and every router's rules.json.
     return [Finding(BLOCK, "lint", f"{f.subject}: {f.message}")
             for f in lint.all_findings(root, cfg) if f.severity == BROKEN]
 
 
 def _sync_findings(root: Path, cfg: Config) -> List[Finding]:
+    from . import routing_sync
+
     problems: List[Finding] = []
     stale = routing_sync.sync(root, cfg, True, problems)  # a non-empty result: out of date or not confirmed current
     refused = set(routing_sync.refused_paths(problems))
@@ -221,6 +258,8 @@ def _sync_findings(root: Path, cfg: Config) -> List[Finding]:
 
 
 def _practices_lint_findings(root: Path, cfg: Config, today: date) -> List[Finding]:
+    from . import practices
+
     return [Finding(BLOCK, "practices-lint", f"{f.subject}: {f.message}")
             for f in practices.lint(root, cfg, today) if f.severity == BLOCK]
 
@@ -228,6 +267,8 @@ def _practices_lint_findings(root: Path, cfg: Config, today: date) -> List[Findi
 def _practices_index_findings(root: Path, cfg: Config, today: date) -> List[Finding]:
     """The index must be what `practices index` writes, and the staged copy is the one that counts: an
     index regenerated in the working tree but never staged is still not what would be committed."""
+    from . import practices
+
     entries = practices.load_entries(root)
     try:
         staged = gitutil.staged_blob(root, _PRACTICES_INDEX).decode("utf-8", errors="replace")
@@ -290,8 +331,9 @@ def pre_commit(root) -> List[Finding]:
 def install(root) -> str:
     """Write the shim to `<git common dir>/hooks/pre-commit` (mode 0755) and return that path.
 
-    The common dir is shared by every worktree of the repository. A hook that is not this shim, or a
-    `core.hooksPath` (git would then never look in the hooks folder), is a refusal.
+    The common dir is shared by every worktree of the repository. Only an exact copy of the shim is replaced.
+    Any other hook (even one carrying the marker), or a `core.hooksPath` (git would then never look in the hooks
+    folder), is a refusal.
     """
     root = Path(root)
     if not gitutil.is_repo(root):
@@ -304,12 +346,13 @@ def install(root) -> str:
     target = (root / common).resolve() / "hooks" / "pre-commit"
     if os.path.lexists(str(target)):
         try:
-            existing = target.read_text(encoding="utf-8", errors="replace")
+            existing = target.read_bytes()
         except OSError as exc:
             raise HookError(f"cannot read the existing {target}: {exc.strerror or exc}")
-        if SHIM_MARKER not in existing:
-            raise HookError(f"{target} is a pre-commit hook that is not the brain template's; "
-                            "move it aside (or add `_meta/brain hook pre-commit` to it), then run this again")
+        if existing != SHIM.encode("utf-8"):  # a changed copy, or any other hook that mentions the marker
+            raise HookError(f"{target} is not the brain template's shim (an exact copy of it); move it aside and "
+                            "run this again, or keep it and have it run `_meta/brain hook pre-commit` "
+                            "(this command is then not needed)")
     staging = target.with_name("pre-commit.brain-new")
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -421,6 +464,7 @@ def _practices_index_case(lab: _Lab) -> None:
 def _cases() -> List[Tuple[str, Callable[[_Lab], None]]]:
     return [
         ("env-file", lambda lab: lab.stage("config/.env.local", "A=1\n")),
+        ("private-file", lambda lab: lab.stage("brain.local.json", "{}\n")),
         *((rule, _credential_case(rule)) for rule in _PLANTED),
         ("assignment", _dotenv_case),
         ("deny-pattern", _deny_case),

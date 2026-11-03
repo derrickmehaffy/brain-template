@@ -4,12 +4,21 @@ import os
 import subprocess
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from tests.helpers import TempDirCase  # first: puts <template>/_meta on sys.path
 from brainlib import gitutil
 
 
 class GitUtilCase(TempDirCase):
+    def setUp(self) -> None:
+        super().setUp()
+        # gitutil runs git in this process: give it the isolated environment too, so the person's global
+        # git config (signing, init.defaultBranch, diff.ignoreSubmodules, ...) never reaches a test.
+        patcher = mock.patch.dict(os.environ, self.env, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def repo(self, label="repo") -> Path:
         """An empty repository on `main` inside the `with space` temp dir."""
         path = self._new_dir(label)
@@ -34,6 +43,10 @@ class GitUtilCase(TempDirCase):
 
 
 class GitRunnerTest(GitUtilCase):
+    def test_runs_in_the_isolated_environment(self):
+        self.assertEqual(os.environ["HOME"], self.env["HOME"])
+        self.assertEqual(gitutil.git(self._new_dir("plain"), "config", "--global", "--list").strip(), "")
+
     def test_returns_text_and_bytes(self):
         repo = self.repo()
         self.assertEqual(gitutil.git(repo, "rev-parse", "--is-inside-work-tree"), "true\n")

@@ -124,7 +124,11 @@ def _resolves(path, ref: str) -> bool:
 
 def default_branch(path) -> str:
     """The branch to read the repo's released state from: the one `origin/HEAD` points at, else `main`, else
-    `master`, else `HEAD` (whatever is checked out)."""
+    `master`, else `HEAD` (whatever is checked out).
+
+    It returns the LOCAL branch `origin/HEAD` names (`main`, not `origin/main`) whenever that branch exists. That
+    is deliberate: a template developer's local commits should reach the brains that read this branch without a
+    push first. The remote-tracking ref is the fallback only when there is no such local branch."""
     target = _line(str(git(path, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD", check=False)))
     if target:
         name = target[len("origin/"):] if target.startswith("origin/") else target

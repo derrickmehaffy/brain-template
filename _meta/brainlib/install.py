@@ -102,6 +102,24 @@ def fill(data: bytes, values: Dict[str, str]) -> bytes:
     return _PLACEHOLDER.sub(replace, data)
 
 
+def template_source(files: Files) -> Optional[str]:
+    """`template.source` of the template's own `brain.json` as committed (`files` holds the commit), or None
+    when there is none: the template is not published yet. Raises InstallError on a `brain.json` that is not a
+    JSON object."""
+    entry = files.get(config.BRAIN_JSON)
+    if entry is None:
+        return None
+    try:
+        raw = json.loads(entry[0].decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        raw = None
+    if not isinstance(raw, dict):
+        raise InstallError(f"the template's committed {config.BRAIN_JSON} is not a JSON object")
+    section = raw.get("template")
+    source = section.get("source") if isinstance(section, dict) else None
+    return source if isinstance(source, str) and source else None
+
+
 def version_string(template_root) -> str:
     """`<VERSION>+<short sha>` for a template that is a repo (VERSION as committed, sha of HEAD), else the
     VERSION file alone."""
@@ -190,27 +208,42 @@ def new_brain_json(name: str, prefix: str, description: str, source: Optional[st
 
 def write_local(dest, template_source: str) -> None:
     """Set `template.source` in `brain.local.json` (this machine's location of the template; git ignores the
-    file). Other keys already in it are kept."""
+    file). Other keys already in it are kept. A file that exists but cannot be read, is not UTF-8 or is not a
+    JSON object (with `template` an object, if present) raises InstallError instead of being rewritten."""
     path = Path(dest) / config.LOCAL_JSON
     current: dict = {}
     try:
-        loaded = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(loaded, dict):
-            current = loaded
-    except (OSError, ValueError):
-        pass
-    template = current.get("template")
-    current["template"] = {**(template if isinstance(template, dict) else {}), "source": template_source}
+        text = path.read_bytes().decode("utf-8")
+    except FileNotFoundError:
+        text = None
+    except OSError as exc:
+        raise InstallError(f"cannot read {path}: {exc.strerror or exc}") from exc
+    except UnicodeDecodeError:
+        raise InstallError(f"{path} is not UTF-8 text; fix or remove it and run this again") from None
+    if text is not None:
+        try:
+            loaded = json.loads(text)
+        except ValueError:
+            loaded = None
+        section = loaded.get("template") if isinstance(loaded, dict) else None
+        if not isinstance(loaded, dict) or not (section is None or isinstance(section, dict)):
+            raise InstallError(f"{path} is not a JSON object with an object under \"template\"; fix or remove it "
+                               "and run this again")
+        current = loaded
+    template = current.get("template") or {}
+    current["template"] = {**template, "source": template_source}
     _write_atomic(path, (json.dumps(current, indent=2, ensure_ascii=False) + "\n").encode("utf-8"), 0o644)
 
 
 def private_pattern_problem(pattern: str) -> Optional[str]:
-    """None when `pattern` can be a line of `.brain-private`, else why not."""
-    if not pattern.strip():
+    """None when `pattern` can be a line of `.brain-private`, else why not. Surrounding whitespace is not part
+    of a pattern (the loader strips each line), so it is the stripped pattern that is judged."""
+    pattern = pattern.strip()
+    if not pattern:
         return "is empty"
     if "\n" in pattern or "\r" in pattern:
         return "must be on one line"
-    if pattern.strip().startswith("#"):
+    if pattern.startswith("#"):
         return "starts with '#', which makes the line a comment"
     try:
         re.compile(pattern)
@@ -220,14 +253,19 @@ def private_pattern_problem(pattern: str) -> Optional[str]:
 
 
 def write_private(dest, patterns: List[str]) -> None:
-    """Add `patterns` to `<dest>/.brain-private`, one per line, after any line already there (mode 0600)."""
+    """Add `patterns` (stripped, each once) to `<dest>/.brain-private`, one per line, after any line already
+    there (mode 0600). A file that exists but cannot be read or is not UTF-8 raises InstallError."""
     path = Path(dest) / config.PRIVATE_FILE
     try:
-        text = path.read_text(encoding="utf-8")
+        text = path.read_bytes().decode("utf-8")
     except FileNotFoundError:
         text = ""
+    except OSError as exc:
+        raise InstallError(f"cannot read {path}: {exc.strerror or exc}") from exc
+    except UnicodeDecodeError:
+        raise InstallError(f"{path} is not UTF-8 text; fix or remove it and run this again") from None
     present = {line.strip() for line in text.splitlines()}
-    fresh = [p.strip() for p in dict.fromkeys(patterns) if p.strip() not in present]
+    fresh = [p for p in dict.fromkeys(p.strip() for p in patterns) if p and p not in present]
     if not text:
         text = PRIVATE_HEADER
     elif not text.endswith("\n"):

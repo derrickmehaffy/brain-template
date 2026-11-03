@@ -90,7 +90,6 @@ class CreateTest(NewCase):
         for rel in ("tests", "local", "docs/superpowers", ".worktrees", ".superpowers"):
             self.assertFalse((dest / rel).exists(), rel)
         self.assertEqual(sorted(p.name for p in (dest / ".claude" / "skills").glob("template-*")), [])
-        self.assertTrue(list((dest / ".claude" / "skills").glob("brain-*")))
 
         # one commit, the pinned message, and a clean tree
         subjects = self.git(dest, "log", "--format=%s").splitlines()
@@ -113,6 +112,22 @@ class CreateTest(NewCase):
 
         listed = (template / "local" / "brains.txt").read_text(encoding="utf-8").splitlines()
         self.assertEqual(listed, [str(dest)])
+
+    def test_copies_brain_skills_and_leaves_template_skills_behind(self):
+        template = self.copy_template()
+        body = "Does the thing.\n\n**Call it directly when:** asked.\n\n## Done when\n\n- done\n"
+        self.make_skill(template, "brain-zz-stub", "Does X. Use when Y.", body)
+        self.make_skill(template, "template-zz-stub", "Does X. Use when Y.", body)
+        self.git(template, "add", "-A")
+        self.git(template, "commit", "-q", "--no-verify", "-m", "add two stub skills")
+        dest = self.tmp / "my brain"
+        r = self.new(template, dest)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual((dest / ".claude" / "skills" / "brain-zz-stub" / "SKILL.md").read_bytes(),
+                         (template / ".claude" / "skills" / "brain-zz-stub" / "SKILL.md").read_bytes())
+        self.assertIn(".claude/skills/brain-zz-stub/SKILL.md", manifest.read(dest))
+        self.assertFalse((dest / ".claude" / "skills" / "template-zz-stub").exists())
+        self.assertNotIn("template-zz-stub", self.git(dest, "ls-files"))
 
     def test_make_brain_helper_and_the_guard_in_a_template_copy(self):
         brain = self.make_brain()
@@ -186,6 +201,35 @@ class CreateTest(NewCase):
         listing.write_text("/somewhere/else", encoding="utf-8")  # no trailing newline
         install.register(template, brain)
         self.assertEqual(listing.read_text(encoding="utf-8"), f"/somewhere/else\n{brain}\n")
+
+
+class WarningTest(NewCase):
+    def warn_lines(self, r):
+        return [line for line in r.stdout.splitlines() if line.startswith("WARN ")]
+
+    def test_a_brain_that_is_made_but_not_registered_warns_as_a_finding(self):
+        template = self.copy_template(with_local=False)
+        (template / "local").write_text("a file where the folder should be\n", encoding="utf-8")
+        dest = self.tmp / "brain"
+        r = self.new(template, dest)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        lines = self.warn_lines(r)
+        self.assertEqual(len(lines), 1, r.stdout)
+        self.assertRegex(lines[0], r"^WARN   new: .*brains\.txt")
+        self.assertEqual(r.stdout.rstrip("\n").splitlines()[-1], f"open a session in {dest}")
+        self.assertTrue((dest / "brain.json").is_file())
+
+    def test_a_settings_file_that_is_not_json_warns_as_a_finding(self):
+        template = self.copy_template()
+        (template / "_meta" / "skeleton" / "claude-settings.json").write_text("{ nope\n", encoding="utf-8")
+        self.git(template, "commit", "-q", "-a", "-m", "break the settings skeleton")
+        dest = self.tmp / "brain"
+        r = self.new(template, dest)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        lines = self.warn_lines(r)
+        self.assertEqual(len(lines), 1, r.stdout)
+        self.assertRegex(lines[0], r"^WARN   new: \.claude/settings\.json")
+        self.assertEqual((dest / ".claude" / "settings.json").read_text(encoding="utf-8"), "{ nope\n")
 
 
 class RefusalTest(NewCase):
@@ -318,11 +362,21 @@ class TemplateSourceTest(NewCase):
         raw = self.read_json(template / "brain.json")
         raw["template"]["source"] = "https://example.invalid/template.git"
         (template / "brain.json").write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+        self.git(template, "commit", "-q", "-a", "-m", "publish the template")
         dest = self.tmp / "brain"
         self.assertEqual(self.new(template, dest).returncode, 0)
         self.assertEqual(self.read_json(dest / "brain.json")["template"]["source"], "https://example.invalid/template.git")
         # this machine's override still points at the checkout
         self.assertEqual(self.read_json(dest / "brain.local.json")["template"]["source"], str(template))
+
+    def test_template_source_is_the_committed_one_not_a_working_tree_edit(self):
+        template = self.copy_template()
+        raw = self.read_json(template / "brain.json")
+        raw["template"]["source"] = "https://example.invalid/not-committed.git"
+        (template / "brain.json").write_text(json.dumps(raw, indent=2) + "\n", encoding="utf-8")
+        dest = self.tmp / "brain"
+        self.assertEqual(self.new(template, dest).returncode, 0)
+        self.assertIsNone(self.read_json(dest / "brain.json")["template"]["source"])
 
     def test_a_template_that_is_not_a_repo_is_read_from_its_working_tree(self):
         template = self.copy_template()
@@ -385,6 +439,11 @@ class PrivateTest(NewCase):
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertIn("private-pattern", r.stdout + r.stderr)
 
+    def test_private_patterns_are_stripped_and_de_duplicated(self):
+        _, dest = self.made("--private", "  acme-corp  ", "--private", "acme-corp", "--private", "zzq-term\n")
+        lines = [x for x in (dest / ".brain-private").read_text(encoding="utf-8").splitlines() if not x.startswith("#")]
+        self.assertEqual(lines, ["acme-corp", "zzq-term"])
+
     def test_no_private_file_without_patterns(self):
         _, dest = self.made()
         self.assertFalse((dest / ".brain-private").exists())
@@ -402,19 +461,132 @@ class PrivateTest(NewCase):
                 self.assertFalse((self.tmp / "p").exists())
         self.assertEqual(self.snapshot(template), before)
 
-    def test_a_pattern_the_brain_itself_matches_stops_at_the_first_commit_and_says_why(self):
-        # The guard reads the staged skeleton too; a term that names the brain would block its own first commit.
+
+class NothingIsLeftBehindTest(NewCase):
+    """The brain is built in a temporary folder next to the target and moved into place only when its first
+    commit went through, so a refusal at any step leaves the target as it was."""
+
+    def left_alone(self, template, dest, before_template, before_tmp):
+        self.assertEqual(self.snapshot(template), before_template)  # not even local/brains.txt
+        self.assertEqual(sorted(p.name for p in self.tmp.iterdir()), before_tmp)  # no temporary sibling either
+        self.assertEqual(list((self.tmp / "os-tmp").iterdir()), [])
+        self.assertFalse(dest.exists())
+
+    def test_a_private_clash_is_reported_by_dry_run_and_refused_with_nothing_left(self):
+        # The guard reads the staged skeleton too: a term that names the brain blocks its own first commit.
         template = self.copy_template()
         dest = self.tmp / "brain"
+        before_template, before_tmp = self.snapshot(template), sorted(p.name for p in self.tmp.iterdir())
+
+        dry = self.new(template, dest, "--dry-run", "--private", "homelab")
+        self.assertEqual(dry.returncode, 1, dry.stdout + dry.stderr)
+        self.assertNotIn("Traceback", dry.stderr)
+        self.assertIn("would be refused", dry.stdout)
+        self.assertRegex(dry.stdout, r"(?m)^ +BLOCK +private-pattern: \S+")
+        self.assertIn("brain.json", dry.stdout)
+        self.assertNotIn("homelab", dry.stdout + dry.stderr)  # a finding names rule, file and line, not the term
+        self.left_alone(template, dest, before_template, before_tmp)
+
+        real = self.new(template, dest, "--private", "homelab")
+        self.assertEqual(real.returncode, 1, real.stdout + real.stderr)
+        self.assertNotIn("Traceback", real.stderr)
+        self.assertIn("first commit", real.stderr)
+        self.assertIn("private-pattern", real.stderr)
+        self.assertNotIn("homelab", real.stdout + real.stderr)
+        self.assertNotIn("open a session in", real.stdout)
+        self.left_alone(template, dest, before_template, before_tmp)
+
+    def test_a_clean_dry_run_says_the_first_commit_would_succeed(self):
+        template = self.copy_template()
+        dest = self.tmp / "brain"
+        before_template, before_tmp = self.snapshot(template), sorted(p.name for p in self.tmp.iterdir())
+        r = self.new(template, dest, "--dry-run")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("would succeed", r.stdout)
+        self.left_alone(template, dest, before_template, before_tmp)
+
+    def test_a_refused_run_leaves_an_empty_folder_empty(self):
+        template = self.copy_template()
+        dest = self.tmp / "empty"
+        dest.mkdir()
+        os.chmod(str(dest), 0o750)
+        before = os.stat(str(dest))
         r = self.new(template, dest, "--private", "homelab")
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
-        self.assertNotIn("Traceback", r.stderr)
-        self.assertIn("private-pattern", r.stderr)
-        self.assertIn("first commit", r.stderr)
-        self.assertNotIn("open a session in", r.stdout)
-        self.assertEqual(self.git(dest, "rev-list", "--all"), "")  # no commit was made
-        self.assertFalse((template / "local" / "brains.txt").exists()
-                         and str(dest) in (template / "local" / "brains.txt").read_text(encoding="utf-8"))
+        self.assertEqual(list(dest.iterdir()), [])
+        after = os.stat(str(dest))
+        self.assertEqual((after.st_ino, stat.S_IMODE(after.st_mode)), (before.st_ino, 0o750))
+        self.assertEqual([p.name for p in self.tmp.iterdir() if "brain-new" in p.name], [])
+
+    def test_a_missing_git_identity_leaves_nothing(self):
+        template = self.copy_template()
+        for key in [k for k in self.env if k.startswith(("GIT_AUTHOR_", "GIT_COMMITTER_"))]:
+            del self.env[key]
+        Path(self.env["GIT_CONFIG_GLOBAL"]).write_text("[user]\n\tuseConfigOnly = true\n", encoding="utf-8")
+        dest = self.tmp / "brain"
+        before_template, before_tmp = self.snapshot(template), sorted(p.name for p in self.tmp.iterdir())
+        for extra, label in (((), "real"), (("--dry-run",), "dry run")):
+            with self.subTest(run=label):
+                r = self.new(template, dest, *extra)
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                self.assertNotIn("Traceback", r.stderr)
+                self.assertIn("first commit", r.stdout + r.stderr)
+                self.assertNotIn("open a session in", r.stdout)
+                self.left_alone(template, dest, before_template, before_tmp)
+
+    def test_a_failure_removes_the_parent_folders_it_made(self):
+        template = self.copy_template()
+        deep = self.tmp / "a" / "b" / "brain"
+        r = self.new(template, deep, "--private", "homelab")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertFalse((self.tmp / "a").exists())
+        (self.tmp / "kept").mkdir()  # a parent that was already there stays
+        r = self.new(template, self.tmp / "kept" / "sub" / "brain", "--private", "homelab")
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertEqual(list((self.tmp / "kept").iterdir()), [])
+
+    def test_success_leaves_no_temporary_folder_and_the_normal_mode(self):
+        template = self.copy_template()
+        before_tmp = sorted(p.name for p in self.tmp.iterdir())
+        dest = self.tmp / "my brain"
+        self.assertEqual(self.new(template, dest).returncode, 0)
+        self.assertEqual(sorted(p.name for p in self.tmp.iterdir()), sorted(before_tmp + ["my brain"]))
+        umask = os.umask(0)
+        os.umask(umask)
+        self.assertEqual(stat.S_IMODE(os.stat(str(dest)).st_mode), 0o777 & ~umask)  # not mkdtemp's 0700
+        self.assertEqual(list((self.tmp / "os-tmp").iterdir()), [])
+
+    def test_an_empty_folder_you_are_standing_in_stays_the_same_folder(self):
+        # `cd newdir` then new: the folder is filled in place, so a shell inside it keeps a working directory.
+        template = self.copy_template()
+        dest = self.tmp / "standing here"
+        dest.mkdir()
+        os.chmod(str(dest), 0o750)
+        before = os.stat(str(dest))
+        r = self.run_brain(template, "new", ".", "--name", "homelab", "--prefix", "lab", cwd=dest)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        after = os.stat(str(dest))
+        self.assertEqual((after.st_ino, stat.S_IMODE(after.st_mode)), (before.st_ino, 0o750))
+        self.assertTrue((dest / "brain.json").is_file())
+        self.assertEqual(self.git(dest, "status", "--porcelain"), "")
+        self.assertEqual([p.name for p in self.tmp.iterdir() if "brain-new" in p.name], [])
+        self.assertEqual((template / "local" / "brains.txt").read_text(encoding="utf-8").splitlines(), [str(dest)])
+
+    def test_the_repository_works_where_it_was_moved_to(self):
+        for existing in (False, True):
+            with self.subTest(empty_folder_existed=existing):
+                template = self.copy_template()
+                dest = self.tmp / ("moved %s" % existing)
+                if existing:
+                    dest.mkdir()
+                self.assertEqual(self.new(template, dest).returncode, 0)
+                self.assertEqual(self.git(dest, "status", "--porcelain"), "")
+                self.assertEqual(self.git(dest, "rev-parse", "--show-toplevel").strip(), str(dest))
+                self.assertEqual(self.run_brain(dest, "lint").returncode, 0)
+                self.assertEqual(self.run_brain(dest, "hook", "self-test").returncode, 0)
+                (dest / "docs" / "note.md").write_text("a note\n", encoding="utf-8")
+                self.git(dest, "add", "docs/note.md")
+                self.git(dest, "commit", "-q", "-m", "docs: a note")  # the moved shim still runs the guard
 
 
 class ScriptsConfigTest(NewCase):
@@ -501,7 +673,8 @@ class InstallHelpersTest(NewCase):
             (src / rel).write_text("x", encoding="utf-8")
         os.chmod(str(src / "_meta" / "brain"), 0o755)
         (src / "link.txt").symlink_to("a.txt")
-        files = install.template_files(src)
+        with mock.patch.dict(os.environ, self.env, clear=True):  # the planted .git/HEAD makes it ask git
+            files = install.template_files(src)
         self.assertEqual(sorted(files), ["_meta/brain", "a.txt", "sub/b.txt"])
         self.assertEqual(files["_meta/brain"][1], 0o755)
         self.assertEqual(files["a.txt"], (b"x", 0o644))
@@ -618,6 +791,75 @@ class ApplyManagedTest(NewCase):
                     install.apply_managed(other)
                 self.assertFalse((other / "CLAUDE.md").exists())
                 self.assertEqual((other / ".claude" / "settings.json").read_text(encoding="utf-8"), bad)
+
+    def test_write_private_strips_and_de_duplicates(self):
+        dest = self._new_dir("private")
+        install.write_private(dest, ["a", " a ", "b\n", "b"])
+        install.write_private(dest, ["  a", "c"])
+        lines = [x for x in (dest / ".brain-private").read_text(encoding="utf-8").splitlines() if not x.startswith("#")]
+        self.assertEqual(lines, ["a", "b", "c"])
+
+    def test_private_pattern_problem_judges_the_stripped_pattern(self):
+        for fine in ("acme", "  acme  ", "acme\n", r"10\.20\.\d+", "a#b"):
+            with self.subTest(pattern=fine):
+                self.assertIsNone(install.private_pattern_problem(fine))
+        for bad in ("", "   ", "\n", "#c", "  # c", "two\nlines", "(open", "  (open "):
+            with self.subTest(pattern=bad):
+                self.assertIsNotNone(install.private_pattern_problem(bad))
+
+    def test_write_private_refuses_an_existing_file_it_cannot_read(self):
+        for label, make in (("not UTF-8", lambda path: path.write_bytes(b"\xff\xfe\x00 acme\n")),
+                            ("a folder", lambda path: path.mkdir())):
+            with self.subTest(existing=label):
+                dest = self._new_dir("private")
+                make(dest / ".brain-private")
+                with self.assertRaises(install.InstallError) as caught:
+                    install.write_private(dest, ["acme"])
+                self.assertIn(".brain-private", str(caught.exception))
+        self.assertEqual((dest / ".brain-private").is_dir(), True)
+
+    def test_write_local_sets_the_source_and_keeps_other_keys(self):
+        dest = self._new_dir("local")
+        install.write_local(dest, "/one")
+        self.assertEqual(self.read_json(dest / "brain.local.json"), {"template": {"source": "/one"}})
+        (dest / "brain.local.json").write_text(
+            json.dumps({"editor": "x", "template": {"source": "/old", "note": 1}}), encoding="utf-8")
+        install.write_local(dest, "/two")
+        self.assertEqual(self.read_json(dest / "brain.local.json"),
+                         {"editor": "x", "template": {"source": "/two", "note": 1}})
+
+    def test_write_local_refuses_a_file_it_would_have_to_rewrite_blind(self):
+        cases = (("not JSON", b"{ nope"), ("not UTF-8", b"\xff\xfe{}"), ("a list", b"[]"), ("a string", b'"x"'),
+                 ("template is not an object", b'{"template": "x"}'), ("a folder", None))
+        for label, content in cases:
+            with self.subTest(existing=label):
+                dest = self._new_dir("local")
+                target = dest / "brain.local.json"
+                if content is None:
+                    target.mkdir()
+                else:
+                    target.write_bytes(content)
+                with self.assertRaises(install.InstallError) as caught:
+                    install.write_local(dest, "/one")
+                self.assertIn("brain.local.json", str(caught.exception))
+                if content is not None:
+                    self.assertEqual(target.read_bytes(), content)
+
+    def test_template_source_comes_from_the_committed_brain_json(self):
+        def files(text):
+            return {"brain.json": (text.encode("utf-8"), 0o644)}
+
+        self.assertEqual(install.template_source(files('{"template": {"source": "https://x.invalid/t.git"}}')),
+                         "https://x.invalid/t.git")
+        for text in ('{}', '{"template": null}', '{"template": {"source": null}}', '{"template": {"source": ""}}',
+                     '{"template": {"source": 3}}', '{"template": "x"}'):
+            with self.subTest(brain_json=text):
+                self.assertIsNone(install.template_source(files(text)))
+        self.assertIsNone(install.template_source({}))
+        for text in ("{ nope", "[]"):
+            with self.subTest(brain_json=text):
+                with self.assertRaises(install.InstallError):
+                    install.template_source(files(text))
 
     def test_write_private_keeps_existing_lines(self):
         dest = self._new_dir("private")

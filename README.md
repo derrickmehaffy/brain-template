@@ -8,8 +8,8 @@ asset or a `.env` is never staged by accident.
 
 This template is the starting point for every brain. A new brain has no domain skills at all. It
 grows through seven **meta skills** that write skills, scripts and facts the same way every time,
-and it can pull later improvements from the template without ever conflicting, because the template
-only touches files it owns.
+and it can pull later improvements from the template without merge conflicts, because `update`
+replaces only the files the template owns and refuses, rather than merges, when one was edited.
 
 Requirements: Python 3.9+ (standard library only, no packages) and `git`, on Linux or macOS.
 
@@ -17,7 +17,9 @@ Requirements: Python 3.9+ (standard library only, no packages) and `git`, on Lin
 
 There are three ways in. All end in the same state: the first commit made, the pre-commit guard
 installed, `_meta/brain doctor` with nothing blocking, and none of the template's own files present.
-Each runs with `--dry-run` first, and the skill shows the result before anything is written.
+(`doctor` is the read-only health check: one `ok`, `WARN` or `BLOCK` line per check, exit 1 if
+anything blocks.) Each runs with `--dry-run` first, and the skill shows the result before anything is
+written.
 
 | Starting from | Say | Skill and command |
 | --- | --- | --- |
@@ -34,7 +36,9 @@ ignored). Everything else takes the defaults in `brain.json`.
   `--dry-run` rehearses the real build and discards it.
 - `adopt` never moves, renames, overwrites or deletes a file already in the folder. It prints an
   inventory (nested repos at any depth, large folders, existing skills, `CLAUDE.md`, `.env`), adds
-  the brain files and the managed blocks, and stops before committing. It shows what `git add -A`
+  the brain files and the managed blocks (marked regions at the top of `CLAUDE.md` and `.gitignore`
+  that the template owns and refreshes, with the brain's own lines below), and stops before
+  committing. It shows what `git add -A`
   would stage, with a BLOCK or WARN line for anything that needs a decision (an embedded repo, a
   tracked `.env`); the first commit is made once those are resolved and the person says yes.
 - `init` refuses anything but an unchanged copy of the template (and refuses where a `local/`
@@ -51,10 +55,12 @@ gate still need a session started at the root.
 ## Keeping a brain current
 
 `_meta/brain update` pulls the template's **committed** history (never its working tree, so
-uncommitted template edits do not reach a brain) and replaces only the files the template owns:
-`_meta/`, the `brain-*` skills, and the managed blocks in `CLAUDE.md` and `.gitignore`. It refuses
-when one of those files was edited in the brain, prints the changelog entries it brings, and does not
-commit; `brain-sync` does. Everything else in a brain is the brain's own and is never touched.
+uncommitted template edits do not reach a brain) and replaces the files the template owns: `_meta/`,
+the `brain-*` skills, and the managed blocks in `CLAUDE.md` and `.gitignore`. It also refreshes the
+template's gate and `.env` entries in `.claude/settings.json` and the version in `brain.json`; every
+other entry is left alone, and so is everything else in the brain. It refuses, rather than merges,
+when a template-owned file was edited in the brain; it prints the changelog entries it brings and
+does not commit, `brain-sync` does.
 
 ## Sending a change upstream
 
@@ -111,8 +117,9 @@ A pre-commit hook, installed by `new`, `adopt` and `init`, blocks a commit that 
 
 - a `.env` file (other than `.env.example`);
 - a credential shape: a private key header, a common token prefix, `password=` followed by a value;
-- a private term from `.brain-private` (ignored, one term per line: hostnames, unreleased project
-  names), or a match of the `deny_patterns` in `brain.json`;
+- a private term from `.brain-private` (ignored; one regular expression per line, matched
+  case-insensitively, and an invalid one is a BLOCK: hostnames, unreleased project names), or a
+  match of the `deny_patterns` in `brain.json`;
 - a file over `max_file_kb` that is not in `large_file_allow`;
 - a path inside a nested git repo.
 

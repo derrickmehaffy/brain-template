@@ -599,7 +599,8 @@ that failed. It is friction and visibility, not a security boundary: anything wi
 round it, and the point is that doing so is deliberate, single-use and visible.
 
 - **Wiring** (in `.claude/settings.json`): `PostToolUse` on `Skill` runs `_meta/brain gate record`,
-  which notes the skill against the session id in the OS temp directory. `PreToolUse` on `Write`,
+  which notes the skill against the session id in `$XDG_RUNTIME_DIR/brain-gate` when that is a
+  folder the person owns, else in the OS temp directory. `PreToolUse` on `Write`,
   `Edit` and `Bash` runs `gate check`. For `Bash` it pulls the target out of redirections, `tee`,
   `cp`, `mv` and `sed -i`; a heuristic, deliberately, because a gate whose easiest bypass is the
   tool you reach for anyway is not a gate.

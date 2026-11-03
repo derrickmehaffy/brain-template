@@ -22,12 +22,20 @@ classDef human fill:#f8e6e6,stroke:#a86060,color:#1f2328;
   brain-write-skill --> brain-sync:::work
   brain-write-script --> brain-sync
   brain-write-practice --> brain-sync
+  META_MOD(show something or react inside Claude Code itself):::entry --> brain-write-mod:::work
+  brain-write-mod -.->|needs a script| brain-write-script
+  brain-write-mod --> brain-sync
   META_WRONG(a skill went wrong, or work fit no skill):::entry --> brain-retro:::work
+  brain-retro -.->|a mod went wrong| brain-write-mod
   brain-retro -.->|the brain's own skill| brain-write-skill
   brain-retro -.->|a brain-* skill or _meta| brain-upstream:::work
   brain-upstream --> brain-sync
   META_SETUP(set up, repair or update this brain):::entry --> brain-setup:::work
   brain-setup --> brain-sync
+  brain-setup -.->|interview: words that mislead| brain-write-practice
+  brain-setup -.->|interview: a system to connect| brain-write-script
+  brain-setup -.->|interview: work that recurs| brain-retro
+  brain-setup -.->|a hub's routing skill| brain-write-skill
   META_STALE(behind, or unpushed work):::entry --> brain-sync
   brain-sync --> META_PUSH(the person decides to push):::human
 ```

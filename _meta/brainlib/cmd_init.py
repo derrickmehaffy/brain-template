@@ -33,9 +33,12 @@ from .report import WARN, Finding, emit
 
 # What a copy of the template holds that a brain never does (spec §3). Relative to the root, `/`-separated; a path
 # with a glob character names several. `docs`, `CLAUDE.md`, `README.md`, `.gitignore`, `brain.json` and the
-# settings are not kept: the brain gets its own from the skeleton.
+# settings are not kept: the brain gets its own from the skeleton. The repository's public files (its licence,
+# community files and `.github/` workflows and forms) are the template project's, not the brain's; the harness
+# keeps its licence in `_meta/LICENSE`.
 TEMPLATE_ONLY = [".claude/skills/template-*", "tests", "docs", "CLAUDE.md", "README.md", ".gitignore",
-                 ".claude/settings.json", "brain.json"]
+                 ".claude/settings.json", "brain.json", "LICENSE", "CONTRIBUTING.md", "SECURITY.md",
+                 "CODE_OF_CONDUCT.md", ".github"]
 
 HISTORY_DIR = ".brain/template-history.git"
 SET_ASIDE_DIR = ".brain/template-only"  # where a folder with no repository keeps the template-only paths

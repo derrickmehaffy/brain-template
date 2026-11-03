@@ -9,7 +9,9 @@ from . import paths
 
 # name -> (module under brainlib, one-line help). Each module exposes
 # add_arguments(parser) and run(args) -> int; it is imported only when its command is chosen.
-COMMANDS: dict[str, tuple[str, str]] = {}
+COMMANDS: dict[str, tuple[str, str]] = {
+    "lint": ("lint", "check skills and the routing map"),
+}
 
 
 def _version() -> str:

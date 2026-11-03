@@ -10,7 +10,8 @@ copy of the folder, and only a rehearsal that went through lets the real one sta
 1. History. A plain clone of the template has the template's commits and its `origin`; its `.git` is MOVED to
    `.brain/template-history.git` (never deleted, so it stays recoverable) and a fresh repository is started. A repo
    made with "Use this template" keeps its own history; a folder with no repository gets one.
-2. The template-only paths are removed, then the skeleton, `brain.json`, the managed blocks and settings, the
+2. The template-only paths are removed (with no repository to keep them in history, moved into the ignored
+   `.brain/template-only/` instead), then the skeleton, `brain.json`, the managed blocks and settings, the
    manifest and the practices index are written, the pre-commit guard installed and the first commit made.
    `brain.json` tracks only a location that is the same on every machine (a URL, else the template's canonical
    source); a template folder on this machine goes to the ignored `brain.local.json`, as in `new`.
@@ -37,6 +38,7 @@ TEMPLATE_ONLY = [".claude/skills/template-*", "tests", "docs", "CLAUDE.md", "REA
                  ".claude/settings.json", "brain.json"]
 
 HISTORY_DIR = ".brain/template-history.git"
+SET_ASIDE_DIR = ".brain/template-only"  # where a folder with no repository keeps the template-only paths
 # How the history of the copy is handled.
 MOVE, KEEP, CREATE = "move", "keep", "create"
 
@@ -228,6 +230,16 @@ def _clone_problem(root: Path) -> Optional[str]:
     return None
 
 
+def _set_aside_problem(root: Path) -> Optional[str]:
+    """Why the template-only paths of a folder with no repository cannot be moved into `SET_ASIDE_DIR`, or None."""
+    folder = root / ".brain"
+    if os.path.lexists(str(folder)) and (folder.is_symlink() or not folder.is_dir()):
+        return ".brain exists and is not a folder; move it aside, then run init again"
+    if os.path.lexists(str(root / SET_ASIDE_DIR)):
+        return f"{SET_ASIDE_DIR} already exists; move it aside, then run init again"
+    return None
+
+
 def _hooks_path_message(configured: str) -> str:
     return (f"core.hooksPath is set ({configured}), so git would never run the brain's pre-commit guard; "
             "unset it, or call `_meta/brain hook pre-commit` from the hook that path holds, then run init again")
@@ -333,7 +345,7 @@ def _preflight(root: Path, cfg: config.Config, args) -> Tuple[Optional[str], str
         mode = CREATE
     else:
         mode = MOVE if is_plain_clone(root, cfg) else KEEP
-    problem = _clone_problem(root) if mode == MOVE else None
+    problem = _clone_problem(root) if mode == MOVE else _set_aside_problem(root) if mode == CREATE else None
     problem = problem or _hooks_path_problem(root, mode)
     if mode == KEEP:
         problem = problem or _foreign_hook_problem(root)
@@ -401,7 +413,7 @@ def _dry_run(root: Path, plan: _Plan, mode: str, present: List[str], written: Li
     print(f"dry run: nothing is changed. init would turn {root} into a brain from template v{plan.version}:")
     print(f"  history: {_HISTORY_LINE[mode]}")
     for rel in present:
-        print(f"  remove {rel}")
+        print(f"  move {rel} to {SET_ASIDE_DIR}/{rel}" if mode == CREATE else f"  remove {rel}")
     for rel in written:
         print(f"  write {rel}")
     print(f"then it would install the pre-commit guard and make the first commit:\n  {message}")
@@ -419,6 +431,13 @@ def _remove(root: Path, rel: str) -> None:
         shutil.rmtree(str(target))
     else:
         os.unlink(str(target))
+
+
+def _set_aside(root: Path, rel: str) -> None:
+    """Move `rel` to the same place under `SET_ASIDE_DIR`: with no history to recover it from, nothing is deleted."""
+    target = root / SET_ASIDE_DIR / rel
+    target.parent.mkdir(parents=True, exist_ok=True)
+    os.rename(str(root / rel), str(target))
 
 
 class _Undone(Exception):
@@ -450,7 +469,10 @@ def _convert(target: Path, mode: str, plan: _Plan, present: List[str], args) -> 
     """Everything up to the first commit, in `target`. Returns the warnings."""
     _start_history(target, mode)
     for rel in present:
-        _remove(target, rel)
+        if mode == CREATE:
+            _set_aside(target, rel)
+        else:
+            _remove(target, rel)
     install.write_tree(target, plan.filled, overwrite=False)
     config.write_raw(target, plan.raw)
     if plan.local_source:
@@ -560,7 +582,11 @@ def run(args) -> int:
     except OSError as exc:
         return _stopped(root, mode, f"the first commit failed: {exc.strerror or exc}\nthe message is: {message}")
 
-    print(f"removed {len(present)} template-only paths and wrote {len(written)} files in {root}")
+    if mode == CREATE:
+        print(f"moved {len(present)} template-only paths to {root / SET_ASIDE_DIR} (git ignores it; delete it when you "
+              f"no longer want them) and wrote {len(written)} files in {root}")
+    else:
+        print(f"removed {len(present)} template-only paths and wrote {len(written)} files in {root}")
     print(f"first commit {sha}: {message}")
     if mode == MOVE:
         print(f"the template's history is in {root / HISTORY_DIR} (read it with `git --git-dir={HISTORY_DIR} log`); "

@@ -370,10 +370,12 @@ class DryRunTest(InitCase):
                 self.assertFalse((root / ".brain-private").exists())
                 lines = [line.strip() for line in r.stdout.splitlines()]
                 self.assertIn("dry run: nothing is changed.", r.stdout.splitlines()[0])
+                gone = "move {0} to .brain/template-only/{0}" if label == "no repo" else "remove {0}"
                 for removed in ("tests", "docs", "brain.json", "CLAUDE.md", "README.md", ".gitignore",
                                 ".claude/settings.json"):
-                    self.assertIn(f"remove {removed}", lines)
-                self.assertTrue(any(line.startswith("remove .claude/skills/template-") for line in lines), lines)
+                    self.assertIn(gone.format(removed), lines)
+                self.assertTrue(any(line.startswith(gone.split("{")[0] + ".claude/skills/template-") for line in lines),
+                                lines)
                 for written in ("brain.json", "CLAUDE.md", "README.md", ".gitignore", ".claude/settings.json",
                                 "docs/ROUTING.md", ".brain-private", "_meta/MANIFEST.sha256"):
                     self.assertIn(f"write {written}", lines)

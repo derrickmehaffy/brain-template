@@ -1,13 +1,15 @@
 ---
 name: template-make-brain
-description: "Create a new brain from this template (new) or turn an existing folder into one (adopt): ask the four setup questions, show the dry run, walk through what adopt would stage and get a yes before the first commit, then draft the brain's folder map. Use when someone in a template session asks to make a brain for something or to turn a folder into a brain. Does NOT set up a copy of the template, which is brain-setup run in that copy, and does NOT repair an existing brain, which is brain-setup run in that brain."
+description: "Create a new brain from this template (new) or turn an existing folder into one (adopt): check the computer, work out the setup answers and ask only what the person alone knows, show the rehearsal, decide and explain what adopt saves and leaves out, get a yes before the first commit, then draft the brain's folder map. Use when someone in a template session asks to make a brain for something or to turn a folder into a brain. Does NOT set up a copy of the template, which is brain-setup run in that copy, and does NOT repair an existing brain, which is brain-setup run in that brain."
 ---
 
 # Make a brain
 
-A brain is made in one short conversation: four questions, a dry run the person reads, then the
-harness writes it. `new` makes a brain in a new or empty folder; `adopt` turns a folder that holds
-work into one, and never moves, renames, overwrites or deletes a file already there.
+A brain is made in one short conversation: a check of the computer, one or two questions, a
+rehearsal the person sees, then the harness writes it. `new` makes a brain in a new or empty folder;
+`adopt` turns a folder that holds work into one, and never moves, renames, overwrites or deletes a
+file already there. The person may never have used git or a terminal: decide what you can, say what
+each step does in plain words, and run every command yourself.
 
 ## Where this sits
 
@@ -23,61 +25,73 @@ a folder into one; nothing needs to run first.
 ## Which command
 
 Run this only in the template's own checkout: `brain.json` `role` is `template` and `local/` exists.
-Without `local/`, this is a copy never set up: ask whether the copy itself should become a brain
-(`brain-setup`, in the copy) or make brains (then the person creates `local/`). Then look at the
-folder the person names (ask for a full path if they have not): missing or empty → `new`; holding
+Without `local/`, this is a copy someone wants as their brain: hand straight to `brain-setup` here.
+The folder: the one the person names, as an absolute path (expand `~`). If they name none, propose
+`~/Documents/Brains/<Name>`, expanded, and say where that is. Missing or empty → `new`; holding
 files → `adopt`; holding a `brain.json` → a brain already, which `brain-setup` there repairs.
 
-## 1. Four questions, asked in one message
+## 1. The computer, then the answers
 
-1. the **name** (a game-modding brain, say, or "Homelab");
-2. the **prefix** for its own skills, suggested from the name (`homelab` → `lab`): 2 to 16 lowercase
-   letters or digits, starting with a letter, never `brain` or `template`;
-3. a **one-line description** of the work it holds;
-4. **anything that must never be committed**, one pattern each (private hostnames, unreleased
-   project names), kept in the brain's ignored `.brain-private`: never in a tracked file or commit.
+- **Check first**, yourself: `python3 --version` (3.9 or newer), `git --version`, and
+  `git config --global user.name` and `user.email`. A missing tool: on a Mac, `xcode-select
+  --install` and a box to click; on Linux, the package manager. No name or email: ask which should
+  label the saved history (it stays on this computer unless backed up online), and set both with
+  `git config --global`.
+- **Work out, don't quiz:** the **name** and a **one-line description** from what they asked for;
+  the **prefix** yourself (2 to 16 lowercase letters or digits, starting with a letter, never `brain`
+  or `template`: "Homelab" → `lab`), saying only "its routines will be called `lab-…`".
+- **Ask one question:** anything that must never be saved in its history (server names, addresses,
+  client or customer names, unreleased project names), said as they would write it, never a
+  password. Each is one `--private` term, matched in any case as a whole word; an address range or
+  a family of names becomes one `re:` pattern you write and explain. They keep their own copy of
+  the list: it lives only on this computer.
 
 The rest takes the defaults in `brain.json`; scripts that need packages add `--python <interpreter> --packages allowed`.
 
-## 2. The dry run, shown before anything is written
+## 2. The rehearsal, shown before anything is written
 
 ```bash
-_meta/brain new "<dir>" --name "<name>" --prefix <prefix> --description "<line>" --private "<pattern>" --dry-run
-_meta/brain adopt "<dir>" --name "<name>" --prefix <prefix> --description "<line>" --private "<pattern>" --dry-run
+_meta/brain new "<dir>" --name "<name>" --prefix <prefix> --description "<line>" --private "<term>" --dry-run
+_meta/brain adopt "<dir>" --name "<name>" --prefix <prefix> --description "<line>" --private "<term>" --dry-run
 ```
 
-One `--private` per pattern; quote every path, since folders often hold spaces. The dry run changes
-nothing, not even a `git init`. Show the person what it prints, in a few lines. A refusal: a folder
-that is not empty for `new` means `adopt` (ask); a bad or reserved prefix means asking again.
+One `--private` per term; `<dir>` absolute and quoted, since folders often hold spaces. The dry run
+changes nothing, not even a `git init`. Summarise it in a few plain lines. A refusal names its fix
+(a prefix it suggests, a term to change): make it with them.
 
-For `new`, on a yes, run it without `--dry-run`: it writes the brain, installs the pre-commit hook,
-makes the first commit, adds the folder to `local/brains.txt` and prints `doctor`; go to step 6.
+For `new`, on a yes, run it without `--dry-run`: it writes the brain, installs the safety check on
+saving (the pre-commit hook), makes the first commit, adds the folder to `local/brains.txt` and
+prints `doctor`; go to step 6.
 
-## 3. Adopt: read the inventory aloud, in plain words
+## 3. Adopt: say what the brain saves and what it leaves alone
 
-- **Nested repos** at any depth, each with a remote, none, or unpushed commits. Name each one with no
-  remote or with unpushed commits as **work you would lose** if this disk died. They stay out of the
-  brain (its `.gitignore` is an allowlist); pushing them is the person's call.
-- **Large folders** (assets, builds, datasets): not staged either.
+Decide each of these, then tell the person in plain words; ask only where the answer is theirs:
+
+- **Projects with their own history** (nested repos): they stay out of the brain and keep their own
+  history. Name each with no backup or unsaved work as work they would lose if this disk died, and
+  offer to back it up later.
+- **Large folders** (assets, builds, datasets): left out, untouched.
+- **Not saved in the brain's history**: the preview lists what the allowlist leaves out. Where one
+  looks like their own writing (`notes/`, a document folder), ask whether the brain should save it;
+  on a yes, add `!/<folder>/` below the managed block in `.gitignore`.
 - **What is already here**, all kept: `CLAUDE.md` and `.gitignore` get the managed block above their
-  lines; `.env` stays and is ignored, with its key names only in `.env.example`; existing skills arrive
-  undrawn, as `lint` GAPs, which is fine: `brain-write-skill` draws them later; a root `.git` keeps its history.
+  lines; `.env` stays, unsaved, with its key names only in `.env.example`; existing skills arrive
+  undrawn (`lint` GAPs, which `brain-write-skill` draws later); an existing history is kept.
 
 On a yes, run `adopt` without `--dry-run`. It writes the missing brain files and managed blocks, runs
 `git init` if needed, installs the hook, adds the folder to `local/brains.txt`, and stops before committing.
 
 ## 4. Adopt: the staging list, then the first commit
 
-`adopt` prints what `git add -A` would stage (file count, total size, the largest files, any over
-`max_file_kb`), then any BLOCK or WARN lines: an embedded repo the allowlist lets through, a tracked
-`.env`, files the root repo already tracks. Before the first commit, show the person what would be
-staged by top folder (`git -C "<dir>" add -A --dry-run`), every file over `max_file_kb` (the guard
-refuses it), any folder that looks private (`private/`, `secret*`, a third-party dump), and any
-uncommitted changes already in the folder's repository (`git -C "<dir>" status --short`), which the
-commit would sweep in. Resolve each, and every BLOCK or WARN line, on their yes: an ignore line below
-the managed block (`/<dir>/` for an embedded repo; a big file may go in `privacy.large_file_allow`), or
-`git rm -r --cached <path>` to untrack it (a tracked `.env` too); never move or delete a file. A path
-inside a nested repo should never be listed: if one is, stop. Only on a yes:
+Before the first commit, look at what would be saved (`git -C "<dir>" add -A --dry-run`, by top
+folder), every file over `max_file_kb` (the guard refuses it: leave it out by default), any folder
+that looks private (`private/`, `secret*`, someone else's data: leave it out), and changes already
+in the folder's history (`git -C "<dir>" status --short`), which the commit would sweep in. Settle
+each BLOCK or WARN line: an ignore line below the managed block, or `git rm -r --cached <path>` to
+stop saving a file without deleting it. A `.env` the folder's history already holds: stop saving it,
+and tell them its secrets are in the old history and reach anywhere it was pushed, so they should
+change them. Never move or delete a file; a path inside a nested repo should never be listed: if
+one is, stop. Explain the result in a few lines, and only on a yes:
 
 ```bash
 git -C "<dir>" add -A
@@ -90,25 +104,27 @@ what it names with the person, never `--no-verify`. Then `"<dir>/_meta/brain" do
 ## 5. Adopt: draft the folder map
 
 From the inventory, draft the `## Folder map` of the brain's `CLAUDE.md`: one line per top-level
-folder, what lives there and whether the brain tracks it (`Mods/`: one repo per mod, not tracked).
+folder, what lives there and whether the brain saves it (`Mods/`: one repo per mod, not saved).
 Fill in the skeleton's section if `CLAUDE.md` has one; otherwise add it directly below the
 `<!-- brain:end -->` marker, above the folder's own notes, never inside the markers. Write it on a
 yes and leave it uncommitted, for the first session in the brain to commit through `brain-sync`.
 
 ## 6. Hand over
 
-Name the folder to open a session in: the brain root. `.claude/settings.json` is read only from the
-folder a session starts in, so a session started inside a nested project repo misses the skill gate
-and the `.env` deny and may not see the brain's skills; `claude --add-dir "<dir>"` brings in the
-skills only.
+Tell them where the brain is and how to open it: in the desktop app, the folder picker beside the
+environment selector, "Open folder…", that folder; in a terminal, `claude` in that folder. Every
+chat starts there: a chat started in a project inside it misses the brain's safety checks. In its
+first chat they can say "Back this brain up online" or "Keep it on this computer only", and then
+anything from its `README.md`.
 
 ## Done when
 
-- The person answered the four questions and saw the dry run before anything was written.
+- The computer check passed, the person answered what only they could, and saw the rehearsal
+  before anything was written.
 - `new`: the brain has its first commit, and `doctor` shows no BLOCK.
-- `adopt`: the inventory was read out, naming each nested repo with no remote or unpushed commits as
-  work they would lose; the staging list was reviewed and each BLOCK or WARN line under it resolved;
-  the first commit was made on a yes; `doctor` shows no BLOCK; a folder map is drafted or declined.
-- No file already in the folder was moved, renamed, overwritten or deleted, and no private pattern
+- `adopt`: they heard what is saved and what is left alone, each nested repo with no backup named
+  as work they would lose; each BLOCK or WARN line was settled; the first commit was made on a yes;
+  `doctor` shows no BLOCK; a folder map is drafted or declined.
+- No file already in the folder was moved, renamed, overwritten or deleted, and no private term
   reached a tracked file.
-- The person knows the folder to open a session in, and what `--add-dir` does and does not bring.
+- They know the folder to open, and to start every chat there.

@@ -131,6 +131,40 @@ def _compile(rule: str, source: str, patterns: List[str]) -> Tuple[List[Tuple[st
     return compiled, problems
 
 
+def _mask_terms(text: str, patterns: Sequence[Tuple[str, "re.Pattern[str]"]]) -> str:
+    """`text` with every match of every pattern replaced by `***`.
+
+    The matches of all the patterns are found on the ORIGINAL text and merged when they overlap or touch, and each
+    merged span is replaced once. Masking pattern after pattern on the already-masked text would leave a fragment of
+    a term that overlaps another (`zqxacme` and `acme-zqxmerger` in `zqxacme-zqxmerger`)."""
+    spans: List[List[int]] = []
+    for _rule, pattern in patterns:
+        at = 0
+        while at <= len(text):
+            found = pattern.search(text, at)
+            if found is None:
+                break
+            if found.end() > found.start():
+                spans.append([found.start(), found.end()])
+            at = found.start() + 1  # a match that overlaps this one is a term too
+    if not spans:
+        return text
+    spans.sort()
+    merged = [spans[0]]
+    for start, end in spans[1:]:
+        if start <= merged[-1][1]:
+            merged[-1][1] = max(merged[-1][1], end)
+        else:
+            merged.append([start, end])
+    pieces: List[str] = []
+    taken = 0
+    for start, end in merged:
+        pieces += [text[taken:start], _MASK]
+        taken = end
+    pieces.append(text[taken:])
+    return "".join(pieces)
+
+
 class _Scan:
     """One run over the staged files of `root`."""
 
@@ -157,13 +191,11 @@ class _Scan:
     def _block(self, rule: str, message: str) -> None:
         self.findings.append(Finding(BLOCK, rule, message))
 
-    def _display(self, path: str) -> str:
-        """`path` as it is printed. A private or deny match inside a name is replaced, so a finding about a
-        file never repeats the very term that makes its name private."""
-        masked = path
-        for _rule, pattern in self.private + self.deny:
-            masked = pattern.sub(lambda match: _MASK if match.group(0) else "", masked)
-        return _shown(masked)
+    def mask(self, text: str) -> str:
+        """`text` with the private and deny terms in it replaced. Every message the guard prints goes through
+        this once, at the end of the run, so no path (a finding's own, one a lint or practices message quotes, one
+        git's error text repeats) can carry a term out."""
+        return _mask_terms(text, self.private + self.deny)
 
     def _name_findings(self, path: str, shown: str) -> None:
         """A private or deny term in a file name is committed with the name, whatever the file holds."""
@@ -177,14 +209,14 @@ class _Scan:
 
     def file(self, entry: gitutil.StagedEntry) -> None:
         path = entry.path
-        shown = self._display(path)
+        shown = _shown(path)
         self._name_findings(path, shown)
         if entry.mode == gitutil.GITLINK_MODE:
             self._block("nested-repo", f"{shown} (a repository inside this one)")
             return
         above = self._repo_above(path)
         if above is not None:
-            self._block("nested-repo", f"{shown} (inside the repository at {self._display(above)})")
+            self._block("nested-repo", f"{shown} (inside the repository at {_shown(above)})")
         name = path.rsplit("/", 1)[-1]
         if (name == ".env" or name.startswith(".env.")) and name != _ENV_EXAMPLE:
             self._block("env-file", f"{shown} (secrets belong in an ignored .env, never in a commit)")
@@ -303,20 +335,21 @@ def _staged_checks(root: Path, cfg: Config, changed: List[str]) -> List[Finding]
 
 
 def _check(root: Path) -> Tuple[List[Finding], int]:
-    """(the findings, how many staged files were looked at)."""
+    """(the findings, how many staged files were looked at). No message in them holds a private or deny term."""
     try:
         cfg = config.load(root)
     except config.ConfigError as exc:
         return [Finding(BLOCK, "config", str(exc))], 0
+    scan = _Scan(root, cfg)
     try:
         entries = gitutil.staged_entries(root)
     except gitutil.GitError as exc:
-        return [Finding(BLOCK, "git", f"cannot read the staged files: {_first_line(exc.stderr)}")], 0
-    scan = _Scan(root, cfg)
+        return [Finding(BLOCK, "git", scan.mask(f"cannot read the staged files: {_first_line(exc.stderr)}"))], 0
     present = [entry for entry in entries if entry.status != "D"]
     for entry in present:
         scan.file(entry)
-    return scan.findings + _staged_checks(root, cfg, [entry.path for entry in entries]), len(present)
+    found = scan.findings + _staged_checks(root, cfg, [entry.path for entry in entries])
+    return [Finding(f.severity, f.subject, scan.mask(f.message)) for f in found], len(present)
 
 
 def pre_commit(root) -> List[Finding]:

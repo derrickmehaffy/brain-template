@@ -27,6 +27,7 @@ DOTENV = "API_" + "TOKEN=" + "abcdefgh" + "12345678"  # the other `assignment` s
 
 VALUE = "abcdefgh" + "12345678"  # an 8+ character literal for the `assignment` shapes below
 WORD = "pass" + "word"
+TERM = "zqx" + "acme"  # a private term, built at run time like the secrets
 GITHUB = "github-token"  # kept apart from the text after it: "<that word>: <8 characters>" is itself a finding
 
 SHIM_TEXT = (
@@ -250,6 +251,108 @@ class BlocksEachRuleTest(HookCase):
         r = self.pre_commit(root)
         self.assertEqual(r.returncode, 1)
         self.assertIn("BLOCK  git:", r.stdout)
+
+
+class MaskingTest(HookCase):
+    """A private or deny term must not reach the output by any path: not through a file name in a staged
+    check's finding, not through two terms that overlap, not through git's own error text."""
+
+    def test_staged_check_findings_never_print_a_private_name(self):
+        with self.subTest(check="practices lint, by file name and by the id in its message"):
+            root = self.brain_repo(private=[TERM])
+            self.stage(root, f"docs/practices/{TERM}.md", ENTRY)  # its id says sample-fact, not the file name
+            r = self.pre_commit(root)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("BLOCK  practices-lint: docs/practices/***.md: id must equal the file name (***)", r.stdout)
+            self.assertNotIn(TERM, r.stdout + r.stderr)
+
+        with self.subTest(check="practices lint, no frontmatter"):
+            root = self.brain_repo(private=[TERM])
+            self.stage(root, f"docs/practices/{TERM}.md", "no frontmatter at all\n")
+            r = self.pre_commit(root)
+            self.assertIn("BLOCK  practices-lint: docs/practices/***.md: no frontmatter", r.stdout)
+            self.assertNotIn(TERM, r.stdout + r.stderr)
+
+        with self.subTest(check="lint, by skill name"):
+            root = self.brain_repo(private=[TERM])
+            self.stage(root, f".claude/skills/lab-{TERM}/SKILL.md", f"---\nname: lab-{TERM}\ndescription:\n---\nBody.\n")
+            r = self.pre_commit(root)
+            self.assertRegex(r.stdout, r"BLOCK  lint: lab-\*\*\*: .*description")
+            self.assertNotIn(TERM, r.stdout + r.stderr)
+
+        with self.subTest(check="routing sync, by path"):
+            root = self.brain_repo(private=[TERM])
+            self.make_skill(root, f"lab-{TERM}", "Does X. Use when Y.", SKILL_BODY)
+            (root / "docs").mkdir()
+            (root / "docs" / "ROUTING.md").write_text(MAP.replace("lab-a", f"lab-{TERM}"), encoding="utf-8")
+            routing_sync.sync(root, config.load(root), check=False)
+            path = root / ".claude" / "skills" / f"lab-{TERM}" / "SKILL.md"
+            text = path.read_text(encoding="utf-8")
+            at = text.index("\n", text.index("<!-- where:begin")) + 1
+            path.write_text(text[:at] + "Words that sync did not write.\n" + text[at:], encoding="utf-8")
+            self.git(root, "add", "-f", ".claude", "docs")
+            r = self.pre_commit(root)
+            self.assertIn("BLOCK  routing-sync: .claude/skills/lab-***/SKILL.md: out of date", r.stdout)
+            self.assertNotIn(TERM, r.stdout + r.stderr)
+
+    def test_overlapping_and_adjacent_terms_are_masked_as_one(self):
+        other = "acme-" + "zqx" + "merger"  # overlaps TERM in "acme"
+        for label, private, name, shown in (
+            ("overlapping terms", [TERM, other], f"{TERM}-zqxmerger.md", "***.md"),
+            ("terms in the other order", [other, TERM], f"{TERM}-zqxmerger.md", "***.md"),
+            ("adjacent terms", ["aaaa", "bbbb"], "aaaabbbb.md", "***.md"),
+            ("a term overlapping itself", ["qq"], "qqq.md", "***.md"),
+            ("a term twice", [TERM], f"{TERM}-and-{TERM}.md", "***-and-***.md"),
+        ):
+            with self.subTest(case=label):
+                root = self.brain_repo(private=private)
+                self.stage(root, f"docs/{name}", "fine\n")
+                r = self.pre_commit(root)
+                self.assertEqual(r.returncode, 1)
+                self.assertIn(f"BLOCK  private-pattern: docs/{shown} (in the file name)", r.stdout)
+                for fragment in ("zqx", "merger", "acme", "aaa", "bbb", "qq"):
+                    self.assertNotIn(fragment, r.stdout + r.stderr)
+
+    def test_a_git_read_error_does_not_echo_the_path(self):
+        root = self.brain_repo(private=[TERM])
+        self.stage(root, f"docs/{TERM}.md", "one\n")
+        self.git(root, "commit", "-q", "-m", "base")
+        self.git(root, "checkout", "-q", "-b", "side")
+        self.stage(root, f"docs/{TERM}.md", "two\n")
+        self.git(root, "commit", "-q", "-m", "side")
+        self.git(root, "checkout", "-q", "main")
+        self.stage(root, f"docs/{TERM}.md", "three\n")
+        self.git(root, "commit", "-q", "-m", "main")
+        merged = subprocess.run(["git", "merge", "side"], cwd=str(root), env=self.env, capture_output=True)
+        self.assertNotEqual(merged.returncode, 0, "the merge was meant to conflict")
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  git: cannot read the staged docs/***.md: ", r.stdout)  # git says why, minus the name
+        self.assertIn("not at stage 0", r.stdout)
+        self.assertNotIn(TERM, r.stdout + r.stderr)
+
+
+class MaskTermsTest(unittest.TestCase):
+    @staticmethod
+    def patterns(*texts: str):
+        import re
+
+        return [("private-pattern", re.compile(text, re.IGNORECASE)) for text in texts]
+
+    def test_terms_are_replaced_once_over_the_original_text(self):
+        mask = hook._mask_terms
+        self.assertEqual(mask("a/zqxacme-zqxmerger.md", self.patterns("zqxacme", "acme-zqxmerger")), "a/***.md")
+        self.assertEqual(mask("a/zqxacme-zqxmerger.md", self.patterns("acme-zqxmerger", "zqxacme")), "a/***.md")
+        self.assertEqual(mask("AaBb", self.patterns("aa", "bb")), "***")  # touching terms, any case
+        self.assertEqual(mask("qqqq", self.patterns("qq")), "***")
+        self.assertEqual(mask("one two one", self.patterns("one")), "*** two ***")
+
+    def test_text_without_a_term_and_patterns_that_match_nothing_or_everything_are_safe(self):
+        mask = hook._mask_terms
+        self.assertEqual(mask("plain text", self.patterns("zqx")), "plain text")
+        self.assertEqual(mask("plain text", []), "plain text")
+        self.assertEqual(mask("plain text", self.patterns("z*", "^", "$")), "plain text")  # empty matches mask nothing
+        self.assertEqual(mask("", self.patterns("zqx")), "")
 
 
 class CleanCommitsTest(HookCase):

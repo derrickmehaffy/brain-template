@@ -9,7 +9,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.helpers import TEMPLATE_ROOT, TempDirCase  # first: puts <template>/_meta on sys.path
-from brainlib import config, hook, practices, routing_sync
+from brainlib import config, gitutil, hook, practices, routing_sync
 from brainlib.report import BLOCK
 
 # Planted secrets are assembled at run time: no source file may hold a literal credential shape,
@@ -330,6 +330,141 @@ class MaskingTest(HookCase):
         self.assertIn("BLOCK  git: cannot read the staged docs/***.md: ", r.stdout)  # git says why, minus the name
         self.assertIn("not at stage 0", r.stdout)
         self.assertNotIn(TERM, r.stdout + r.stderr)
+
+
+class AnchoredMaskingTest(HookCase):
+    """Deny and private patterns are written for a bare path or a content line, so `^docs/hosts/` or a `\\b` at the
+    edge of a path matches the path alone. Each path must be masked in that context, before it is put into a message."""
+
+    DENY = "^docs/" + "hosts/"  # anchored: only a path that starts with it
+    PRIVATE = "^docs/" + "zqx"
+    PRIVATE_SKILL = "^\\.claude/skills/lab-" + "zqx"
+    PRIVATE_PRACTICE = "^docs/practices/" + "zqx"
+
+    def inner_repo(self, root: Path, rel: str) -> None:
+        inner = root / rel
+        inner.mkdir(parents=True)
+        self.git(inner, "init", "-q")
+        self.git(inner, "commit", "-q", "--allow-empty", "-m", "i")
+
+    def test_a_content_finding_masks_the_bare_path(self):
+        for label, kwargs, path, shown in (
+            ("anchored deny", {"extra": {"privacy": {"deny_patterns": [self.DENY]}}}, "docs/hosts/web.md", "***web.md"),
+            ("anchored private", {"private": [self.PRIVATE]}, "docs/zqxacme.md", "***acme.md"),
+        ):
+            with self.subTest(case=label):
+                root = self.brain_repo(**kwargs)
+                self.stage(root, path, "ref " + PLANTED["github-token"] + "\n")
+                r = self.pre_commit(root)
+                self.assertEqual(r.returncode, 1)
+                self.assertIn(f"BLOCK  {GITHUB}: {shown}:1", r.stdout)
+                self.assertIn(f"{shown} (in the file name)", r.stdout)
+                for fragment in ("hosts", "zqx", "docs/"):
+                    self.assertNotIn(fragment, r.stdout + r.stderr)
+
+    def test_a_nested_repo_finding_masks_its_path(self):
+        root = self.brain_repo(extra={"privacy": {"deny_patterns": [self.DENY]}})
+        self.inner_repo(root, "docs/hosts/inner")
+        subprocess.run(["git", "add", "-f", "docs/hosts/inner"], cwd=str(root), env=self.env, capture_output=True, check=True)
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  nested-repo: ***inner (a repository inside this one)", r.stdout)
+        self.assertNotIn("hosts", r.stdout + r.stderr)
+
+    def test_a_file_inside_a_nested_repo_masks_the_file_and_the_repo(self):
+        root = self.brain_repo(extra={"privacy": {"deny_patterns": [self.DENY]}})
+        self.inner_repo(root, "docs/hosts/inner")
+        (root / "docs" / "hosts" / "inner" / "page.md").write_text("hello\n", encoding="utf-8")
+        blob = self.git(root, "hash-object", "-w", "docs/hosts/inner/page.md").strip()
+        self.git(root, "update-index", "--add", "--cacheinfo", f"100644,{blob},docs/hosts/inner/page.md")
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  nested-repo: ***inner/page.md (inside the repository at ***inner)", r.stdout)
+        self.assertNotIn("hosts", r.stdout + r.stderr)
+
+    def test_lint_and_practices_findings_mask_a_name_that_only_the_whole_path_matches(self):
+        with self.subTest(check="lint"):
+            root = self.brain_repo(private=[self.PRIVATE_SKILL])
+            self.stage(root, ".claude/skills/lab-zqxfoo/SKILL.md", "---\nname: lab-zqxfoo\ndescription:\n---\nBody.\n")
+            r = self.pre_commit(root)
+            self.assertRegex(r.stdout, r"BLOCK  lint: \*\*\*: .*description")  # the skill name starts the pattern's match
+            self.assertNotIn("zqx", r.stdout + r.stderr)
+
+        with self.subTest(check="practices lint, a path and the id in its message"):
+            root = self.brain_repo(private=[self.PRIVATE_PRACTICE])
+            self.stage(root, "docs/practices/zqxfoo.md", ENTRY)  # its id says sample-fact, not the file name
+            r = self.pre_commit(root)
+            self.assertIn("BLOCK  practices-lint: ***foo.md: id must equal the file name (***)", r.stdout)
+            self.assertNotIn("zqx", r.stdout + r.stderr)
+
+        with self.subTest(check="practices lint, no frontmatter"):
+            root = self.brain_repo(private=[self.PRIVATE_PRACTICE])
+            self.stage(root, "docs/practices/zqxfoo.md", "no frontmatter at all\n")
+            r = self.pre_commit(root)
+            self.assertIn("BLOCK  practices-lint: ***foo.md: no frontmatter", r.stdout)
+            self.assertNotIn("zqx", r.stdout + r.stderr)
+
+        with self.subTest(check="routing sync"):
+            root = self.brain_repo(private=[self.PRIVATE_SKILL])
+            self.make_skill(root, "lab-zqxfoo", "Does X. Use when Y.", SKILL_BODY)
+            (root / "docs").mkdir()
+            (root / "docs" / "ROUTING.md").write_text(MAP.replace("lab-a", "lab-zqxfoo"), encoding="utf-8")
+            routing_sync.sync(root, config.load(root), check=False)
+            path = root / ".claude" / "skills" / "lab-zqxfoo" / "SKILL.md"
+            text = path.read_text(encoding="utf-8")
+            at = text.index("\n", text.index("<!-- where:begin")) + 1
+            path.write_text(text[:at] + "Words that sync did not write.\n" + text[at:], encoding="utf-8")
+            self.git(root, "add", "-f", ".claude", "docs")
+            r = self.pre_commit(root)
+            self.assertIn("BLOCK  routing-sync: ***foo/SKILL.md: out of date", r.stdout)
+            self.assertNotIn("zqx", r.stdout + r.stderr)
+
+    def test_a_skill_name_is_masked_only_when_the_matched_term_covers_it(self):
+        # the term is in a file name under references/, not in the skill's folder name: the skill is still named
+        root = self.brain_repo(private=["zq" + "xnotes"])
+        self.stage(root, ".claude/skills/lab-a/SKILL.md", "---\nname: lab-a\ndescription:\n---\nBody.\n")
+        self.stage(root, ".claude/skills/lab-a/references/zqxnotes.md", "x\n")
+        r = self.pre_commit(root)
+        self.assertRegex(r.stdout, r"BLOCK  lint: lab-a: .*description")
+        self.assertIn("BLOCK  routing-sync: .claude/skills/lab-a/SKILL.md: out of date", r.stdout)
+        self.assertNotIn("zqx", r.stdout + r.stderr)
+
+    def test_a_git_read_error_masks_the_path_git_repeats(self):
+        root = self.brain_repo(private=[self.PRIVATE])
+        self.stage(root, "docs/zqxacme.md", "one\n")
+        self.git(root, "commit", "-q", "-m", "base")
+        self.git(root, "checkout", "-q", "-b", "side")
+        self.stage(root, "docs/zqxacme.md", "two\n")
+        self.git(root, "commit", "-q", "-m", "side")
+        self.git(root, "checkout", "-q", "main")
+        self.stage(root, "docs/zqxacme.md", "three\n")
+        self.git(root, "commit", "-q", "-m", "main")
+        merged = subprocess.run(["git", "merge", "side"], cwd=str(root), env=self.env, capture_output=True)
+        self.assertNotEqual(merged.returncode, 0, "the merge was meant to conflict")
+        r = self.pre_commit(root)
+        self.assertIn("BLOCK  git: cannot read the staged ***acme.md: fatal: path '***acme.md' is in the index", r.stdout)
+        self.assertNotIn("zqx", r.stdout + r.stderr)
+
+    def test_the_early_git_error_is_masked(self):
+        root = self.brain_repo(private=[r"\b" + TERM + r"\b"])
+        broken = gitutil.GitError(("diff", "--cached"), f"fatal: bad object docs/{TERM}/x", 128)
+        with mock.patch.object(gitutil, "staged_entries", side_effect=broken):
+            found = hook.pre_commit(root)
+        self.assertEqual([(f.severity, f.subject) for f in found], [(BLOCK, "git")])
+        self.assertEqual(found[0].message, "cannot read the staged files: fatal: bad object docs/***/x")
+
+    def test_a_name_is_masked_before_it_is_made_printable(self):
+        # `zqx[^?]` matches the undecodable byte in the real name, but not the `?` printing would turn it into
+        root = self.brain_repo(private=["zqx[^?]"])
+        name = os.fsdecode(b"docs/zqx\xe9.md")
+        try:
+            self.stage(root, name, "ref " + PLANTED["github-token"] + "\n")
+        except (OSError, AssertionError, ValueError):
+            self.skipTest("this file system does not allow a non-UTF-8 file name")
+        r = self.pre_commit(root)
+        self.assertIn(f"BLOCK  {GITHUB}: docs/***.md:1", r.stdout)
+        self.assertIn("BLOCK  private-pattern: docs/***.md (in the file name)", r.stdout)
+        self.assertNotIn("zqx", r.stdout + r.stderr)
 
 
 class MaskTermsTest(unittest.TestCase):

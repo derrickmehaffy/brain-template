@@ -131,12 +131,10 @@ def _compile(rule: str, source: str, patterns: List[str]) -> Tuple[List[Tuple[st
     return compiled, problems
 
 
-def _mask_terms(text: str, patterns: Sequence[Tuple[str, "re.Pattern[str]"]]) -> str:
-    """`text` with every match of every pattern replaced by `***`.
-
-    The matches of all the patterns are found on the ORIGINAL text and merged when they overlap or touch, and each
-    merged span is replaced once. Masking pattern after pattern on the already-masked text would leave a fragment of
-    a term that overlaps another (`zqxacme` and `acme-zqxmerger` in `zqxacme-zqxmerger`)."""
+def _term_spans(text: str, patterns: Sequence[Tuple[str, "re.Pattern[str]"]]) -> List[List[int]]:
+    """The [start, end) spans of every match of every pattern in `text`, found on the ORIGINAL text and merged when
+    they overlap or touch. (Masking pattern after pattern on the already-masked text would leave a fragment of a term
+    that overlaps another: `zqxacme` and `acme-zqxmerger` in `zqxacme-zqxmerger`.)"""
     spans: List[List[int]] = []
     for _rule, pattern in patterns:
         at = 0
@@ -148,7 +146,7 @@ def _mask_terms(text: str, patterns: Sequence[Tuple[str, "re.Pattern[str]"]]) ->
                 spans.append([found.start(), found.end()])
             at = found.start() + 1  # a match that overlaps this one is a term too
     if not spans:
-        return text
+        return []
     spans.sort()
     merged = [spans[0]]
     for start, end in spans[1:]:
@@ -156,13 +154,30 @@ def _mask_terms(text: str, patterns: Sequence[Tuple[str, "re.Pattern[str]"]]) ->
             merged[-1][1] = max(merged[-1][1], end)
         else:
             merged.append([start, end])
+    return merged
+
+
+def _mask_terms(text: str, patterns: Sequence[Tuple[str, "re.Pattern[str]"]]) -> str:
+    """`text` with every match of every pattern replaced by `***`, each merged span once."""
     pieces: List[str] = []
     taken = 0
-    for start, end in merged:
+    for start, end in _term_spans(text, patterns):
         pieces += [text[taken:start], _MASK]
         taken = end
     pieces.append(text[taken:])
     return "".join(pieces)
+
+
+def _derived_ids(path: str) -> List[Tuple[str, int]]:
+    """(identifier, offset in `path`) for the skill or practice a staged path belongs to: the skill folder name of
+    `.claude/skills/<name>/...`, the entry id of `docs/practices/<id>.md`. Lint and practices findings name these
+    instead of the path."""
+    parts = path.split("/")
+    if path.startswith(_SKILLS_PREFIX) and len(parts) >= 4:
+        return [(parts[2], len(_SKILLS_PREFIX))]
+    if path.startswith(_PRACTICES_PREFIX) and len(parts) == 3 and parts[2].endswith(".md") and len(parts[2]) > 3:
+        return [(parts[2][:-3], len(_PRACTICES_PREFIX))]
+    return []
 
 
 class _Scan:
@@ -176,6 +191,7 @@ class _Scan:
         self.private, bad_private = _compile("private-pattern", config.PRIVATE_FILE, cfg.private_patterns)
         self.findings += bad_deny + bad_private
         self._repo_dirs: Dict[str, bool] = {}
+        self._aliases: Dict[str, str] = {}
 
     def _repo_above(self, path: str) -> Optional[str]:
         """The folder above `path` that holds a `.git` (so `path` belongs to another repository), if any."""
@@ -192,10 +208,36 @@ class _Scan:
         self.findings.append(Finding(BLOCK, rule, message))
 
     def mask(self, text: str) -> str:
-        """`text` with the private and deny terms in it replaced. Every message the guard prints goes through
-        this once, at the end of the run, so no path (a finding's own, one a lint or practices message quotes, one
-        git's error text repeats) can carry a term out."""
+        """`text` with the private and deny terms in it replaced. A pattern is written for a bare path or a content
+        line, so this is right for a bare path or name and only a second layer for a message built around one."""
         return _mask_terms(text, self.private + self.deny)
+
+    def prepare(self, staged: List[str]) -> None:
+        """Learn how each staged path that holds a term is printed (its masked form, in the context the patterns
+        were written for), and likewise the skill or practice id a lint or practices finding would name instead,
+        when the term the path matched covers that id."""
+        patterns = self.private + self.deny
+        for path in staged:
+            spans = _term_spans(path, patterns)
+            if not spans:
+                continue
+            self._aliases[path] = self.mask(path)
+            for ident, offset in _derived_ids(path):
+                if any(start < offset + len(ident) and end > offset for start, end in spans):
+                    masked = self.mask(ident)
+                    self._aliases[ident] = masked if masked != ident else _MASK
+
+    def scrub(self, text: str) -> str:
+        """`text` (a message that quotes paths or ids) with each known staged path and id replaced by the form
+        `prepare` chose, then masked as a whole."""
+        for key in sorted(self._aliases, key=len, reverse=True):
+            text = text.replace(key, self._aliases[key])
+        return self.mask(text)
+
+    def compose(self, subject: str, message: str) -> str:
+        """`subject: message` for a finding another module made: the subject is a bare name or path, the message
+        quotes names. Masked before it is made printable, so a name `_shown` would alter is still recognised."""
+        return f"{_shown(self.scrub(subject))}: {_shown(self.scrub(message))}"
 
     def _name_findings(self, path: str, shown: str) -> None:
         """A private or deny term in a file name is committed with the name, whatever the file holds."""
@@ -209,14 +251,14 @@ class _Scan:
 
     def file(self, entry: gitutil.StagedEntry) -> None:
         path = entry.path
-        shown = _shown(path)
+        shown = _shown(self.mask(path))  # masked first: `_shown` could change what a pattern was written to match
         self._name_findings(path, shown)
         if entry.mode == gitutil.GITLINK_MODE:
             self._block("nested-repo", f"{shown} (a repository inside this one)")
             return
         above = self._repo_above(path)
         if above is not None:
-            self._block("nested-repo", f"{shown} (inside the repository at {_shown(above)})")
+            self._block("nested-repo", f"{shown} (inside the repository at {_shown(self.mask(above))})")
         name = path.rsplit("/", 1)[-1]
         if (name == ".env" or name.startswith(".env.")) and name != _ENV_EXAMPLE:
             self._block("env-file", f"{shown} (secrets belong in an ignored .env, never in a commit)")
@@ -229,7 +271,7 @@ class _Scan:
                 return
             text = _text_of(gitutil.staged_blob(self.root, path))
         except gitutil.GitError as exc:  # cannot look, so cannot vouch
-            self._block("git", f"cannot read the staged {shown}: {_first_line(exc.stderr)}")
+            self._block("git", f"cannot read the staged {shown}: {_shown(self.scrub(_first_line(exc.stderr)))}")
             return
         if text is None:
             return
@@ -269,30 +311,30 @@ def _guarded(rule: str, check: Callable[[], List[Finding]]) -> List[Finding]:
 # skills or practices must not depend on them loading, and one that does gets a finding, not a traceback.
 
 
-def _lint_findings(root: Path, cfg: Config) -> List[Finding]:
+def _lint_findings(root: Path, cfg: Config, scan: _Scan) -> List[Finding]:
     from . import lint
 
     # `all_findings` includes the routing map, the gate rules and every router's rules.json.
-    return [Finding(BLOCK, "lint", f"{f.subject}: {f.message}")
+    return [Finding(BLOCK, "lint", scan.compose(f.subject, f.message))
             for f in lint.all_findings(root, cfg) if f.severity == BROKEN]
 
 
-def _sync_findings(root: Path, cfg: Config) -> List[Finding]:
+def _sync_findings(root: Path, cfg: Config, scan: _Scan) -> List[Finding]:
     from . import routing_sync
 
     problems: List[Finding] = []
     stale = routing_sync.sync(root, cfg, True, problems)  # a non-empty result: out of date or not confirmed current
     refused = set(routing_sync.refused_paths(problems))
-    found = [Finding(BLOCK, "routing-sync", f"{f.subject}: {f.message}") for f in problems]
-    found += [Finding(BLOCK, "routing-sync", f"{_shown(path)}: out of date; run _meta/brain routing sync and stage it")
+    found = [Finding(BLOCK, "routing-sync", scan.compose(f.subject, f.message)) for f in problems]
+    found += [Finding(BLOCK, "routing-sync", scan.compose(path, "out of date; run _meta/brain routing sync and stage it"))
               for path in stale if path not in refused]
     return found
 
 
-def _practices_lint_findings(root: Path, cfg: Config, today: date) -> List[Finding]:
+def _practices_lint_findings(root: Path, cfg: Config, today: date, scan: _Scan) -> List[Finding]:
     from . import practices
 
-    return [Finding(BLOCK, "practices-lint", f"{f.subject}: {f.message}")
+    return [Finding(BLOCK, "practices-lint", scan.compose(f.subject, f.message))
             for f in practices.lint(root, cfg, today) if f.severity == BLOCK]
 
 
@@ -319,14 +361,14 @@ def _practices_index_findings(root: Path, cfg: Config, today: date) -> List[Find
                     f"{_PRACTICES_INDEX} {state}; run _meta/brain practices index, then stage it")]
 
 
-def _staged_checks(root: Path, cfg: Config, changed: List[str]) -> List[Finding]:
+def _staged_checks(root: Path, cfg: Config, changed: List[str], scan: _Scan) -> List[Finding]:
     found: List[Finding] = []
     if any(_touches_skills(path) for path in changed):
-        found += _guarded("lint", lambda: _lint_findings(root, cfg))
-        found += _guarded("routing-sync", lambda: _sync_findings(root, cfg))
+        found += _guarded("lint", lambda: _lint_findings(root, cfg, scan))
+        found += _guarded("routing-sync", lambda: _sync_findings(root, cfg, scan))
     if any(_touches_practices(path) for path in changed):
         today = date.today()
-        found += _guarded("practices-lint", lambda: _practices_lint_findings(root, cfg, today))
+        found += _guarded("practices-lint", lambda: _practices_lint_findings(root, cfg, today, scan))
         found += _guarded("practices-index", lambda: _practices_index_findings(root, cfg, today))
     return found
 
@@ -335,7 +377,11 @@ def _staged_checks(root: Path, cfg: Config, changed: List[str]) -> List[Finding]
 
 
 def _check(root: Path) -> Tuple[List[Finding], int]:
-    """(the findings, how many staged files were looked at). No message in them holds a private or deny term."""
+    """(the findings, how many staged files were looked at).
+
+    No message holds a private or deny term, with one exception: when brain.json cannot be read no patterns are
+    loaded, so that `config` finding (a file name and a parse error) is not masked. Everywhere else a staged path is
+    masked as a bare path first, and every message is masked again as a whole."""
     try:
         cfg = config.load(root)
     except config.ConfigError as exc:
@@ -344,12 +390,13 @@ def _check(root: Path) -> Tuple[List[Finding], int]:
     try:
         entries = gitutil.staged_entries(root)
     except gitutil.GitError as exc:
-        return [Finding(BLOCK, "git", scan.mask(f"cannot read the staged files: {_first_line(exc.stderr)}"))], 0
+        return [Finding(BLOCK, "git", _shown(scan.mask(f"cannot read the staged files: {_first_line(exc.stderr)}")))], 0
+    scan.prepare([entry.path for entry in entries])
     present = [entry for entry in entries if entry.status != "D"]
     for entry in present:
         scan.file(entry)
-    found = scan.findings + _staged_checks(root, cfg, [entry.path for entry in entries])
-    return [Finding(f.severity, f.subject, scan.mask(f.message)) for f in found], len(present)
+    found = scan.findings + _staged_checks(root, cfg, [entry.path for entry in entries], scan)
+    return [Finding(f.severity, f.subject, _shown(scan.mask(f.message))) for f in found], len(present)
 
 
 def pre_commit(root) -> List[Finding]:

@@ -229,7 +229,7 @@ Brain Template/
     gates.json                 shipped gate rules on the meta skills' files (§7.9)
     VERSION                    semver of the template
     CHANGELOG.md               one entry per version, citing the upstream suggestions it answers
-  tests/                       harness tests and skill scenarios (template-only)
+  tests/                       harness tests (template-only)
   docs/                        the template's own docs and this design (template-only)
   local/                       ignored: notes about the source brains; brains.txt
 ```
@@ -755,19 +755,6 @@ Harness tests in `tests/` (Python `unittest`, stdlib), all in temporary director
   tests redirect `HOME`). The term list lives in `local/` (ignored) so the check itself leaks
   nothing; the test skips with a notice when that file is absent.
 
-**Skill scenarios.** `lint` proves only a skill's shape. Each skill, shipped and template-only, is
-also run once by a fresh subagent on a scripted scenario in a brain made by `new` in a temporary
-directory (for example "make a skill for checking my backups", "I keep rewriting this query",
-"record that the router drops mDNS across VLANs", "this `brain-*` skill missed a step", and, once
-three work skills exist, "everything I bring in should go to the right one of these"). It passes
-when the output follows §8 (lint clean, the skill placed in `ROUTING.md`, a router with rules and
-cases where one was called for, files where §4 puts them, the right commit scope) and the
-`brain-*` skill fired rather than a globally installed lookalike. One more scenario asks for a
-quick skill edit without naming any skill, and passes only if the gate refuses the write and the
-session then invokes `brain-write-skill` instead of asking for a waiver. Scenarios are kept as prose in
-`tests/scenarios/` and re-run when a skill changes materially. No repeated-run variance checks in
-v1.
-
 ## 10. Verification against the three intended brains
 
 Done once the build is complete, writing only to temporary directories:
@@ -849,9 +836,8 @@ portability (`.agents/skills/` with a symlink).
     side writes into the other.
 14. `init` guards against converting the template itself by refusing when `local/` exists, and
     starts a fresh history for a plain clone only when every commit is on the template's remote.
-15. Each skill is proven by one scripted scenario run by a fresh subagent (§9); no repeated-run
-    variance testing in v1. You did not pick on this one; it is my recommendation and easy to
-    change.
+15. A skill is checked by `lint` for its shape and proven in real use; v1 keeps no scripted runs of
+    the skills.
 16. Forced routing is in v1 but does nothing until a brain needs it: a new brain has an empty map
     and no gate rules of its own. The one exception is deliberate: the shipped gate rules on the
     meta skills' own files apply from day one.

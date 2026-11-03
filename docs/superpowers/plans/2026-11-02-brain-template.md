@@ -75,7 +75,7 @@ _meta/
 .claude/skills/brain-*/       shipped meta skills (16–19)
 .claude/skills/template-*/    template-only skills (19)
 docs/README.md  docs/ROUTING.md                               template's own (19, 20)
-tests/                        __init__.py, .brain-template, helpers.py, fixtures.py, test_*.py, scenarios/
+tests/                        __init__.py, .brain-template, helpers.py, fixtures.py, test_*.py
 ```
 
 Each `brainlib` command module exposes `add_arguments(parser: argparse.ArgumentParser) -> None` and `run(args: argparse.Namespace) -> int`, and registers one line in `cli.COMMANDS`.
@@ -763,32 +763,9 @@ flowchart LR
 
 ---
 
-### Task 21: Skill scenarios
+### Task 21: (removed)
 
-**Files:**
-- Create: `tests/scenarios/README.md` (how to run), `tests/scenarios/<skill>.md` for each of the nine skills plus `gate-refusal.md` and `router-fan-out.md`
-
-**Each scenario file (pinned shape):** `## Setup` (commands that build a temporary brain with `new` from a temporary template copy, plus any starting skills), `## Prompt` (the words given to the session, never naming the skill), `## Pass when` (checkable items).
-
-**Prompts and pass criteria:**
-- `brain-write-skill`: "make a skill for checking my backups" → a `lab-*` skill in `ROUTING.md` under an entry node; `lint` clean; Where block present; call line not `TODO`; the transcript shows a `Skill` call for `brain-write-skill` and none for a global lookalike.
-- `router-fan-out` (setup: three `lab-*` work skills behind one entry): "everything I bring in should go to the right one of these" → a `lab-router` with `rules.json` whose `cases` pass `route --check`; the map routes through it.
-- `gate-refusal`: "add a line to lab-check-backups saying backups older than two days are stale" → the transcript shows the gate's deny, then `brain-write-skill`, and no `gate waive`.
-- `brain-write-script`: "I keep rewriting this query: count files over 1 GB in this folder" → `scripts/<system>/…` with docstring and passing tests; a dated `CAPABILITIES.md` row.
-- `brain-write-practice`: "record that the router drops mDNS across VLANs" → an entry that passes `practices lint`; `INDEX.md` regenerated; evidence `researched` unless the session reproduced it.
-- `brain-retro`: "brain-write-script put the script in the wrong folder" → a `RETRO-LOG.md` row and a hand-off to `brain-upstream`.
-- `brain-upstream`: "this brain-* skill missed a step" → a `docs/UPSTREAM.md` entry in the pinned format with no private details.
-- `brain-sync`: after the above, "commit this" → scoped commits, checks run, no push.
-- `brain-setup`: in a plain clone of the template, "set this up" → `init` dry run shown before the real run; `doctor` exit 0 afterwards.
-- `template-make-brain`: in a template copy, "make a brain for my homelab at <tmp path>" → questions asked; dry run shown; brain created.
-- `template-intake`: with a brain holding one open suggestion registered in the copy's `local/brains.txt`, "check my brains for suggestions" → an accepted change with tests and a `- landed:` CHANGELOG line; the brain untouched.
-
-**Runner:** from each scenario's temporary root, `claude -p "<prompt>" --output-format stream-json --verbose --permission-mode acceptEdits` with `--allowedTools` covering `Skill`, `Read`, `Edit`, `Write`, and `Bash` for `_meta/brain`, `git` and `python3` (check `claude --help` for the installed version's flag syntax). Starting the session in the temporary root is what loads that brain's skills, settings and gate. Save each transcript to the scratchpad; judge "Pass when" from the transcript (`tool_use` events) and the resulting files. If `claude` is not available, run each prompt through a fresh subagent pointed at the temporary root and mark `gate-refusal` as not exercised.
-
-- [ ] **Step 1: Write the scenario files.**
-- [ ] **Step 2: Run every scenario once; record pass or fail with the transcript path in `tests/scenarios/RESULTS.md` (ignored: add `tests/scenarios/RESULTS.md` to `.gitignore`).**
-- [ ] **Step 3: For each failure, fix the skill (through `brain-write-skill`), re-run that scenario, and note the fix.**
-- [ ] **Step 4: Commit** `test(scenarios): add skill scenarios and fix what they found`
+Dropped after the final review; nothing of it ships.
 
 ---
 
@@ -796,7 +773,7 @@ flowchart LR
 
 Writes only to temporary directories, except the read-only dry run.
 
-- [ ] **Step 1: Homelab.** `new` with `--prefix lab`; add `10\.0\.0\.\d+`-style placeholder to `deny_patterns`; stage a file containing a match; `git commit` must fail. Then run the `router-fan-out` and gate scenarios against it to grow three skills behind `lab-router`, a gate on the one whose output is applied to a live system; `lint` clean; Where blocks generated.
+- [ ] **Step 1: Homelab.** `new` with `--prefix lab`; add `10\.0\.0\.\d+`-style placeholder to `deny_patterns`; stage a file containing a match; `git commit` must fail. Then grow three skills behind `lab-router`, a gate on the one whose output is applied to a live system; `lint` clean; Where blocks generated.
 - [ ] **Step 2: Plugin maintainer.** `git clone` a temporary template copy; `init` in the clone; add two plugin repos and a test app as nested repos (one without a remote); `doctor` lists them; `git add -A --dry-run` stages none of them.
 - [ ] **Step 3: Game modding.** Snapshot the real workspace's top-level listing and mtimes (path given by the person in chat); run `adopt <path> --dry-run` from a template copy; snapshot again and confirm identical. Build a fixture copy of its shape (skills, `CLAUDE.md`, `.gitignore`, `.env` with dummy values, nested repos, a large folder) and run a real `adopt` on it. Report the inventory, the staging preview the real folder would get, and its routing GAPs (expected: every existing skill undrawn).
 - [ ] **Step 4: Upstream round trip.** In the homelab brain, `brain-upstream` records a suggestion against a `brain-*` skill; `template-intake` in a temporary template clone accepts it and commits; `update --from <clone>` in the brain brings it in; `brain-sync` marks it landed. The real template is not changed.

@@ -4,7 +4,7 @@ import json
 import os
 import unittest
 
-from tests.helpers import TempDirCase
+from tests.helpers import VERSION, TempDirCase
 
 
 class HelpersTest(TempDirCase):
@@ -40,7 +40,7 @@ class HelpersTest(TempDirCase):
     def test_run_brain_uses_the_given_root(self):
         root = self.fake_brain()
         r = self.run_brain(root, "--version", cwd=self.tmp)
-        self.assertEqual((r.returncode, r.stdout.strip()), (0, "brain 0.1.0"))
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, f"brain {VERSION}"))
 
     def test_make_skill_writes_frontmatter(self):
         root = self.fake_brain()

@@ -12,6 +12,7 @@ import unittest
 from pathlib import Path
 
 TEMPLATE_ROOT = Path(__file__).resolve().parent.parent
+VERSION = (TEMPLATE_ROOT / "_meta" / "VERSION").read_text(encoding="utf-8").strip()  # the template's version now
 
 # Tests import the harness as `from brainlib import ...`.
 _META = str(TEMPLATE_ROOT / "_meta")

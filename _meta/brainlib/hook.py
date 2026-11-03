@@ -210,9 +210,10 @@ class _Scan:
         self.findings.append(Finding(BLOCK, rule, message))
 
     def mask(self, text: str) -> str:
-        """`text` with the private and deny terms in it replaced. A pattern is written for a bare path or a content
-        line, so this is right for a bare path or name and only a second layer for a message built around one."""
-        return _mask_terms(text, self.private + self.deny)
+        """`text` with the private and deny terms and any credential shape in it replaced. A pattern is written for a
+        bare path or a content line, so this is right for a bare path or name and only a second layer for a message
+        built around one."""
+        return _mask_terms(text, self.private + self.deny + CREDENTIAL_PATTERNS)
 
     def prepare(self, staged: List[str]) -> None:
         """Learn how each staged path that holds a term is printed (its masked form, in the context the patterns

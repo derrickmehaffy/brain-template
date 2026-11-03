@@ -524,8 +524,8 @@ def _write(dest: Path, template: Path, plan: _Plan) -> List[str]:
         install.write_practices_index(dest)
         written.append(_PRACTICES_INDEX)
     else:
-        plan.late.append(Finding(WARN, _PRACTICES_INDEX, "kept; run `_meta/brain practices check` before the first "
-                                 "commit, because the guard refuses an index that is not current"))
+        plan.late.append(Finding(WARN, _PRACTICES_INDEX, "kept; run `_meta/brain practices index` and stage it before "
+                                 "the first commit, because the guard refuses an index that is not current"))
     if not gitutil.is_repo(dest):
         install.git_init(dest)
     hook.install(dest)

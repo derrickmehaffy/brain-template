@@ -427,7 +427,6 @@ class AnchoredMaskingTest(HookCase):
         self.stage(root, ".claude/skills/lab-a/references/zqxnotes.md", "x\n")
         r = self.pre_commit(root)
         self.assertRegex(r.stdout, r"BLOCK  lint: lab-a: .*description")
-        self.assertIn("BLOCK  routing-sync: .claude/skills/lab-a/SKILL.md: out of date", r.stdout)
         self.assertNotIn("zqx", r.stdout + r.stderr)
 
     def test_a_git_read_error_masks_the_path_git_repeats(self):

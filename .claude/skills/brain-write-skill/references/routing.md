@@ -31,15 +31,15 @@ A --> B --> C           a chain is one edge per arrow
   lowercase id with no such skill is BROKEN.
 - **A capitalised id is anything else**: an entry trigger, a decision, a person acting, a store.
   Shapes: `(label)`, `[label]`, `{label}` for a decision, `[(label)]` for a store, also `((…))`,
-  `{{…}}`, `[[…]]`. Quote a label that holds brackets, braces or parentheses: `KIND{"kind (from
-  the title)"}`; a label can never hold `"`.
+  `{{…}}`, `[[…]]`. Quote a label that holds brackets, braces or parentheses: `LAB_KIND{"kind
+  (from the title)"}`; a label can never hold `"`.
 - **One class per node**, on any of its appearances, from the set below. No class anywhere, an
   unknown one, or two different ones: BROKEN. `routing sync` adds the `classDef` style lines; never
   write them yourself.
 - **An id means the same node in every diagram of both files.** That is how one diagram continues
-  another, so it must be deliberate: two diagrams that each use `KIND` for their own decision become
-  one node and swap each other's hand-ons. Give capitalised ids names their diagram alone uses
-  (`BACKUP_KIND`, `DNS_KIND`).
+  another, so it must be deliberate: two diagrams that each use `LAB_KIND` for their own decision
+  become one node and swap each other's hand-ons. Give capitalised ids names their diagram alone uses
+  (`BACKUP_KIND`, `DNS_KIND`); the meta map's all start `META_`, so never start one that way.
 - **Edges are calls, not cross-references.** Draw an arrow only where one skill hands work to
   another. A "Does NOT …, which is X" clause is a boundary and is never drawn.
 - **Outside the dialect, and BROKEN as an unsupported line**: `subgraph` and `end`, `style`,
@@ -70,7 +70,7 @@ a skill has run. A skill can be either, both or neither.
 
 Each skill's block is computed from the graph contracted through every node that is not a skill:
 
-- `lab-router --> KIND{…} --> three skills` gives `lab-router` three hand-ons.
+- `lab-router --> LAB_KIND{…} --> three skills` gives `lab-router` three hand-ons.
 - Every capitalised node is walked through, a `human` or `state` node included: in
   `lab-a --> APPROVE(the person approves):::human --> lab-b`, `lab-a` hands to `lab-b`.
 - A skill never hands to itself: a loop back to the same skill through a decision
@@ -94,14 +94,14 @@ applying changes, and one hand-on to a shipped skill. In `docs/ROUTING.md`:
 
 ```mermaid
 flowchart LR
-  REQ(a change or a check on the homelab):::entry --> lab-check-outage:::gate
+  LAB_REQ(a change or a check on the homelab):::entry --> lab-check-outage:::gate
   lab-check-outage --> lab-router:::work
-  lab-router --> KIND{kind of work}:::decision
-  KIND -->|backups| lab-check-backups:::work
-  KIND -->|a service's config| lab-change-config:::work
-  KIND -->|a name or an address| lab-update-dns:::work
-  lab-change-config --> APPLY(the person applies it to the live host):::human
-  lab-update-dns --> APPLY
+  lab-router --> LAB_KIND{kind of work}:::decision
+  LAB_KIND -->|backups| lab-check-backups:::work
+  LAB_KIND -->|a service's config| lab-change-config:::work
+  LAB_KIND -->|a name or an address| lab-update-dns:::work
+  lab-change-config --> LAB_APPLY(the person applies it to the live host):::human
+  lab-update-dns --> LAB_APPLY
   lab-check-backups -.->|a fact worth keeping| brain-write-practice
 ```
 ````

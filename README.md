@@ -45,6 +45,8 @@ ignored). Everything else takes the defaults in `brain.json`.
   folder exists, which is how it never converts the template itself). A plain clone gets a fresh
   history, only when every commit is on its remote. A clone of a local checkout tracks the
   template's canonical source and keeps the local path in `brain.local.json`, which is ignored.
+  Before publishing the template, set `template.source` in its `brain.json` to the published URL, so
+  `init` in a clone of it starts a fresh history and never keeps the template as `origin`.
 
 Open Claude Code **at the brain's root**. The `.env` deny and the skill gate are read from
 `.claude/settings.json` there, and only there. A session started in a plain subfolder should still

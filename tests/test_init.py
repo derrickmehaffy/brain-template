@@ -11,7 +11,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tests.helpers import TEMPLATE_ROOT, TempDirCase  # first: puts <template>/_meta on sys.path
+from tests.helpers import TEMPLATE_ROOT, VERSION, TempDirCase  # first: puts <template>/_meta on sys.path
 from brainlib import cmd_init, config, hook, managed, manifest
 
 CANONICAL = "https://example.invalid/brain-template.git"
@@ -175,7 +175,7 @@ class ConvertTest(InitCase):
 
         r = self.done(clone)
         raw = self.assert_a_brain(clone, version)
-        self.assertRegex(raw["template"]["version"], r"^0\.1\.0\+[0-9a-f]{7,}$")
+        self.assertRegex(raw["template"]["version"], rf"^{re.escape(VERSION)}\+[0-9a-f]{{7,}}$")
         # the origin is a folder on this machine, so it goes to brain.local.json (ignored), not into the tracked
         # brain.json; the template is not published, so brain.json records no source
         self.assertIsNone(raw["template"]["source"])
@@ -370,10 +370,12 @@ class DryRunTest(InitCase):
                 self.assertFalse((root / ".brain-private").exists())
                 lines = [line.strip() for line in r.stdout.splitlines()]
                 self.assertIn("dry run: nothing is changed.", r.stdout.splitlines()[0])
+                gone = "move {0} to .brain/template-only/{0}" if label == "no repo" else "remove {0}"
                 for removed in ("tests", "docs", "brain.json", "CLAUDE.md", "README.md", ".gitignore",
                                 ".claude/settings.json"):
-                    self.assertIn(f"remove {removed}", lines)
-                self.assertTrue(any(line.startswith("remove .claude/skills/template-") for line in lines), lines)
+                    self.assertIn(gone.format(removed), lines)
+                self.assertTrue(any(line.startswith(gone.split("{")[0] + ".claude/skills/template-") for line in lines),
+                                lines)
                 for written in ("brain.json", "CLAUDE.md", "README.md", ".gitignore", ".claude/settings.json",
                                 "docs/ROUTING.md", ".brain-private", "_meta/MANIFEST.sha256"):
                     self.assertIn(f"write {written}", lines)
@@ -867,7 +869,8 @@ class ShapeTest(InitCase):
     def test_the_version_pattern_matches_the_pinned_message(self):
         _t, clone = self.plain_clone()
         self.done(clone)
-        self.assertRegex(self.commits(clone)[0], r"^meta\(brain\): initialise from template v0\.1\.0\+[0-9a-f]{7,}$")
+        self.assertRegex(self.commits(clone)[0],
+                         rf"^meta\(brain\): initialise from template v{re.escape(VERSION)}\+[0-9a-f]{{7,}}$")
         self.assertTrue(re.fullmatch(r"[0-9a-f]{7,}", self.git(clone, "rev-parse", "--short", "HEAD").strip()))
 
 

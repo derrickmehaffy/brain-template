@@ -72,8 +72,8 @@ suggestions by reading each other:
 1. In the brain, `brain-upstream` records one proposed change in `docs/UPSTREAM.md`, written so it
    holds nothing private to that brain.
 2. In the template, `template-intake` reads the open suggestions from the brains listed in
-   `local/brains.txt`, accepts or declines each with the person, makes an accepted change with its
-   tests, and answers every one in `_meta/CHANGELOG.md` by id. Committing is enough; there is no
+   `local/brains.txt`, accepts or declines each with the person, makes an accepted change, and
+   answers every one in `_meta/CHANGELOG.md` by id. Committing is enough; there is no
    release step.
 3. In the brain, the next `update` reports the answered ids, and `brain-sync` marks each one landed
    or declined.

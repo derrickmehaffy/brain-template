@@ -181,6 +181,9 @@ MAX_BRACE_WORD = 4096  # a longer word, or one with more than MAX_BRACE_GROUPS b
 MAX_BRACE_GROUPS = 64
 MAX_NESTING = 32  # `$(` inside `$(`: a command nested deeper than this is refused, since it cannot be checked
 TOO_DEEP = f"a command nested more than {MAX_NESTING} levels deep"
+# A skill the person starts by typing `/<skill>` may load without a Skill tool call, which the gate never sees.
+SLASH_HINT = ("If the person started the skill by typing /<skill>, invoke it once with the Skill tool so the gate "
+              "can see the run.")
 _RESERVED_WHY = "reserved for gate waive"
 MAX_HEREDOCS = 64  # here-documents opened on one line
 MAX_MATCHES = 256  # names one glob may expand to
@@ -706,11 +709,13 @@ def _sed_targets(args: List[str]) -> List[str]:
 
 class _Target(NamedTuple):
     """A file a command writes: as written, whether it may be a folder (the destination of `cp`, `mv`,
-    `ln`), and the sources that land in it when it is an existing folder."""
+    `ln`), the sources that land in it when it is an existing folder, and whether a `cd` came before it in
+    the command (a relative name then means a folder the gate does not know)."""
 
     word: str
     folder: bool = False
     sources: Tuple[str, ...] = ()
+    after_cd: bool = False
 
 
 def _command_targets(words: List[str]) -> List[_Target]:
@@ -753,16 +758,26 @@ def _command_targets(words: List[str]) -> List[_Target]:
 def _bash_targets(command: str) -> Tuple[List[_Target], bool]:
     """What `command` writes, and whether some part of it is nested too deep to read."""
     found: List[_Target] = []
+    seen_cd = [False]  # a `cd` has run earlier in the command, so relative names after it are not read
 
     def add(target: _Target) -> None:
         if not target.word or target.word in ("<()", ">()"):  # a process substitution is an argument, not a file
             return
+        target = target._replace(after_cd=seen_cd[0])
         for position, known in enumerate(found):
             if known.word == target.word:
                 found[position] = _Target(known.word, known.folder or target.folder,
-                                          known.sources + tuple(s for s in target.sources if s not in known.sources))
+                                          known.sources + tuple(s for s in target.sources if s not in known.sources),
+                                          known.after_cd and target.after_cd)
                 return
         found.append(target)
+
+    def end_command(words: List[str]) -> None:
+        for target in _command_targets(words):
+            add(target)
+        first = next((word for word in words if word not in _RESERVED and not _ASSIGNMENT.match(word)), "")
+        if first == "cd":
+            seen_cd[0] = True
 
     def collect(tokens: List[Token]) -> None:
         words: List[str] = []
@@ -792,11 +807,9 @@ def _bash_targets(command: str) -> Tuple[List[_Target], bool]:
                     for inner in getattr(following, "subs", ()):
                         collect(inner)
             else:  # ; && || | & ( ) `: the command ends here
-                for target in _command_targets(words):
-                    add(target)
+                end_command(words)
                 words = []
-        for target in _command_targets(words):
-            add(target)
+        end_command(words)
 
     tokens, too_deep = _tokens(command)
     collect(tokens)
@@ -823,7 +836,8 @@ def targets(payload: Any, root: Path) -> List[Tuple[str, bool]]:
     """(relpath inside the brain, exists) for each file the tool call writes, in order.
 
     Reads `file_path`, `notebook_path` and the targets of a Bash `command`, resolves them against the
-    payload's `cwd`, normalises `..` and symlinks, and drops what lies outside the brain. Globs in a
+    payload's `cwd`, normalises `..` and symlinks, and drops what lies outside the brain. A relative target
+    that comes after a `cd` in the command is dropped too: the gate does not follow the `cd`. Globs in a
     command's targets are matched against the folder it runs in (no match leaves the name as written).
     A folder comes back with a trailing `/` (so `cp a scripts/` meets the rule for `scripts/**`), and so
     does a destination of `cp` or `mv` that is not there yet, besides the plain name: it may be a folder
@@ -870,6 +884,8 @@ def _targets(payload: Any, root: Path) -> Tuple[List[Tuple[str, bool]], bool]:
                 keep((relative + "/", False))
 
     for target in raw:
+        if target.after_cd and not os.path.isabs(os.path.expanduser(str(target.word))):
+            continue  # after a `cd` a relative name is read against a folder the gate does not follow
         # One name that cannot be looked at (a lone surrogate, say) is skipped, never allowed to
         # fail the whole call open: every other name of the call is still checked.
         try:
@@ -1068,8 +1084,8 @@ def _refusal(blocking: List[Tuple[str, Rule]]) -> Dict[str, Any]:
         reason += f" {lead} {_needs(rule)} to run first."
         if rule.why:
             reason += f" {rule.why}"
-    reason += (f" Invoke the skill{'s' if len(listed) > 1 else ''}; a one-time waiver needs the person's "
-               f"express say-so: _meta/brain gate waive {first_rule.skills[0]} \"<reason, and who said so>\"")
+    reason += (f" Invoke the skill{'s' if len(listed) > 1 else ''}. {SLASH_HINT} A one-time waiver needs the "
+               f"person's express say-so: _meta/brain gate waive {first_rule.skills[0]} \"<reason, and who said so>\"")
     return _deny(reason)
 
 

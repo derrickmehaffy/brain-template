@@ -24,7 +24,7 @@ def refusal(rel, skills, why, waive_skill=None):
     """The exact `permissionDecisionReason` for a refused write (pinned by the brief)."""
     needs = skills[0] + (f" (or {' or '.join(skills[1:])})" if len(skills) > 1 else "")
     return (f"skill gate: writing {rel} needs {needs} to run first in this session. {why} "
-            f"Invoke the skill; a one-time waiver needs the person's express say-so: "
+            f"Invoke the skill. {gate.SLASH_HINT} A one-time waiver needs the person's express say-so: "
             f"_meta/brain gate waive {waive_skill or skills[0]} \"<reason, and who said so>\"")
 
 
@@ -269,7 +269,7 @@ class SkillGateTest(GateCase):
             ("sed -i '' -e s/a/b/ docs/CAPABILITIES.md", "docs/CAPABILITIES.md"),
             ('echo "x" >> "docs/RETRO-LOG.md"', "docs/RETRO-LOG.md"),
             ("ls && printf hi >| docs/UNCLASSIFIED-LOG.md", "docs/UNCLASSIFIED-LOG.md"),
-            ("cd /tmp; cp a b\ncp c scripts/z.py", "scripts/z.py"),
+            ("ls /tmp; cp a b\ncp c scripts/z.py", "scripts/z.py"),
             ("cat > .claude/skills/lab-q/SKILL.md <<EOF\nhi\nEOF", ".claude/skills/lab-q/SKILL.md"),
             # A folder the command creates (or renames to) is a write into it, whether or not it exists yet.
             ("mkdir -p .claude/skills/lab-new && cp /tmp/SKILL.md .claude/skills/lab-new/", ".claude/skills/lab-new/"),
@@ -353,7 +353,7 @@ class SkillGateTest(GateCase):
             # A here-document marker inside a comment opens no here-document.
             ("echo hi # <<EOF\ncp a scripts/x.py\nEOF", "scripts/x.py"),
             # (( and $(( are arithmetic only when they end in "))"; otherwise they open subshells, as in bash.
-            ("((cd a && cp x scripts/y.py) && echo ok)", "scripts/y.py"),
+            ("((cp x scripts/y.py && cd a) && echo ok)", "scripts/y.py"),
             ("echo $((cp a scripts/x.py) )", "scripts/x.py"),
             ('echo "$((cp a scripts/x.py) )"', "scripts/x.py"),
             ("if (( 1 << 2 )); then cp a scripts/x.py; fi", "scripts/x.py"),
@@ -519,8 +519,10 @@ class SkillGateTest(GateCase):
     def test_a_double_parenthesis_that_is_not_arithmetic_runs_its_commands(self):
         root = self.fake_brain()
         (root / "a").mkdir()
-        # Run from a folder inside the brain, `../scripts/y.py` is the brain's scripts folder (the `cd` is not followed).
+        # The `cd` is not followed: a relative target after it is not read, an absolute one still is.
         r = self.hook(root, "check", "Bash", cwd=root / "a", command="((cd a && cp x ../scripts/y.py) && echo ok)")
+        self.assert_silent(r)
+        r = self.hook(root, "check", "Bash", cwd=root / "a", command=f"((cd a && cp x '{root}/scripts/y.py') && echo ok)")
         self.assertIn("writing scripts/y.py needs brain-write-script", self.denied(r))
 
     def test_a_command_nested_too_deep_to_check_is_refused(self):
@@ -765,7 +767,7 @@ class SkillGateTest(GateCase):
 SCRIPT_WHY = "Scripts follow brain-write-script: placement, read-only by default, tests."
 PRACTICE_WHY = "Practices need evidence, a duplicate check and the index, through brain-write-practice."
 DEPLOY_RULE = {"path": "scripts/deploy/**", "skills": ["lab-deploy"], "why": "Deploys go through lab-deploy."}
-WAIVE_HINT = "Invoke the skill{s}; a one-time waiver needs the person's express say-so: " \
+WAIVE_HINT = "Invoke the skill{s}. " + gate.SLASH_HINT + " A one-time waiver needs the person's express say-so: " \
              "_meta/brain gate waive {skill} \"<reason, and who said so>\""
 
 

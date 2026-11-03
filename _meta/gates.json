@@ -2,9 +2,11 @@
   "rules": [
     {"path": ".claude/skills/{prefix}-*/**", "skills": ["brain-write-skill"], "why": "Skills are written through brain-write-skill, so they land in the routing map and pass lint."},
     {"path": ".claude/skills/brain-*/**", "skills": ["brain-write-skill"], "only_in": "template", "why": "Shipped skills are written through brain-write-skill."},
+    {"path": ".claude/agents/{prefix}-*.md", "skills": ["brain-write-skill"], "why": "Agents are written through brain-write-skill: explicit tools, a model, and the skill that dispatches them."},
     {"path": "docs/ROUTING.md", "skills": ["brain-write-skill"], "why": "The routing map changes when a skill is placed, through brain-write-skill."},
     {"path": "scripts/**", "skills": ["brain-write-script"], "why": "Scripts follow brain-write-script: placement, read-only by default, tests."},
     {"path": "docs/CAPABILITIES.md", "skills": ["brain-write-script"], "why": "Capabilities are recorded from a probe, through brain-write-script."},
+    {"path": ".mcp.json", "skills": ["brain-write-script"], "why": "An MCP server is a system: probed, recorded in CAPABILITIES.md, its secrets through secret run, through brain-write-script."},
     {"path": "docs/practices/**", "skills": ["brain-write-practice"], "why": "Practices need evidence, a duplicate check and the index, through brain-write-practice."},
     {"path": "docs/RETRO-LOG.md", "skills": ["brain-retro"], "why": "Retro rows come with a proposed fix, through brain-retro."},
     {"path": "docs/UNCLASSIFIED-LOG.md", "skills": ["brain-retro"], "why": "Unclassified rows say what a skill would need, through brain-retro."},

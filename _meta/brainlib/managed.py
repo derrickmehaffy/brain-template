@@ -1,5 +1,5 @@
 """The template-owned blocks inside brain-owned files: the managed region of `CLAUDE.md` and `.gitignore`,
-and the entries of `.claude/settings.json` that wire the skill gate (spec §4)."""
+and the entries of `.claude/settings.json` that wire the skill gate and the session-start check (spec §4)."""
 from __future__ import annotations
 
 import copy
@@ -20,9 +20,12 @@ _KINDS = {
 
 DENY = ["Read(./.env)", "Read(./.env.*)"]
 HOOK_CMD = '"$CLAUDE_PROJECT_DIR/_meta/brain" gate {}'  # quoted: the project folder may contain a space
+START_CMD = '"$CLAUDE_PROJECT_DIR/_meta/brain" doctor --brief'
 PRE_MATCHER = "Write|Edit|MultiEdit|NotebookEdit|Bash"
 POST_MATCHER = "Skill"
-_HOOK_MARK = '_meta/brain" gate'  # what every gate hook command, now or in an older brain, contains
+START_MATCHER = "startup"
+# What every template hook command, now or in an older brain, contains: the gate's and the session-start check's.
+_HOOK_MARKS = ('_meta/brain" gate', '_meta/brain" doctor')
 
 
 class ManagedError(Exception):
@@ -97,36 +100,37 @@ def _expect(value: Any, wanted: type, where: str) -> None:
         raise ManagedError(f".claude/settings.json: {where} must be {'an object' if wanted is dict else 'a list'}")
 
 
-def _is_gate_hook(hook: Any) -> bool:
+def _is_template_hook(hook: Any) -> bool:
     command = hook.get("command") if isinstance(hook, dict) else None
-    return isinstance(command, str) and _HOOK_MARK in command
+    return isinstance(command, str) and any(mark in command for mark in _HOOK_MARKS)
 
 
-def _without_gate_hooks(groups: List[Any]) -> Tuple[List[Any], bool]:
-    """`groups` (one event's matcher groups) with every gate hook removed; a group left empty by that goes
+def _without_template_hooks(groups: List[Any]) -> Tuple[List[Any], bool]:
+    """`groups` (one event's matcher groups) with every template hook removed; a group left empty by that goes
     too. Also whether anything was removed."""
     kept: List[Any] = []
     removed = False
     for group in groups:
         inner = group.get("hooks") if isinstance(group, dict) else None
-        if not isinstance(inner, list) or not any(_is_gate_hook(hook) for hook in inner):
+        if not isinstance(inner, list) or not any(_is_template_hook(hook) for hook in inner):
             kept.append(group)
             continue
         removed = True
-        left = [hook for hook in inner if not _is_gate_hook(hook)]
+        left = [hook for hook in inner if not _is_template_hook(hook)]
         if left:
             kept.append({**group, "hooks": left})
     return kept, removed
 
 
-def _gate_group(matcher: str, verb: str) -> Dict[str, Any]:
-    return {"matcher": matcher, "hooks": [{"type": "command", "command": HOOK_CMD.format(verb)}]}
+def _group(matcher: str, command: str) -> Dict[str, Any]:
+    return {"matcher": matcher, "hooks": [{"type": "command", "command": command}]}
 
 
 def merge_settings(existing: Dict[str, Any]) -> Dict[str, Any]:
-    """`existing` (the parsed `.claude/settings.json`) with the `.env` deny entries and the gate hooks set:
-    deny entries added once, every older gate hook dropped, `PreToolUse` -> `gate check` and
-    `PostToolUse` -> `gate record` added. Everything else is kept. Pure: `existing` is not modified."""
+    """`existing` (the parsed `.claude/settings.json`) with the `.env` deny entries and the template hooks set:
+    deny entries added once, every older template hook dropped, `PreToolUse` -> `gate check`,
+    `PostToolUse` -> `gate record` and `SessionStart` -> `doctor --brief` added. Everything else is kept.
+    Pure: `existing` is not modified."""
     _expect(existing, dict, "the file")
     result = copy.deepcopy(existing)
 
@@ -140,13 +144,14 @@ def merge_settings(existing: Dict[str, Any]) -> Dict[str, Any]:
     _expect(hooks, dict, "'hooks'")
     for event in list(hooks):
         _expect(hooks[event], list, f"'hooks.{event}'")
-        kept, removed = _without_gate_hooks(hooks[event])
+        kept, removed = _without_template_hooks(hooks[event])
         if not removed:
             continue
         if kept:
             hooks[event] = kept
         else:
             del hooks[event]
-    hooks.setdefault("PreToolUse", []).append(_gate_group(PRE_MATCHER, "check"))
-    hooks.setdefault("PostToolUse", []).append(_gate_group(POST_MATCHER, "record"))
+    hooks.setdefault("PreToolUse", []).append(_group(PRE_MATCHER, HOOK_CMD.format("check")))
+    hooks.setdefault("PostToolUse", []).append(_group(POST_MATCHER, HOOK_CMD.format("record")))
+    hooks.setdefault("SessionStart", []).append(_group(START_MATCHER, START_CMD))
     return result

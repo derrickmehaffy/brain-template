@@ -22,8 +22,10 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "rename-skill": ("rename", "rename a skill everywhere it is named (a dry run unless --apply)"),
     "route": ("route", "apply a router's rules file and name one skill"),
     "routing": ("routing", "routing map tools"),
+    "secret": ("secret", "run a command with secrets from .env or 1Password in its environment, never printing one"),
     "update": ("cmd_update", "pull the template's committed changes into this brain (a dry run with --dry-run)"),
     "upstream": ("upstream", "upstream suggestions this brain has recorded for the template: list"),
+    "usage": ("usage", "how often each skill ran here, and which never did"),
 }
 
 

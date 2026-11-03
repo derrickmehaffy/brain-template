@@ -30,6 +30,7 @@ if TYPE_CHECKING:  # annotations only; importing these at run time would slow ev
 GATES_FILE = "gates.json"  # under _meta/
 WAIVER_FILE = Path(".brain") / "gate-waiver.json"
 WAIVER_LOG = Path(".brain") / "gate-waivers.log"
+USAGE_LOG = Path(".brain") / "skill-usage.log"  # one line per skill run, read by `brain usage`
 NO_SESSION = "nosession"
 # Written by `gate waive` and the gate itself only: no tool call may touch them, whatever has run.
 RESERVED = (WAIVER_FILE.as_posix(), WAIVER_LOG.as_posix())
@@ -1094,6 +1095,19 @@ def _log_waiver(root: Path, event: str, skill: str, reason: str, path: str) -> N
         handle.write(line + "\n")
 
 
+def _log_run(root: Path, skill: str) -> None:
+    """Append `<ISO time><TAB><skill>` to the usage log. Best effort: a line the log misses must not cost the
+    session its record of the run."""
+    try:
+        target = Path(root) / USAGE_LOG
+        os.makedirs(str(target.parent), exist_ok=True)
+        line = "\t".join([_now(), re.sub(r"[\t\r\n]+", " ", skill)])
+        with open(str(target), "a", encoding="utf-8", newline="\n") as handle:
+            handle.write(line + "\n")
+    except OSError:
+        pass
+
+
 def record(root: Path, payload: Any) -> None:
     """Note one run of the skill a `Skill` tool call invoked, against the call's session."""
     if not isinstance(payload, dict):
@@ -1109,6 +1123,7 @@ def record(root: Path, payload: Any) -> None:
     state = _read_state(path)
     state["ran"][skill] = state["ran"].get(skill, 0) + 1
     _write_state(path, state)
+    _log_run(root, skill)
 
 
 def _deny(reason: str) -> Dict[str, Any]:

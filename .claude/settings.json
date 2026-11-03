@@ -27,6 +27,17 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR/_meta/brain\" doctor --brief"
+          }
+        ]
+      }
     ]
   }
 }

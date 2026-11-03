@@ -6,8 +6,10 @@ edit), runs git only through `gitutil` (which passes `--no-optional-locks`, so e
 alone), and asks a nested repository only for its remotes and unpushed commits, never its status.
 
 `--quick` leaves out what is slow or leaves the machine: the scripts' tests, the walk for nested repositories
-and the `ls-remote` that asks a URL source for its latest commit. Findings name files, keys and rules; they never
-carry a value from `.env`, a test's output or a URL's credentials.
+and the `ls-remote` that asks a URL source for its latest commit. `--brief` is the session-start hook's form: it
+implies `--quick`, prints only the WARN and BLOCK lines under one header (nothing when all is well) and always
+exits 0. Findings name files, keys and rules; they never carry a value from `.env`, a test's output or a URL's
+credentials.
 """
 from __future__ import annotations
 
@@ -288,14 +290,15 @@ def _hook(root: Path, cfg: Config) -> List[Finding]:
     return [_ok("hook", "pre-commit guard installed" if ours else "pre-commit hook calls the guard")]
 
 
-def _wires(settings: dict, event: str, verb: str) -> bool:
+def _wires(settings: dict, event: str, call: str) -> bool:
+    """Whether a hook of `event` runs `_meta/brain <call>` (`call` a regular expression, e.g. `gate\\s+check`)."""
     hooks = settings.get("hooks")
     groups = hooks.get(event) if isinstance(hooks, dict) else None
     for group in groups if isinstance(groups, list) else []:
         inner = group.get("hooks") if isinstance(group, dict) else None
         for entry in inner if isinstance(inner, list) else []:
             command = entry.get("command") if isinstance(entry, dict) else None
-            if isinstance(command, str) and re.search(r"_meta/brain[\"']?\s+gate\s+" + verb + r"\b", command):
+            if isinstance(command, str) and re.search(r"_meta/brain[\"']?\s+" + call + r"\b", command):
                 return True
     return False
 
@@ -319,10 +322,13 @@ def _settings(root: Path, cfg: Config) -> List[Finding]:
     if lost:
         found.append(_warn("settings", f"does not deny {_names(lost)}, so .env can be read; run brain-setup"))
     for event, verb in (("PreToolUse", "check"), ("PostToolUse", "record")):
-        if not _wires(settings, event, verb):
+        if not _wires(settings, event, r"gate\s+" + verb):
             found.append(_warn("settings", f"{event} does not run `_meta/brain gate {verb}`, so skills can be "
                                            "imitated from memory; run brain-setup"))
-    return found or [_ok("settings", "denies reading .env and wires both gate hooks")]
+    if not _wires(settings, "SessionStart", r"doctor\s+--brief"):
+        found.append(_warn("settings", "SessionStart does not run `_meta/brain doctor --brief`, so a session starts "
+                                       "without hearing what doctor would warn about; run brain-setup"))
+    return found or [_ok("settings", "denies reading .env, wires both gate hooks and the session-start check")]
 
 
 # -- lint, practices ------------------------------------------------------------------------------------------------
@@ -562,11 +568,28 @@ _GIT_LOCATION_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_
 def add_arguments(parser) -> None:
     parser.add_argument("--quick", action="store_true",
                         help="skip the scripts' tests, the nested repositories and the network (for before a commit)")
+    parser.add_argument("--brief", action="store_true",
+                        help="for the session-start hook: --quick, only WARN and BLOCK lines, always exit 0")
+
+
+def _brief() -> int:
+    """The session-start form: what needs attention, or nothing. Never fails the hook."""
+    try:
+        shown = [f for f in diagnose(paths.harness_root(), quick=True) if f.severity in (BLOCK, WARN)]
+    except Exception as exc:  # a broken check must not break the session's start
+        print(f"brain doctor --brief could not run ({type(exc).__name__}); run _meta/brain doctor")
+        return 0
+    if shown:
+        print("This brain's health check (`_meta/brain doctor --quick`) at session start; tell the person:")
+        emit(shown)
+    return 0
 
 
 def run(args) -> int:
     for name in _GIT_LOCATION_VARS:
         os.environ.pop(name, None)
+    if args.brief:
+        return _brief()
     found = diagnose(paths.harness_root(), args.quick)
     emit(found)
     print(summary(found))

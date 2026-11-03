@@ -114,6 +114,7 @@ class BlockFilesTest(TempDirCase):
         self.assertEqual(gi.splitlines()[0], "/*")
         self.assertIn("__pycache__/", gi.splitlines())
         self.assertIn("*.pyc", gi.splitlines())
+        self.assertIn(".DS_Store", gi.splitlines())
 
     def test_block_files_hold_no_markers(self):
         for kind in ("md", "gitignore"):
@@ -151,6 +152,7 @@ class BlockFilesTest(TempDirCase):
             ".env", ".env.local", "scripts/.env", "notes.txt", "project/readme.md", "tests/t.py",
             ".claude/settings.local.json", "_meta/brainlib/__pycache__/x.pyc", "scripts/mod.pyc",
             ".brain/gate.log", "brain.local.json", ".brain-private", "local/brains.txt",
+            ".DS_Store", "_meta/.DS_Store", "docs/.DS_Store", "scripts/a/.DS_Store",
         ]
         for rel in tracked + ignored:
             path = repo / rel

@@ -19,6 +19,7 @@ class IsShippedTest(unittest.TestCase):
             "_meta/brainlib/cli.py",
             "_meta/skeleton/docs/README.md",
             "_meta/managed/CLAUDE.block.md",
+            "_meta/.DS_Store.md",  # only a file named exactly .DS_Store is Finder litter
             ".claude/skills/brain-sync/SKILL.md",
             ".claude/skills/brain-sync/references/steps.md",
         ]
@@ -28,6 +29,10 @@ class IsShippedTest(unittest.TestCase):
             "_meta/skeleton/scripts/__pycache__/x.py",
             "_meta/brainlib/stray.pyc",
             ".claude/skills/brain-sync/__pycache__/x.pyc",
+            "_meta/.DS_Store",
+            "_meta/skeleton/docs/.DS_Store",
+            ".claude/skills/brain-sync/.DS_Store",
+            ".claude/skills/brain-sync/references/.DS_Store",
             ".claude/skills/lab-own/SKILL.md",
             ".claude/skills/brainy/SKILL.md",
             ".claude/skills/brain-sync",  # the folder itself is not a file
@@ -109,6 +114,21 @@ class ManifestFilesTest(TempDirCase):
         self.put(root, "_meta/MANIFEST.sha256", f"\n{good}  _meta/a.py\nnot a line\nshort  _meta/b.py\n{good} _meta/c.py\n")
         self.assertEqual(manifest.read(root), {"_meta/a.py": good})
 
+    def test_read_survives_invalid_utf8(self):
+        root = self.tmp / "brain"
+        good, other = digest("a\n"), digest("b\n")
+        (root / "_meta").mkdir(parents=True)
+        (root / manifest.MANIFEST_PATH).write_bytes(
+            f"{good}  _meta/a.py\n".encode() + b"\xff\xfe not a manifest line \x80\n"
+            + f"{other}  _meta/b.py\n".encode() + b"\xc3(\n")
+        self.assertEqual(manifest.read(root), {"_meta/a.py": good, "_meta/b.py": other})
+
+    def test_local_edits_survives_invalid_utf8_in_the_manifest(self):
+        root = self.tmp / "brain"
+        self.put(root, "_meta/a.py", "a\n")
+        (root / manifest.MANIFEST_PATH).write_bytes(f"{digest('a' + chr(10))}  _meta/a.py\n".encode() + b"\xff\xfe\n")
+        self.assertEqual(manifest.local_edits(root), [])
+
     def test_path_with_spaces_round_trips(self):
         root = self.tmp / "brain"
         self.put(root, "_meta/a b/c d.py", "s\n")
@@ -134,6 +154,9 @@ class ManifestFilesTest(TempDirCase):
         # None of these count: not shipped, or shipped-but-excluded.
         self.put(root, "_meta/__pycache__/a.pyc")
         self.put(root, "_meta/stray.pyc")
+        self.put(root, "_meta/.DS_Store")
+        self.put(root, "_meta/skeleton/docs/.DS_Store")
+        self.put(root, ".claude/skills/brain-x/.DS_Store")
         self.put(root, ".claude/skills/lab-own/SKILL.md")
         self.put(root, ".claude/settings.json")
         self.put(root, "docs/README.md")

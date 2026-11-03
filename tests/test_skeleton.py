@@ -153,7 +153,7 @@ class SkeletonTest(TempDirCase):
         self.assertEqual(gi, [
             "/*", "!/.gitignore", "!/brain.json", "!/CLAUDE.md", "!/README.md", "!/.env.example", "!/.claude/",
             "!/_meta/", "!/docs/", "!/scripts/", ".env", ".env.*", "!.env.example", "/.claude/settings.local.json",
-            "__pycache__/", "*.pyc",
+            "__pycache__/", "*.pyc", ".DS_Store",
         ])
         md = (MANAGED / "CLAUDE.block.md").read_text(encoding="utf-8")
         flat = " ".join(md.split())  # the spec wraps at 100 columns; wrapping is not the content

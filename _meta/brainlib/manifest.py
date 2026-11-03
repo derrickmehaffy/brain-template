@@ -14,13 +14,16 @@ _SHA256 = re.compile(r"[0-9a-f]{64}")
 
 def is_shipped(relpath: str) -> bool:
     """Whether `relpath` (a slash-separated path from the brain root) is a file the template owns:
-    anything under `_meta/` or `.claude/skills/brain-*/`, except bytecode and the manifest itself."""
+    anything under `_meta/` or `.claude/skills/brain-*/`, except bytecode, macOS `.DS_Store` files and the
+    manifest itself."""
     if "\n" in relpath or "\r" in relpath:  # a manifest line holds one path
         return False
     parts = relpath.split("/")
     if any(part in ("", ".", "..") for part in parts):
         return False
-    if "__pycache__" in parts or parts[-1].endswith(".pyc") or relpath == MANIFEST_PATH:
+    if "__pycache__" in parts or parts[-1].endswith(".pyc") or parts[-1] == ".DS_Store":
+        return False
+    if relpath == MANIFEST_PATH:
         return False
     if parts[0] == "_meta":
         return len(parts) >= 2
@@ -56,9 +59,10 @@ def write(root, relpaths: List[str]) -> None:
 
 def read(root) -> Dict[str, str]:
     """The manifest as {relpath: sha256}. A missing manifest is empty, and a blank or malformed line is
-    skipped (the file it would have named then shows up in `local_edits`)."""
+    skipped (the file it would have named then shows up in `local_edits`). Bytes that are not UTF-8 are
+    replaced, so a corrupt line fails the hash pattern and is skipped instead of raising."""
     try:
-        text = (Path(root) / MANIFEST_PATH).read_text(encoding="utf-8")
+        text = (Path(root) / MANIFEST_PATH).read_text(encoding="utf-8", errors="replace")
     except FileNotFoundError:
         return {}
     found: Dict[str, str] = {}

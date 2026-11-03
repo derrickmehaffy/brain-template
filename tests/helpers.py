@@ -37,6 +37,7 @@ class TempDirCase(unittest.TestCase):
         self.tmp.mkdir()
         (self.tmp / "os-tmp").mkdir()
         (self.tmp / "home").mkdir()
+        (self.tmp / "run").mkdir(mode=0o700)  # stands in for /run/user/<uid>: no test touches the real one
         empty_git_config = self.tmp / "gitconfig"
         empty_git_config.write_text("", encoding="utf-8")
 
@@ -54,6 +55,7 @@ class TempDirCase(unittest.TestCase):
             TMPDIR=str(self.tmp / "os-tmp"),
             HOME=str(self.tmp / "home"),
             XDG_CONFIG_HOME=str(self.tmp / "home" / ".config"),
+            XDG_RUNTIME_DIR=str(self.tmp / "run"),
         )
         self.env = env
         self._counter = 0

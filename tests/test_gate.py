@@ -90,9 +90,14 @@ class GateCase(TempDirCase):
     def draft_brain(self):
         return self.fake_brain(extra={"gates": [dict(DRAFT_RULE)]})
 
+    def state_base(self):
+        """The shared folder the gate keeps session state in: under XDG_RUNTIME_DIR when that is a folder."""
+        run = self.env.get("XDG_RUNTIME_DIR")
+        return Path(run if run and Path(run).is_dir() else self.env["TMPDIR"]) / "brain-gate"
+
     def state_dir(self, root):
         digest = hashlib.sha1(str(root).encode("utf-8")).hexdigest()[:12]
-        return Path(self.env["TMPDIR"]) / "brain-gate" / digest
+        return self.state_base() / digest
 
     def waiver_path(self, root):
         return Path(root) / ".brain" / "gate-waiver.json"
@@ -271,6 +276,107 @@ class SkillGateTest(GateCase):
             ("cp -r /tmp/draft .claude/skills/lab-new", ".claude/skills/lab-new/"),
             ("mv .claude/skills/lab-old .claude/skills/lab-new", ".claude/skills/lab-new/"),
             ("cp -r /tmp/draft docs/practices", "docs/practices/"),
+            # An apostrophe in a comment opens no quote: bash skips the comment and runs the write.
+            ("# let's update the routing\necho x > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("# don't forget\ncp /tmp/a scripts/x.py", "scripts/x.py"),
+            ("echo hi # it's done\necho x > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("# Write the new skill's file\ncat > .claude/skills/lab-new/SKILL.md <<'EOF'\nhello\nEOF",
+             ".claude/skills/lab-new/SKILL.md"),
+            ("echo a#b > docs/ROUTING.md", "docs/ROUTING.md"),  # a # inside a word is no comment
+            ("x=abc; echo ${#x} > docs/ROUTING.md", "docs/ROUTING.md"),
+            # Bash rewrites the word before it opens the file.
+            ("echo x > $'docs/ROUTING.md'", "docs/ROUTING.md"),
+            ('echo x > $"docs/ROUTING.md"', "docs/ROUTING.md"),
+            ("echo x > $'docs\\x2fROUTING.md'", "docs/ROUTING.md"),
+            ("echo x > $'docs\\057ROUTING.md'", "docs/ROUTING.md"),
+            ("echo x > $'docs/ROUTING.md\\x00.bak'", "docs/ROUTING.md"),
+            ("echo x > docs/{ROUTING,OTHER}.md", "docs/ROUTING.md"),
+            ("echo x > docs/{OTHER,ROUTING}.md", "docs/ROUTING.md"),
+            ("echo x > {docs,notes}/ROUTING.md", "docs/ROUTING.md"),
+            ("echo x > docs/{OTHER,{ROUTING,X}}.md", "docs/ROUTING.md"),
+            ("cp a scripts/{x,y}.py", "scripts/y.py"),  # cp a scripts/x.py scripts/y.py: the last word is written
+            # A file-descriptor number is not an operand.
+            ("cp a docs/ROUTING.md 2>&1", "docs/ROUTING.md"),
+            ("mv a docs/ROUTING.md 2>&1 | head", "docs/ROUTING.md"),
+            ("cp a scripts/x.py >/dev/null 2>&1", "scripts/x.py"),
+            ("cp a scripts/x.py 2>/dev/null", "scripts/x.py"),
+            # ln writes its last operand like cp and mv.
+            ("ln -s /tmp/x scripts/y.py", "scripts/y.py"),
+            ("ln -sf /tmp/x docs/ROUTING.md", "docs/ROUTING.md"),
+            # Braces are expanded before cp, mv and ln pick their operands.
+            ("cp docs/ROUTING.md{.bak,}", "docs/ROUTING.md"),
+            ("mv docs/ROUTING.md{.new,}", "docs/ROUTING.md"),
+            ("cp scripts/x.py{,.bak}", "scripts/x.py.bak"),
+            # A # inside backticks, $(...) or ${...} is not a comment.
+            ("echo `true #` > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("v=`git describe #tag`; echo $v > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("echo ${x:- #} > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("v=`git describe # don't fail`; echo $v > docs/ROUTING.md", "docs/ROUTING.md"),
+            # Inside $(...) a # that starts a word IS a comment, as in bash: quotes and parentheses in it mean nothing.
+            ("n=$(\n  grep -c x docs/a.md  # it's a count\n)\necho $n >> docs/RETRO-LOG.md", "docs/RETRO-LOG.md"),
+            ("v=$(git describe --tags # don't fail on untagged\n)\necho \"$v\" > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("v=$(git log -1  # last commit (for the record\n)\n# don't touch it\necho \"$v\" > docs/ROUTING.md",
+             "docs/ROUTING.md"),
+            # A here-document inside "$(...)" is parsed as one, whatever quotes its body holds.
+            ("git commit -m \"$(cat <<'EOF'\nFix the \"user's\" path\nEOF\n)\" && cp a scripts/x.py", "scripts/x.py"),
+            ("git commit -m \"$(cat <<'EOF'\nline > one\n--> two\n# three (\nEOF\n)\"\ncp a scripts/x.py", "scripts/x.py"),
+            ("git commit -m \"$(cat <<EOF\nit's\nEOF\n)\" ; echo x > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("echo \"a $(cat <<'E'\n\"\nE\n) b\" > docs/ROUTING.md", "docs/ROUTING.md"),
+            # Commands inside a substitution run, quoted or not, and the word around it is still an operand.
+            ('echo "$(cp a scripts/x.py)"', "scripts/x.py"),
+            ("echo $(cp a scripts/x.py)", "scripts/x.py"),
+            ('cp a "$(date)" docs/ROUTING.md', "docs/ROUTING.md"),
+            ("cp $(echo a) docs/ROUTING.md", "docs/ROUTING.md"),
+            ("tee >(cat) scripts/x.py", "scripts/x.py"),
+            ("cat <(echo a) > docs/ROUTING.md", "docs/ROUTING.md"),
+            # << inside arithmetic is a shift, not a here-document.
+            ("x=$((1<<2))\ncp a scripts/x.py", "scripts/x.py"),
+            ("(( y = 1 << 3 ))\necho x > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("for ((i=0; i<3; i++)); do echo x >> docs/RETRO-LOG.md; done", "docs/RETRO-LOG.md"),
+            ("echo $[1<<2]\ncp a scripts/x.py", "scripts/x.py"),
+            ("echo $(( 1 << 2 )) $((3 << 4)) > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("while (( n << 1 )); do cp a scripts/x.py; done", "scripts/x.py"),
+            ("echo $((1 + 2)) # it's\ncp a scripts/x.py", "scripts/x.py"),  # balanced, so the comment is a comment
+            # One target that cannot be resolved does not hide the others.
+            ("echo x > $'\\uD800'; echo x > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("cp a $'\\ud800/x' scripts/y.py", "scripts/y.py"),
+            # Reserved words before a command do not hide it.
+            ("if true; then cp a scripts/x.py; fi", "scripts/x.py"),
+            ("while x; do cp a docs/ROUTING.md; done", "docs/ROUTING.md"),
+            ("{ cp a scripts/x.py; }", "scripts/x.py"),
+            ("! cp a scripts/x.py", "scripts/x.py"),
+            ("for f in a; do cp a docs/practices/; done", "docs/practices/"),
+            ("if ! cp a scripts/x.py; then echo no; fi", "scripts/x.py"),
+            ("until cp a scripts/x.py; do sleep 1; done", "scripts/x.py"),
+            ("case x in a) cp a scripts/x.py ;; esac", "scripts/x.py"),
+            ("if x\nthen\n  cp a scripts/x.py\nelse\n  true\nfi", "scripts/x.py"),
+            # A here-document marker inside a comment opens no here-document.
+            ("echo hi # <<EOF\ncp a scripts/x.py\nEOF", "scripts/x.py"),
+            # (( and $(( are arithmetic only when they end in "))"; otherwise they open subshells, as in bash.
+            ("((cd a && cp x scripts/y.py) && echo ok)", "scripts/y.py"),
+            ("echo $((cp a scripts/x.py) )", "scripts/x.py"),
+            ('echo "$((cp a scripts/x.py) )"', "scripts/x.py"),
+            ("if (( 1 << 2 )); then cp a scripts/x.py; fi", "scripts/x.py"),
+            ("a=1; (( a <<= 2 )) && cp a scripts/x.py", "scripts/x.py"),
+            ("y=$[1<<2]\ncp a scripts/x.py", "scripts/x.py"),
+            # A quote, group or substitution left open does not swallow what follows it.
+            ("x=`cat <<EOF\nit's\nEOF`; cp a scripts/x.py", "scripts/x.py"),
+            ("echo 'unterminated > docs/ROUTING.md", "docs/ROUTING.md"),
+            ('echo "unterminated; cp a scripts/x.py', "scripts/x.py"),
+            ("echo $((1 + 2; cp a scripts/x.py", "scripts/x.py"),
+            ("(( 1 + 2; cp a scripts/x.py", "scripts/x.py"),
+            ("echo $[1; cp a scripts/x.py", "scripts/x.py"),
+            # A case pattern's ")" inside $(...) does not end the substitution.
+            ('v="$(case $x in a) echo "it\'s" ;; esac)" && cp a scripts/x.py && echo \'done\'', "scripts/x.py"),
+            ('v="$(case $x in (a) echo "it\'s" ;; b|c) echo b ;& *) echo z ;;& esac)" && cp a scripts/x.py && echo \'x\'',
+             "scripts/x.py"),
+            ('echo "$(echo "$(case a in a) echo "it\'s";; esac)")" && cp a scripts/x.py && echo \'x\'', "scripts/x.py"),
+            ('v="$(case $x in a) echo "it\'s"\nesac)" && cp a scripts/x.py && echo \'done\'', "scripts/x.py"),
+            # Inside $(...) a line that starts with the delimiter and goes on to a ")" ends the here-document (bash).
+            ("git commit -m \"$(cat <<'EOF'\nFix the user's path\nEOF)\" && cp a scripts/x.py", "scripts/x.py"),
+            ("git commit -m \"$(cat <<'EOF'\nFix the user's path\nEOF )\" && cp a scripts/x.py", "scripts/x.py"),
+            ("git commit -m \"$(cat <<EOF\nit's\nEOF)\"; echo x > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("git commit -m \"$(cat <<-'EOF'\n\tit's\n\tEOF)\" && cp a scripts/x.py", "scripts/x.py"),
         ]
         for command, rel in commands:
             with self.subTest(command=command):
@@ -282,6 +388,89 @@ class SkillGateTest(GateCase):
         for command in ("cp a scripts/", "cp -r a b scripts", "mv a scripts", "cp -t scripts a"):
             with self.subTest(command=command):
                 self.assertIn("needs brain-write-script", self.denied(self.bash(root, command)))
+
+    def test_globs_in_a_target_are_expanded_as_bash_would(self):
+        root = self.fake_brain()
+        (root / "docs").mkdir()
+        (root / "docs" / "ROUTING.md").write_text("map\n", encoding="utf-8")
+        (root / "scripts").mkdir()
+        (root / "scripts" / "a.py").write_text("x\n", encoding="utf-8")
+        (root / ".brain").mkdir()
+        (root / ".brain" / "gate-waiver.json").write_text("{}\n", encoding="utf-8")  # a glob needs something to match
+        for command, rel in [("echo x > docs/ROUTIN?.md", "docs/ROUTING.md"),
+                             ("echo x > docs/ROUTING.m*", "docs/ROUTING.md"),
+                             ("echo x > docs/R[O]UTING.md", "docs/ROUTING.md"),
+                             ("echo x > d*/ROUTING.md", "docs/ROUTING.md"),
+                             ("echo x > ./docs/ROUT*", "docs/ROUTING.md"),
+                             ("cat a | tee docs/ROUTING.m?", "docs/ROUTING.md"),
+                             ("cp a docs/ROUTIN?.md", "docs/ROUTING.md"),
+                             ("echo x > scripts/*.py", "scripts/a.py"),
+                             ("echo x > scripts/*", "scripts/a.py"),
+                             ("echo x > .br*/gate-waiver.json", ".brain/gate-waiver.json"),
+                             ("echo x > \"docs\"/ROUTIN?.md", "docs/ROUTING.md")]:
+            with self.subTest(command=command):
+                self.assertIn(f"writing {rel}", self.denied(self.bash(root, command)))
+        for command in ('echo x > "docs/ROUTIN?.md"', "echo x > docs/ROUTIN\\?.md", "echo x > docs/NOPE*.md",
+                        "echo x > */ROUTING.md.bak"):
+            with self.subTest(command=command):
+                self.assert_silent(self.bash(root, command))  # quoted, or nothing to match: the literal name
+
+    def test_bash_rewrites_are_followed_to_the_real_file(self):
+        root = self.fake_brain()
+        (root / "docs").mkdir()
+        (root / "docs" / "ROUTING.md").write_text("map\n", encoding="utf-8")
+        for command in ("echo x > $'docs/ROUTING.md'", 'echo x > $"docs/ROUTING.md"',
+                        "echo x > docs/{ROUTING,OTHER}.md", "echo x > docs/{OTHER,ROUTING}.md",
+                        "echo x > $'docs/ROUTIN\\x47.md'", "echo x > doc$'s'/ROUTING.md"):
+            with self.subTest(command=command):
+                self.assertIn("writing docs/ROUTING.md needs", self.denied(self.bash(root, command)))
+
+    def test_cp_mv_and_ln_into_a_folder_that_exists_check_each_name_it_gets(self):
+        root = self.fake_brain()
+        for folder in (".claude/skills", "docs", ".brain", "scripts", "docs/practices"):
+            (root / folder).mkdir(parents=True, exist_ok=True)
+        source = self.tmp.parent / "src"  # the folder with the space is a poor place for unquoted words
+        source.mkdir()
+        for name in ("ROUTING.md", "other.md"):
+            (source / name).write_text("x\n", encoding="utf-8")
+        (source / "lab-new").mkdir()
+        src = str(source)
+        cases = [
+            (f"cp -r {src}/lab-new .claude/skills/", ".claude/skills/lab-new/"),
+            (f"cp -r {src}/lab-new .claude/skills", ".claude/skills/lab-new/"),
+            (f"cp -r {src}/lab-new/ .claude/skills", ".claude/skills/lab-new/"),
+            (f"mv {src}/lab-new .claude/skills", ".claude/skills/lab-new/"),
+            (f"cp {src}/ROUTING.md docs/", "docs/ROUTING.md"),
+            (f"cp {src}/ROUTING.md docs", "docs/ROUTING.md"),
+            (f"cp -t docs {src}/ROUTING.md", "docs/ROUTING.md"),
+            (f"mv {src}/ROUTING.md docs", "docs/ROUTING.md"),
+            (f"ln -s {src}/ROUTING.md docs/", "docs/ROUTING.md"),
+            (f"cp {src}/*.md scripts/ && cp {src}/R*.md docs", "docs/ROUTING.md needs"),
+            (f"cp {src}/{{ROUTING,other}}.md docs/", "docs/ROUTING.md"),
+            (f"cp {src}/other.md docs/practices", "docs/practices/"),
+            (f"cp {src}/other.md docs/practices/", "docs/practices/"),
+        ]
+        for command, rel in cases:
+            with self.subTest(command=command):
+                self.assertIn(rel, self.denied(self.bash(root, command)))
+        gate_waiver = source / "gate-waiver.json"
+        gate_waiver.write_text("{}\n", encoding="utf-8")
+        for command in (f"cp {src}/gate-waiver.json .brain/", f"cp {src}/gate-waiver.json .brain", f"mv {src}/gate-waiver.json .brain",
+                        f"ln -s {src}/gate-waiver.json .brain/", f"cp {src}/gate-waiver.* .brain/"):
+            with self.subTest(command=command):
+                self.assertIn("writing .brain/gate-waiver.json is refused", self.denied(self.bash(root, command)))
+        for command in (f"cp {src}/other.md docs/", f"cp {src}/other.md .brain/", f"cp {src}/other.md /tmp/",
+                        f"cp -r {src}/lab-new /tmp", f"mv {src}/other.md notes"):
+            with self.subTest(command=command, passes=True):
+                self.assert_silent(self.bash(root, command))
+
+    def test_ln_is_a_write(self):
+        root = self.fake_brain()
+        for command, rel in [("ln -s /tmp/x .brain/gate-waiver.json", ".brain/gate-waiver.json"),
+                             ("ln /tmp/x scripts/y.py", "scripts/y.py"), ("ln -sf /tmp/x docs/ROUTING.md", "docs/ROUTING.md")]:
+            with self.subTest(command=command):
+                self.assertIn(f"writing {rel}", self.denied(self.bash(root, command)))
+        self.assert_silent(self.bash(root, "ln -s /tmp/x"))
 
     def test_bash_passes_once_the_skill_ran(self):
         root = self.fake_brain()
@@ -297,9 +486,61 @@ class SkillGateTest(GateCase):
                         "git commit -m 'update docs/ROUTING.md'",
                         "grep -n '>' docs/ROUTING.md", 'grep -- "-->" docs/ROUTING.md', "echo '>' docs/ROUTING.md",
                         'echo "a > b" docs/ROUTING.md', "echo \\> docs/ROUTING.md", "printf %s '>>' docs/RETRO-LOG.md",
-                        "cp a notes/new", "cp a notes/new/"):
+                        "cp a notes/new", "cp a notes/new/",
+                        "echo hi # > docs/ROUTING.md", "# let's not write to docs/ROUTING.md", "echo hi;# it's\nls",
+                        'echo x > "docs/ROUTIN?.md"', "echo x > 'docs/{ROUTING,OTHER}.md'", "echo x > docs/ROUTIN?.md",
+                        "ln -s /tmp/x", "ln -s /tmp/x /tmp/y", "cp a /tmp/docs/ROUTING.md 2>&1",
+                        "cat docs/ROUTING.md 2>&1", "cp docs/ROUTING.md /tmp/out 2>&1",
+                        "if true; then echo hi; fi", "for f in a; do echo $f; done", "{ echo hi; }", "echo done fi then",
+                        "while read x; do echo $x; done < docs/ROUTING.md", "cp docs/ROUTING.md{.bak,} /tmp/",
+                        "echo `true #` | cat", "cat <<EOF\ncp a scripts/x.py\nEOF",
+                        # the commit idiom, with a body of every awkward kind, writes no ruled file
+                        "git commit -m \"$(cat <<'EOF'\nFix the \"user's\" path\nEOF\n)\"",
+                        "git commit -m \"$(cat <<'EOF'\nUpdate docs/ROUTING.md > scripts/x.py\n--> arrows # and (\nEOF\n)\"",
+                        "git commit -m \"$(cat <<'EOF'\ncp a scripts/x.py\necho x > docs/ROUTING.md\nEOF\n)\" && git status",
+                        "v=$(cat <<EOF\nit's\nEOF\n)\necho \"$v\"", "x=$((1<<2))", "(( y = 1 << 3 ))\necho $y",
+                        "echo $[1<<2]", "n=$(grep -c x docs/a.md  # it's a count\n)\necho $n", "cat <(echo a)",
+                        "echo \"$(date)\" docs/ROUTING.md",
+                        # arithmetic, and a (( that is a subshell
+                        "x=$((1<<2)); echo $x", "if (( 1 << 2 )); then echo yes; fi", "a=1; (( a <<= 2 )); echo $a",
+                        "for ((i=0; i<3; i++)); do echo $i; done", "echo $(( (1 + 2) * 3 ))",
+                        "x=$(( $(wc -l < docs/ROUTING.md) + 1 ))", "((cd docs && cat ROUTING.md) && echo ok)",
+                        # a case inside a substitution
+                        'v="$(case $x in a) echo "it\'s" ;; esac)" && echo "$v" && echo \'done\'',
+                        'v="$(case $x in a) echo "> docs/ROUTING.md " ;; esac)"',
+                        "kind=$(case docs/ROUTING.md in *.md) echo doc;; *) echo other;; esac); echo \"$kind\"",
+                        # a here-document that "EOF)" closes inside $(...) hides its body; at the top level it is body text
+                        "git commit -m \"$(cat <<'EOF'\nFix the user's path > scripts/x.py\ncp a docs/ROUTING.md\nEOF)\"",
+                        "git commit -m \"$(cat <<'EOF'\nFix the user's path\nEOF)\" && git log -1",
+                        "cat <<EOF\nEOF) > docs/ROUTING.md\nEOF"):
             with self.subTest(command=command):
                 self.assert_silent(self.bash(root, command))
+
+    def test_a_double_parenthesis_that_is_not_arithmetic_runs_its_commands(self):
+        root = self.fake_brain()
+        (root / "a").mkdir()
+        # Run from a folder inside the brain, `../scripts/y.py` is the brain's scripts folder (the `cd` is not followed).
+        r = self.hook(root, "check", "Bash", cwd=root / "a", command="((cd a && cp x ../scripts/y.py) && echo ok)")
+        self.assertIn("writing scripts/y.py needs brain-write-script", self.denied(r))
+
+    def test_a_command_nested_too_deep_to_check_is_refused(self):
+        root = self.fake_brain()
+        over, limit = gate.MAX_NESTING + 1, gate.MAX_NESTING
+        for command in ("echo " + "$(" * over + "true" + ")" * over,
+                        "ls; echo " + "$(" * over + ")" * over,
+                        "cat " + "<(" * over + "x" + ")" * over,
+                        'echo "' + '$(echo "' * over + "x" + '")' * over + '"',
+                        "echo " + "$((" * over + "true" + ") ) " * over):  # no "))", so none is arithmetic
+            with self.subTest(command=command[:40]):
+                reason = self.denied(self.bash(root, command))
+                self.assertIn(f"more than {limit} levels deep", reason)
+                self.assertIn("Split it into smaller commands", reason)
+        self.assertTrue(self.status(root, "--session", "s1")[3].startswith(
+            f"last refusal: a command nested more than {limit} levels deep ("))
+        # At the limit the command is read as usual.
+        self.assert_silent(self.bash(root, "echo " + "$(" * limit + "true" + ")" * limit))
+        self.assertIn("writing scripts/x.py needs",
+                      self.denied(self.bash(root, "echo " + "$(" * limit + "cp a scripts/x.py" + ")" * limit)))
 
     def test_gates_off_and_exempt(self):
         root = self.fake_brain(extra={
@@ -378,6 +619,15 @@ class SkillGateTest(GateCase):
             with self.subTest(body=body):
                 self.assert_silent(self.hook_raw(root, "check", json.dumps(body)))
 
+    def test_one_unresolvable_target_does_not_fail_the_whole_call_open(self):
+        root = self.fake_brain()
+        # A lone surrogate (here also straight in the payload's text) cannot name a file; the write beside it is still judged.
+        for command in ("echo x > $'\\uD800'; echo x > docs/ROUTING.md", "echo x > \ud800; echo x > docs/ROUTING.md"):
+            with self.subTest(command=command):
+                self.assertIn("writing docs/ROUTING.md needs", self.denied(self.bash(root, command)))
+        self.assert_silent(self.hook(root, "check", "Write", file_path="\ud800"))
+        self.assert_silent(self.bash(root, "echo x > $'\\uD800'"))
+
     def test_record_survives_a_malformed_payload_and_ignores_other_tools(self):
         root = self.fake_brain()
         r = self.hook_raw(root, "record", "not json")
@@ -441,7 +691,8 @@ class SkillGateTest(GateCase):
         self.ran(root, "brain-write-skill", session="../../evil/x y")
         files = sorted(p.name for p in self.state_dir(root).iterdir())
         self.assertEqual(files, ["evilxy.json"])
-        self.assertEqual(list(Path(self.env["TMPDIR"]).glob("*")), [self.state_dir(root).parent])
+        self.assertEqual(list(Path(self.env["XDG_RUNTIME_DIR"]).glob("*")), [self.state_dir(root).parent])
+        self.assertEqual(list(Path(self.env["TMPDIR"]).glob("*")), [])  # the runtime folder is preferred
         self.assert_silent(self.write(root, "docs/ROUTING.md", session="../../evil/x y"))
         self.assert_silent(self.write(root, "docs/ROUTING.md", session="evilxy"))  # the same reduced id
 
@@ -669,7 +920,8 @@ class GateReservedPathsTest(GateCase):
                 with self.subTest(rel=rel, tool=tool):
                     self.assert_reserved(self.write(root, rel, tool=tool), rel)
             for command in (f"echo x > {rel}", f"echo x >> {rel}", f"cat a | tee -a {rel}", f"cp /tmp/forged {rel}",
-                            f"mv /tmp/forged {rel}", f"sed -i s/a/b/ {rel}", f"echo x > ./.brain/../{rel}"):
+                            f"mv /tmp/forged {rel}", f"sed -i s/a/b/ {rel}", f"echo x > ./.brain/../{rel}",
+                            f"cp /tmp/forged {rel}{{.bak,}}", f"ln -s /tmp/x {rel}{{,}}"):
                 with self.subTest(rel=rel, command=command):
                     self.assert_reserved(self.bash(root, command), rel)
         self.assertFalse((root / ".brain").exists())
@@ -719,18 +971,40 @@ class GateStateDirTest(GateCase):
     def mode(self, path):
         return stat.S_IMODE(path.stat().st_mode)
 
-    def test_the_shared_directory_is_sticky_and_world_writable_and_the_brains_own_is_private(self):
+    def test_state_lives_under_the_runtime_folder_when_there_is_one(self):
         root = self.fake_brain()
         self.ran(root, "brain-write-skill")
-        self.assertEqual(oct(self.mode(self.state_dir(root).parent)), oct(0o1777))
+        run = Path(self.env["XDG_RUNTIME_DIR"])
+        self.assertEqual(self.state_dir(root).parent, run / "brain-gate")
+        self.assertTrue((run / "brain-gate").is_dir())
+        self.assertEqual(oct(self.mode(run / "brain-gate")), oct(0o700))  # private to the user, like its parent
         self.assertEqual(oct(self.mode(self.state_dir(root))), oct(0o700))
-        # The same when the first thing to touch the state is a refusal in another brain.
-        other = self.fake_brain()
-        self.denied(self.write(other, "docs/ROUTING.md"))
-        self.assertEqual(oct(self.mode(self.state_dir(other).parent)), oct(0o1777))
-        self.assertEqual(oct(self.mode(self.state_dir(other))), oct(0o700))
+        self.assertEqual(list(Path(self.env["TMPDIR"]).iterdir()), [])  # nothing in the shared temp folder
+
+    def without_runtime_dir(self, value=None):
+        if value is None:
+            del self.env["XDG_RUNTIME_DIR"]
+        else:
+            self.env["XDG_RUNTIME_DIR"] = value
+
+    def test_without_a_runtime_folder_the_temp_folder_is_sticky_and_world_writable(self):
+        for value in (None, "", str(self.tmp / "no-such-folder")):
+            with self.subTest(runtime=value):
+                self.without_runtime_dir() if value is None else self.without_runtime_dir(value)
+                root = self.fake_brain()
+                self.ran(root, "brain-write-skill")
+                shared = Path(self.env["TMPDIR"]) / "brain-gate"
+                self.assertEqual(self.state_dir(root).parent, shared)
+                self.assertEqual(oct(self.mode(shared)), oct(0o1777))
+                self.assertEqual(oct(self.mode(self.state_dir(root))), oct(0o700))
+                # The same when the first thing to touch the state is a refusal in another brain.
+                other = self.fake_brain()
+                self.denied(self.write(other, "docs/ROUTING.md"))
+                self.assertEqual(oct(self.mode(self.state_dir(other))), oct(0o700))
+                shutil.rmtree(str(shared))
 
     def test_a_umask_does_not_narrow_the_shared_directory(self):
+        self.without_runtime_dir()
         root = self.fake_brain()
         old = os.umask(0o077)
         try:
@@ -739,9 +1013,49 @@ class GateStateDirTest(GateCase):
             os.umask(old)
         self.assertEqual(oct(self.mode(self.state_dir(root).parent)), oct(0o1777))
 
+    def test_a_symlinked_session_folder_is_not_trusted_or_written_through(self):
+        root = self.fake_brain()
+        self.ran(root, "brain-retro")
+        folder = self.state_dir(root)
+        elsewhere = self.tmp / "elsewhere"
+        elsewhere.mkdir()
+        forged = elsewhere / "s1.json"
+        forged.write_text(json.dumps({"ran": {"brain-write-skill": 9}, "last_refusal": None}), encoding="utf-8")
+        shutil.rmtree(str(folder))
+        folder.symlink_to(elsewhere)
+        before = forged.read_text(encoding="utf-8")
+        # The forged runs do not count, and since nothing can be kept there the write is let through with a warning.
+        message = self.notice(self.write(root, "docs/ROUTING.md"))
+        self.assertTrue(message.startswith("skill gate: cannot keep session state"), message)
+        self.assertIn("docs/ROUTING.md", message)
+        self.assertIn("error", self.notice(self.hook(root, "record", "Skill", skill="brain-write-skill")).lower())
+        self.assertEqual(sorted(p.name for p in elsewhere.iterdir()), ["s1.json"])  # nothing written through
+        self.assertEqual(forged.read_text(encoding="utf-8"), before)
+        self.assertEqual(self.status(root, "--session", "s1")[1], "ran: nothing")
+
+    def test_a_session_folder_with_the_wrong_mode_is_not_trusted_or_written_through(self):
+        root = self.fake_brain()
+        self.ran(root, "brain-write-skill")
+        folder = self.state_dir(root)
+        state = folder / "s1.json"
+        before = state.read_text(encoding="utf-8")
+        for mode in (0o755, 0o770, 0o500):
+            with self.subTest(mode=oct(mode)):
+                os.chmod(str(folder), mode)
+                try:
+                    message = self.notice(self.write(root, "docs/ROUTING.md"))  # the recorded run is not believed
+                    self.assertTrue(message.startswith("skill gate: cannot keep session state"), message)
+                    self.assertIn("error", self.notice(
+                        self.hook(root, "record", "Skill", skill="brain-retro")).lower())
+                    self.assertEqual(state.read_text(encoding="utf-8"), before)
+                    self.assertEqual(sorted(p.name for p in folder.iterdir()), ["s1.json"])
+                finally:
+                    os.chmod(str(folder), 0o700)
+        self.assert_silent(self.write(root, "docs/ROUTING.md"))  # and right again once it is private
+
     def test_state_that_cannot_be_kept_fails_open(self):
         root = self.fake_brain()
-        (Path(self.env["TMPDIR"]) / "brain-gate").write_text("in the way", encoding="utf-8")  # no state can be kept
+        self.state_base().write_text("in the way", encoding="utf-8")  # no state can be kept
         r = self.hook(root, "record", "Skill", skill="brain-write-skill")
         self.assertIn("skill gate error", self.notice(r))
         # A refusal nobody could ever satisfy is not a refusal: the write goes through, with a warning.
@@ -751,22 +1065,6 @@ class GateStateDirTest(GateCase):
         self.assertIn("write allowed", message)
         self.assert_silent(self.write(root, "notes/a.md"))
         self.assert_silent(self.bash(root, "ls"))
-
-    def test_a_failed_record_leaves_an_earlier_state_alone(self):
-        root = self.fake_brain()
-        self.ran(root, "brain-write-skill")
-        state = self.state_dir(root) / "s1.json"
-        before = state.read_text(encoding="utf-8")
-        os.chmod(str(self.state_dir(root)), 0o500)  # read-only: the next record cannot write
-        try:
-            if os.access(str(self.state_dir(root)), os.W_OK):  # running as root: permissions do not bind
-                self.skipTest("directory permissions do not apply to this user")
-            r = self.hook(root, "record", "Skill", skill="brain-retro")
-            self.assertIn("skill gate error", self.notice(r))
-            self.assertEqual(state.read_text(encoding="utf-8"), before)
-            self.assert_silent(self.write(root, "docs/ROUTING.md"))  # the earlier run still counts
-        finally:
-            os.chmod(str(self.state_dir(root)), 0o700)
 
 
 class GateFunctionsTest(GateCase):
@@ -798,7 +1096,8 @@ class GateFunctionsTest(GateCase):
             ("echo a; cp x y.py && echo b > z.md", ["y.py", "z.md"]),
             ("cp a b\ncp c d", ["b", "d"]),
             ("cp a \\\n  b", ["b"]),
-            ("echo 'unterminated > docs/ROUTING.md", []),  # the shell refuses to run it: it is all one word
+            # An open quote does not swallow the rest (bash would not run it either way).
+            ("echo 'unterminated > docs/ROUTING.md", ["docs/ROUTING.md"]),
             ("echo hi > docs/ROUTING.md\necho 'unterminated", ["docs/ROUTING.md"]),
             ("grep -n '>' docs/ROUTING.md", []),
             ('grep -- "-->" docs/ROUTING.md', []),
@@ -811,13 +1110,123 @@ class GateFunctionsTest(GateCase):
             ("echo x > my\\ file.md", ["my file.md"]),
             ("echo `date > a.md`", ["a.md"]),
             ("cp /tmp/SKILL.md .claude/skills/lab-new/", [".claude/skills/lab-new/"]),
+            # comments
+            ("# only a comment", []),
+            ("# it's a comment\necho x > a.md", ["a.md"]),
+            ("echo hi # > a.md", []),
+            ("echo hi; # it's a comment\ncp a b.md", ["b.md"]),
+            ("echo a#b > c.md", ["c.md"]),
+            ("echo ${#x} > c.md", ["c.md"]),
+            ("echo '#' > c.md", ["c.md"]),
+            ("echo x\\# > c.md", ["c.md"]),
+            # quoting and brace expansion
+            ("echo x > $'a\\tb'", ["a\tb"]),
+            ("echo x > $'it\\'s'", ["it's"]),
+            ("echo x > $'a\\\\b\\x41\\101'", ["a\\bAA"]),
+            ("echo x > $'a\\x00b'", ["a"]),
+            ("echo x > $'unterminated", ["$'unterminated"]),  # left open: plain characters
+            ('echo x > $"a b"', ["a b"]),
+            ("echo x > a$'b'c", ["abc"]),
+            ("echo x > docs/{a,b}.md", ["docs/a.md", "docs/b.md"]),
+            ("echo x > {a,b}/{c,d}", ["a/c", "a/d", "b/c", "b/d"]),
+            ("echo x > a{b,c{d,e}}", ["ab", "acd", "ace"]),
+            ("echo x > a{b}c", ["a{b}c"]),
+            ("echo x > a{,b}", ["a", "ab"]),
+            ("echo x > 'a{b,c}'", ["a{b,c}"]),
+            ('echo x > a\\{b,c}', ["a{b,c}"]),
+            ("echo x > ${HOME}/{a,b}", ["${HOME}/a", "${HOME}/b"]),
+            ("cp a {b,c}.md", ["c.md"]),  # bash copies a and b.md into c.md: the last word is what is written
+            ("cp docs/ROUTING.md{.bak,}", ["docs/ROUTING.md"]),
+            ("mv docs/ROUTING.md{.new,}", ["docs/ROUTING.md"]),
+            ("cp x{,.bak}", ["x.bak"]),
+            ("tee {a,b}.md", ["a.md", "b.md"]),
+            ("sed -i s/a/b/ {a,b}.md", ["a.md", "b.md"]),
+            ("echo x > {a,b}.md", ["a.md", "b.md"]),
+            # file-descriptor numbers
+            ("cp a b 2>&1", ["b"]),
+            ("cp a b 1>&2", ["b"]),
+            ("cp a b >/dev/null 2>&1", ["/dev/null", "b"]),
+            ("cp a b 2>/dev/null", ["/dev/null", "b"]),
+            ("cp a 2 > c.md", ["c.md", "2"]),  # separated by a space, 2 is an operand
+            ("echo 2> c.md", ["c.md"]),
+            # ln
+            ("ln -s /tmp/x .brain/gate-waiver.json", [".brain/gate-waiver.json"]),
+            ("ln -sf -- /tmp/x y", ["y"]),
+            ("ln -s /tmp/x", []),
+            ("ln -t docs /tmp/x", ["docs"]),
             ("FOO=1 sudo cp a scripts/x.py", ["scripts/x.py"]),
             ("cat <<EOF > docs/ROUTING.md\nhello > not-a-target\nEOF", ["docs/ROUTING.md"]),
             ("cat > docs/n.md <<'EOF'\ncp a scripts/x.py\necho y > scripts/y.py\nEOF\ncp b docs/practices/p.md",
              ["docs/n.md", "docs/practices/p.md"]),  # here-document text is data, not commands
             ("cat <<-EOF > f.md\n\tbody > x\n\tEOF", ["f.md"]),
             ('grep x <<< "a > b" | tee out.log', ["out.log"]),  # a here-string opens no body
-            ('echo "<<EOF"\ncp a scripts/x.py', ["scripts/x.py"]),  # no closing line, so nothing is hidden
+            ('echo "<<EOF"\ncp a scripts/x.py', ["scripts/x.py"]),  # quoted: no here-document
+            ("cat <<EOF\ncp a scripts/x.py", ["scripts/x.py"]),  # no closing line, so nothing is hidden
+            ("echo hi # <<EOF\ncp a scripts/x.py\nEOF", ["scripts/x.py"]),
+            ("cat <<EOF >a.md <<'END' >b.md\nx > no\nEOF\ny > no\nEND\ncp c d.md", ["a.md", "b.md", "d.md"]),
+            ("cat <<-\"EOF\" > f.md\n\t\tbody\n\tEOF\ncp a g.md", ["f.md", "g.md"]),
+            ("echo `true #` > a.md", ["a.md"]),
+            ("v=`git describe #tag`; echo $v > a.md", ["a.md"]),
+            ("echo ${x:- #} > a.md", ["a.md"]),
+            ("v=`git describe # don't fail`; echo $v > a.md", ["a.md"]),
+            ("n=$(\n  grep -c x docs/a.md  # it's a count\n)\necho $n >> b.md", ["b.md"]),
+            ("v=$(git log -1  # last commit (for the record\n)\n# don't touch it\necho $v > c.md", ["c.md"]),
+            ("echo $(true #) > a.md", []),  # the comment swallows the ")": bash cannot parse this either
+            ("git commit -m \"$(cat <<'EOF'\nFix the \"user's\" path\nEOF\n)\" && cp a b.md", ["b.md"]),
+            ("git commit -m \"$(cat <<'EOF'\nFix the \"user's\" path > x\nEOF\n)\"", []),
+            ("echo \"$(cp a b.md; echo hi > c.md)\" > d.md", ["b.md", "c.md", "d.md"]),
+            ("echo $(echo $(cp a b.md))", ["b.md"]),
+            ("cp a \"$(date)\" docs/b.md", ["docs/b.md"]),
+            ("cp $(echo a) docs/b.md", ["docs/b.md"]),
+            ("x=$(cp a b.md) && cp c d.md", ["b.md", "d.md"]),
+            ("tee >(cat > a.md) b.md", ["a.md", "b.md"]),  # >(..) is an argument, not a file
+            ("cat <(echo a) <(echo b) > c.md", ["c.md"]),
+            ("x=$((1<<2))\ncp a b.md", ["b.md"]),
+            ("(( y = 1 << 3 ))\necho x > a.md", ["a.md"]),
+            ("echo $((1 + (2 * 3))) > a.md", ["a.md"]),
+            ("echo $[1<<2] > a.md", ["a.md"]),
+            ("for ((i=0; i<3; i++)); do cp a b.md; done", ["b.md"]),
+            ("cat << > a.md", ["a.md"]),  # no delimiter word: no here-document
+            ("cat <<EOF > a.md\nx\nEOF", ["a.md"]),
+            ("echo $((1 + 2)) # it's\ncp a b.md", ["b.md"]),
+            ("(true # it's\n) > a.md", ["a.md"]),  # in a plain subshell it is a comment
+            # (( and $(( are arithmetic only when they close with "))"
+            ("((cd a && cp x ../scripts/y.py) && echo ok)", ["../scripts/y.py"]),
+            ("echo $((cp a b.md) )", ["b.md"]),
+            ('echo "$((cp a b.md) )"', ["b.md"]),
+            ("(( (1 + 2) * 3 )) && cp a b.md", ["b.md"]),
+            ("echo $(( (1 + 2) * 3 )) > a.md", ["a.md"]),
+            ("if (( 1 << 2 )); then cp a b.md; fi", ["b.md"]),
+            ("a=1; (( a <<= 2 )) && cp a b.md", ["b.md"]),
+            # nothing left open swallows the rest
+            ('echo "unterminated; cp a b.md', ["b.md"]),
+            ('echo "$(date)" "open; cp a b.md', ["b.md"]),
+            ("echo $((1 + 2; cp a b.md", ["b.md"]),
+            ("(( 1 + 2; cp a b.md", ["b.md"]),
+            ("echo $[1; cp a b.md", ["b.md"]),
+            ("echo ${x\n# it's\ncp a b.md", ["b.md"]),
+            ("x=`cat <<EOF\nit's\nEOF`; cp a b.md", ["b.md"]),
+            ("echo $(cp a b.md", ["b.md"]),
+            # case patterns inside $(...)
+            ('v="$(case $x in a) echo "it\'s" ;; esac)" && cp a b.md && echo \'done\'', ["b.md"]),
+            ('v="$(case $x in a) echo "> b.md" ;; esac)"', []),
+            ("x=$(case $1 in (a) cp a b.md;; esac)", ["b.md"]),
+            ("x=$(case a in a) cp a b.md;; esac; cp c d.md)", ["b.md", "d.md"]),
+            ("x=$(case a in a) echo x ;; esac) > e.md", ["e.md"]),
+            ("x=$(echo case a in b) > e.md", ["e.md"]),  # not a case: the ")" ends the substitution
+            ('x="$(echo > case; for f in a; do :; done)" && cp a b.md && echo "x"', ["case", "b.md"]),  # a file name
+            # "EOF)" ends a here-document inside $(...), not at the top level
+            ("echo \"$(cat <<'EOF'\nit's > a.md\nEOF)\" && cp a b.md", ["b.md"]),
+            ("echo \"$(cat <<'EOF'\nit's > a.md\nEOF )\" > c.md", ["c.md"]),
+            ("cat <<EOF\nEOF) > a.md\nEOF\ncp a b.md", ["b.md"]),
+            # reserved words
+            ("if true; then cp a b.md; fi", ["b.md"]),
+            ("while x; do cp a b.md; done", ["b.md"]),
+            ("{ cp a b.md; }", ["b.md"]),
+            ("! cp a b.md", ["b.md"]),
+            ("for f in a; do cp a b/; done", ["b/"]),
+            ("if x\nthen\n  cp a b.md\nfi", ["b.md"]),
+            ("echo fi done then", []),
             ("echo x > a.md > b.md", ["a.md", "b.md"]),
             ("echo x > a.md; echo y > a.md", ["a.md"]),
             ("ls -la", []),
@@ -830,6 +1239,45 @@ class GateFunctionsTest(GateCase):
         for command, expected in cases:
             with self.subTest(command=command):
                 self.assertEqual(gate.bash_targets(command), expected)
+
+    def test_huge_or_deeply_nested_commands_are_cheap(self):
+        # A hook that runs long fails open (the tool call times out), so pathological words must stay cheap.
+        import time
+        cases = {
+            "20k open braces": "echo x > " + "{" * 20000,
+            "20k groups": "echo x > " + "{a,b}" * 20000,
+            "65 groups": "echo x > " + "{a,b}" * 65,
+            "64 groups": "echo x > " + "{a,b}" * 64,
+            "long word": "echo x > " + "a" * 200000,
+            "deep $(": "echo " + "$(" * 5000 + "cp a b.md" + ")" * 5000,
+            "deep (": "(" * 5000 + "cp a b.md" + ")" * 5000,
+            "deep ${": "echo " + "${" * 5000 + " > a.md",
+            "many heredocs": "cat <<E" * 3000 + "\nE\n" * 3000,
+            "64 open heredocs a line, 1000 lines": ("cat " + "<<X " * 64 + "\n") * 1000,
+            "distinct open heredocs": "".join("cat " + "".join(f"<<X{k}y{j} " for j in range(64)) + "\n" for k in range(1000)),
+            "open heredocs in $(": "$(" * 31 + ("cat " + "<<X " * 64 + "\n") * 300,
+            "open heredocs, lines with )": "echo $(" + ("cat " + "<<X " * 64 + "\nXy) a\n") * 500,
+            "distinct heredocs, lines with )": "echo $(" + "".join(f"cat <<A{k} <<B{k}\n(A{k}) a\n" for k in range(3000)),
+            "one delimiter, lines with )": "echo $(" + "".join(f"cat <<A <<A\n(A{k}) a\n" for k in range(3000)),
+            "open (( x5000": "(( " * 5000,
+            "open $(( x5000": "echo " + "$((" * 5000,
+            "open $[ x5000": "echo " + "$[" * 5000,
+            "open \"$( x5000": "echo " + '"$(' * 5000,
+            "open quotes in $( x31": "echo " + '"$(echo "' * 31 + "x",
+            "open quotes x5000": "echo " + "\"'" * 5000,
+            "case patterns x5000": "x=$(case a in " + "a) b;; " * 5000 + "esac)",
+        }
+        for label, command in cases.items():
+            with self.subTest(label=label):
+                started = time.monotonic()
+                found = gate.bash_targets(command)
+                self.assertLess(time.monotonic() - started, 2.0)
+                self.assertLessEqual(len(found), 256)
+        self.assertEqual(gate.bash_targets("echo x > " + "{" * 5000), ["{" * 5000])  # over the limit: taken literally
+        self.assertEqual(gate.bash_targets("echo x > " + "{a,b}" * 65), ["{a,b}" * 65])
+        self.assertEqual(len(gate.bash_targets("echo x > " + "{a,b}" * 64)), 128)  # at the limit: expanded, capped
+        self.assertEqual(gate.bash_targets("echo x > {" + "a" * 5000 + ",b}"), ["{" + "a" * 5000 + ",b}"])
+        self.assertEqual(gate.bash_targets("cp a b.md; echo " + "$(" * 40 + ")" * 40), ["b.md"])  # deeper than the limit
 
     def test_targets_resolve_inside_the_brain(self):
         root = self.fake_brain()
@@ -845,13 +1293,36 @@ class GateFunctionsTest(GateCase):
         self.assertEqual(targets(notebook_path="docs/../docs/n.ipynb"), [("docs/n.ipynb", False)])
         self.assertEqual(targets(command="echo x > docs/ROUTING.md; cp a /etc/b; cp a ../out"),
                          [("docs/ROUTING.md", True)])
-        self.assertEqual(targets(command="cp a scripts/"), [("scripts/", True)])  # an existing folder
+        # An existing folder is itself a target, and so is each name the sources get in it.
+        self.assertEqual(targets(command="cp a scripts/"),
+                         [("scripts/", True), ("scripts/a", False), ("scripts/a/", False)])
+        self.assertEqual(targets(command="cp -r /tmp/x/dir scripts"),
+                         [("scripts/", True), ("scripts/dir", False), ("scripts/dir/", False)])
+        self.assertEqual(targets(command="cp -t scripts a b"),
+                         [("scripts/", True), ("scripts/a", False), ("scripts/a/", False),
+                          ("scripts/b", False), ("scripts/b/", False)])
+        self.assertEqual(targets(command="mv docs/ROUTING.md scripts"),
+                         [("scripts/", True), ("scripts/ROUTING.md", False)])  # a file, so no folder form
         # A destination that is not there yet may be a folder about to be made: it is tried both ways.
         self.assertEqual(targets(command="cp -r a scripts/new"), [("scripts/new", False), ("scripts/new/", False)])
         self.assertEqual(targets(command="mv a docs/new"), [("docs/new", False), ("docs/new/", False)])
         self.assertEqual(targets(command="cp a docs/new/"), [("docs/new/", False)])  # written as a folder
         self.assertEqual(targets(command="mv a docs/ROUTING.md"), [("docs/ROUTING.md", True)])
         self.assertEqual(targets(command="echo x > docs/new"), [("docs/new", False)])  # a redirection is a file
+        # Globs are matched against the folder the command runs in; no match leaves the name as written.
+        self.assertEqual(targets(command="echo x > docs/ROUT*"), [("docs/ROUTING.md", True)])
+        self.assertEqual(targets(command="echo x > docs/NOPE*"), [("docs/NOPE*", False)])
+        self.assertEqual(targets(command="echo x > 'docs/ROUT*'"), [("docs/ROUT*", False)])
+        self.assertEqual(targets(command="echo x > docs/{ROUTING,new}.md"),
+                         [("docs/ROUTING.md", True), ("docs/new.md", False)])
+        self.assertEqual(gate.targets({"cwd": str(root / "docs"), "tool_input": {"command": "echo x > R*"}}, root),
+                         [("docs/ROUTING.md", True)])
+        self.assertEqual(targets(file_path="docs/ROUT*"), [("docs/ROUT*", False)])  # a tool's path is literal
+        self.assertEqual(targets(file_path="docs/new\0.md"), [("docs/new", False)])  # a C string ends at a NUL
+        self.assertEqual(targets(file_path="\ud800"), [])  # cannot name a file: skipped, not an error
+        self.assertEqual(targets(command="echo x > $'\\uD800' > docs/new.md"), [("docs/new.md", False)])
+        self.assertEqual(gate.targets({"cwd": str(root), "tool_input": {"command": "echo x > \udc80\ud800 > docs/a.md"}},
+                                      root), [("docs/a.md", False)])
         self.assertEqual(targets(command="tee docs/new"), [("docs/new", False)])
         self.assertEqual(targets(file_path="/etc/hosts"), [])
         self.assertEqual(targets(file_path=str(root)), [])

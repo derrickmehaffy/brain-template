@@ -13,6 +13,7 @@ class HelpersTest(TempDirCase):
         self.assertEqual(self.env["GIT_CONFIG_NOSYSTEM"], "1")
         self.assertEqual(self.env["PYTHONDONTWRITEBYTECODE"], "1")
         self.assertEqual(self.env["TMPDIR"], str(self.tmp / "os-tmp"))
+        self.assertEqual(self.env["XDG_RUNTIME_DIR"], str(self.tmp / "run"))
         self.assertEqual(os.path.getsize(self.env["GIT_CONFIG_GLOBAL"]), 0)
         self.assertTrue((self.tmp / "os-tmp").is_dir())
         self.assertEqual(self.git(self.tmp, "config", "--global", "--list"), "")

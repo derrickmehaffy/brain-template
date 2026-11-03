@@ -90,9 +90,14 @@ class GateCase(TempDirCase):
     def draft_brain(self):
         return self.fake_brain(extra={"gates": [dict(DRAFT_RULE)]})
 
+    def state_base(self):
+        """The shared folder the gate keeps session state in: under XDG_RUNTIME_DIR when that is a folder."""
+        run = self.env.get("XDG_RUNTIME_DIR")
+        return Path(run if run and Path(run).is_dir() else self.env["TMPDIR"]) / "brain-gate"
+
     def state_dir(self, root):
         digest = hashlib.sha1(str(root).encode("utf-8")).hexdigest()[:12]
-        return Path(self.env["TMPDIR"]) / "brain-gate" / digest
+        return self.state_base() / digest
 
     def waiver_path(self, root):
         return Path(root) / ".brain" / "gate-waiver.json"
@@ -271,6 +276,33 @@ class SkillGateTest(GateCase):
             ("cp -r /tmp/draft .claude/skills/lab-new", ".claude/skills/lab-new/"),
             ("mv .claude/skills/lab-old .claude/skills/lab-new", ".claude/skills/lab-new/"),
             ("cp -r /tmp/draft docs/practices", "docs/practices/"),
+            # An apostrophe in a comment opens no quote: bash skips the comment and runs the write.
+            ("# let's update the routing\necho x > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("# don't forget\ncp /tmp/a scripts/x.py", "scripts/x.py"),
+            ("echo hi # it's done\necho x > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("# Write the new skill's file\ncat > .claude/skills/lab-new/SKILL.md <<'EOF'\nhello\nEOF",
+             ".claude/skills/lab-new/SKILL.md"),
+            ("echo a#b > docs/ROUTING.md", "docs/ROUTING.md"),  # a # inside a word is no comment
+            ("x=abc; echo ${#x} > docs/ROUTING.md", "docs/ROUTING.md"),
+            # Bash rewrites the word before it opens the file.
+            ("echo x > $'docs/ROUTING.md'", "docs/ROUTING.md"),
+            ('echo x > $"docs/ROUTING.md"', "docs/ROUTING.md"),
+            ("echo x > $'docs\\x2fROUTING.md'", "docs/ROUTING.md"),
+            ("echo x > $'docs\\057ROUTING.md'", "docs/ROUTING.md"),
+            ("echo x > $'docs/ROUTING.md\\x00.bak'", "docs/ROUTING.md"),
+            ("echo x > docs/{ROUTING,OTHER}.md", "docs/ROUTING.md"),
+            ("echo x > docs/{OTHER,ROUTING}.md", "docs/ROUTING.md"),
+            ("echo x > {docs,notes}/ROUTING.md", "docs/ROUTING.md"),
+            ("echo x > docs/{OTHER,{ROUTING,X}}.md", "docs/ROUTING.md"),
+            ("cp a scripts/{x,y}.py", "scripts/x.py"),
+            # A file-descriptor number is not an operand.
+            ("cp a docs/ROUTING.md 2>&1", "docs/ROUTING.md"),
+            ("mv a docs/ROUTING.md 2>&1 | head", "docs/ROUTING.md"),
+            ("cp a scripts/x.py >/dev/null 2>&1", "scripts/x.py"),
+            ("cp a scripts/x.py 2>/dev/null", "scripts/x.py"),
+            # ln writes its last operand like cp and mv.
+            ("ln -s /tmp/x scripts/y.py", "scripts/y.py"),
+            ("ln -sf /tmp/x docs/ROUTING.md", "docs/ROUTING.md"),
         ]
         for command, rel in commands:
             with self.subTest(command=command):
@@ -282,6 +314,89 @@ class SkillGateTest(GateCase):
         for command in ("cp a scripts/", "cp -r a b scripts", "mv a scripts", "cp -t scripts a"):
             with self.subTest(command=command):
                 self.assertIn("needs brain-write-script", self.denied(self.bash(root, command)))
+
+    def test_globs_in_a_target_are_expanded_as_bash_would(self):
+        root = self.fake_brain()
+        (root / "docs").mkdir()
+        (root / "docs" / "ROUTING.md").write_text("map\n", encoding="utf-8")
+        (root / "scripts").mkdir()
+        (root / "scripts" / "a.py").write_text("x\n", encoding="utf-8")
+        (root / ".brain").mkdir()
+        (root / ".brain" / "gate-waiver.json").write_text("{}\n", encoding="utf-8")  # a glob needs something to match
+        for command, rel in [("echo x > docs/ROUTIN?.md", "docs/ROUTING.md"),
+                             ("echo x > docs/ROUTING.m*", "docs/ROUTING.md"),
+                             ("echo x > docs/R[O]UTING.md", "docs/ROUTING.md"),
+                             ("echo x > d*/ROUTING.md", "docs/ROUTING.md"),
+                             ("echo x > ./docs/ROUT*", "docs/ROUTING.md"),
+                             ("cat a | tee docs/ROUTING.m?", "docs/ROUTING.md"),
+                             ("cp a docs/ROUTIN?.md", "docs/ROUTING.md"),
+                             ("echo x > scripts/*.py", "scripts/a.py"),
+                             ("echo x > scripts/*", "scripts/a.py"),
+                             ("echo x > .br*/gate-waiver.json", ".brain/gate-waiver.json"),
+                             ("echo x > \"docs\"/ROUTIN?.md", "docs/ROUTING.md")]:
+            with self.subTest(command=command):
+                self.assertIn(f"writing {rel}", self.denied(self.bash(root, command)))
+        for command in ('echo x > "docs/ROUTIN?.md"', "echo x > docs/ROUTIN\\?.md", "echo x > docs/NOPE*.md",
+                        "echo x > */ROUTING.md.bak"):
+            with self.subTest(command=command):
+                self.assert_silent(self.bash(root, command))  # quoted, or nothing to match: the literal name
+
+    def test_bash_rewrites_are_followed_to_the_real_file(self):
+        root = self.fake_brain()
+        (root / "docs").mkdir()
+        (root / "docs" / "ROUTING.md").write_text("map\n", encoding="utf-8")
+        for command in ("echo x > $'docs/ROUTING.md'", 'echo x > $"docs/ROUTING.md"',
+                        "echo x > docs/{ROUTING,OTHER}.md", "echo x > docs/{OTHER,ROUTING}.md",
+                        "echo x > $'docs/ROUTIN\\x47.md'", "echo x > doc$'s'/ROUTING.md"):
+            with self.subTest(command=command):
+                self.assertIn("writing docs/ROUTING.md needs", self.denied(self.bash(root, command)))
+
+    def test_cp_mv_and_ln_into_a_folder_that_exists_check_each_name_it_gets(self):
+        root = self.fake_brain()
+        for folder in (".claude/skills", "docs", ".brain", "scripts", "docs/practices"):
+            (root / folder).mkdir(parents=True, exist_ok=True)
+        source = self.tmp.parent / "src"  # the folder with the space is a poor place for unquoted words
+        source.mkdir()
+        for name in ("ROUTING.md", "other.md"):
+            (source / name).write_text("x\n", encoding="utf-8")
+        (source / "lab-new").mkdir()
+        src = str(source)
+        cases = [
+            (f"cp -r {src}/lab-new .claude/skills/", ".claude/skills/lab-new/"),
+            (f"cp -r {src}/lab-new .claude/skills", ".claude/skills/lab-new/"),
+            (f"cp -r {src}/lab-new/ .claude/skills", ".claude/skills/lab-new/"),
+            (f"mv {src}/lab-new .claude/skills", ".claude/skills/lab-new/"),
+            (f"cp {src}/ROUTING.md docs/", "docs/ROUTING.md"),
+            (f"cp {src}/ROUTING.md docs", "docs/ROUTING.md"),
+            (f"cp -t docs {src}/ROUTING.md", "docs/ROUTING.md"),
+            (f"mv {src}/ROUTING.md docs", "docs/ROUTING.md"),
+            (f"ln -s {src}/ROUTING.md docs/", "docs/ROUTING.md"),
+            (f"cp {src}/*.md scripts/ && cp {src}/R*.md docs", "docs/ROUTING.md needs"),
+            (f"cp {src}/{{ROUTING,other}}.md docs/", "docs/ROUTING.md"),
+            (f"cp {src}/other.md docs/practices", "docs/practices/"),
+            (f"cp {src}/other.md docs/practices/", "docs/practices/"),
+        ]
+        for command, rel in cases:
+            with self.subTest(command=command):
+                self.assertIn(rel, self.denied(self.bash(root, command)))
+        gate_waiver = source / "gate-waiver.json"
+        gate_waiver.write_text("{}\n", encoding="utf-8")
+        for command in (f"cp {src}/gate-waiver.json .brain/", f"cp {src}/gate-waiver.json .brain", f"mv {src}/gate-waiver.json .brain",
+                        f"ln -s {src}/gate-waiver.json .brain/", f"cp {src}/gate-waiver.* .brain/"):
+            with self.subTest(command=command):
+                self.assertIn("writing .brain/gate-waiver.json is refused", self.denied(self.bash(root, command)))
+        for command in (f"cp {src}/other.md docs/", f"cp {src}/other.md .brain/", f"cp {src}/other.md /tmp/",
+                        f"cp -r {src}/lab-new /tmp", f"mv {src}/other.md notes"):
+            with self.subTest(command=command, passes=True):
+                self.assert_silent(self.bash(root, command))
+
+    def test_ln_is_a_write(self):
+        root = self.fake_brain()
+        for command, rel in [("ln -s /tmp/x .brain/gate-waiver.json", ".brain/gate-waiver.json"),
+                             ("ln /tmp/x scripts/y.py", "scripts/y.py"), ("ln -sf /tmp/x docs/ROUTING.md", "docs/ROUTING.md")]:
+            with self.subTest(command=command):
+                self.assertIn(f"writing {rel}", self.denied(self.bash(root, command)))
+        self.assert_silent(self.bash(root, "ln -s /tmp/x"))
 
     def test_bash_passes_once_the_skill_ran(self):
         root = self.fake_brain()
@@ -297,7 +412,11 @@ class SkillGateTest(GateCase):
                         "git commit -m 'update docs/ROUTING.md'",
                         "grep -n '>' docs/ROUTING.md", 'grep -- "-->" docs/ROUTING.md', "echo '>' docs/ROUTING.md",
                         'echo "a > b" docs/ROUTING.md', "echo \\> docs/ROUTING.md", "printf %s '>>' docs/RETRO-LOG.md",
-                        "cp a notes/new", "cp a notes/new/"):
+                        "cp a notes/new", "cp a notes/new/",
+                        "echo hi # > docs/ROUTING.md", "# let's not write to docs/ROUTING.md", "echo hi;# it's\nls",
+                        'echo x > "docs/ROUTIN?.md"', "echo x > 'docs/{ROUTING,OTHER}.md'", "echo x > docs/ROUTIN?.md",
+                        "ln -s /tmp/x", "ln -s /tmp/x /tmp/y", "cp a /tmp/docs/ROUTING.md 2>&1",
+                        "cat docs/ROUTING.md 2>&1", "cp docs/ROUTING.md /tmp/out 2>&1"):
             with self.subTest(command=command):
                 self.assert_silent(self.bash(root, command))
 
@@ -441,7 +560,8 @@ class SkillGateTest(GateCase):
         self.ran(root, "brain-write-skill", session="../../evil/x y")
         files = sorted(p.name for p in self.state_dir(root).iterdir())
         self.assertEqual(files, ["evilxy.json"])
-        self.assertEqual(list(Path(self.env["TMPDIR"]).glob("*")), [self.state_dir(root).parent])
+        self.assertEqual(list(Path(self.env["XDG_RUNTIME_DIR"]).glob("*")), [self.state_dir(root).parent])
+        self.assertEqual(list(Path(self.env["TMPDIR"]).glob("*")), [])  # the runtime folder is preferred
         self.assert_silent(self.write(root, "docs/ROUTING.md", session="../../evil/x y"))
         self.assert_silent(self.write(root, "docs/ROUTING.md", session="evilxy"))  # the same reduced id
 
@@ -719,18 +839,40 @@ class GateStateDirTest(GateCase):
     def mode(self, path):
         return stat.S_IMODE(path.stat().st_mode)
 
-    def test_the_shared_directory_is_sticky_and_world_writable_and_the_brains_own_is_private(self):
+    def test_state_lives_under_the_runtime_folder_when_there_is_one(self):
         root = self.fake_brain()
         self.ran(root, "brain-write-skill")
-        self.assertEqual(oct(self.mode(self.state_dir(root).parent)), oct(0o1777))
+        run = Path(self.env["XDG_RUNTIME_DIR"])
+        self.assertEqual(self.state_dir(root).parent, run / "brain-gate")
+        self.assertTrue((run / "brain-gate").is_dir())
+        self.assertEqual(oct(self.mode(run / "brain-gate")), oct(0o700))  # private to the user, like its parent
         self.assertEqual(oct(self.mode(self.state_dir(root))), oct(0o700))
-        # The same when the first thing to touch the state is a refusal in another brain.
-        other = self.fake_brain()
-        self.denied(self.write(other, "docs/ROUTING.md"))
-        self.assertEqual(oct(self.mode(self.state_dir(other).parent)), oct(0o1777))
-        self.assertEqual(oct(self.mode(self.state_dir(other))), oct(0o700))
+        self.assertEqual(list(Path(self.env["TMPDIR"]).iterdir()), [])  # nothing in the shared temp folder
+
+    def without_runtime_dir(self, value=None):
+        if value is None:
+            del self.env["XDG_RUNTIME_DIR"]
+        else:
+            self.env["XDG_RUNTIME_DIR"] = value
+
+    def test_without_a_runtime_folder_the_temp_folder_is_sticky_and_world_writable(self):
+        for value in (None, "", str(self.tmp / "no-such-folder")):
+            with self.subTest(runtime=value):
+                self.without_runtime_dir() if value is None else self.without_runtime_dir(value)
+                root = self.fake_brain()
+                self.ran(root, "brain-write-skill")
+                shared = Path(self.env["TMPDIR"]) / "brain-gate"
+                self.assertEqual(self.state_dir(root).parent, shared)
+                self.assertEqual(oct(self.mode(shared)), oct(0o1777))
+                self.assertEqual(oct(self.mode(self.state_dir(root))), oct(0o700))
+                # The same when the first thing to touch the state is a refusal in another brain.
+                other = self.fake_brain()
+                self.denied(self.write(other, "docs/ROUTING.md"))
+                self.assertEqual(oct(self.mode(self.state_dir(other))), oct(0o700))
+                shutil.rmtree(str(shared))
 
     def test_a_umask_does_not_narrow_the_shared_directory(self):
+        self.without_runtime_dir()
         root = self.fake_brain()
         old = os.umask(0o077)
         try:
@@ -739,9 +881,49 @@ class GateStateDirTest(GateCase):
             os.umask(old)
         self.assertEqual(oct(self.mode(self.state_dir(root).parent)), oct(0o1777))
 
+    def test_a_symlinked_session_folder_is_not_trusted_or_written_through(self):
+        root = self.fake_brain()
+        self.ran(root, "brain-retro")
+        folder = self.state_dir(root)
+        elsewhere = self.tmp / "elsewhere"
+        elsewhere.mkdir()
+        forged = elsewhere / "s1.json"
+        forged.write_text(json.dumps({"ran": {"brain-write-skill": 9}, "last_refusal": None}), encoding="utf-8")
+        shutil.rmtree(str(folder))
+        folder.symlink_to(elsewhere)
+        before = forged.read_text(encoding="utf-8")
+        # The forged runs do not count, and since nothing can be kept there the write is let through with a warning.
+        message = self.notice(self.write(root, "docs/ROUTING.md"))
+        self.assertTrue(message.startswith("skill gate: cannot keep session state"), message)
+        self.assertIn("docs/ROUTING.md", message)
+        self.assertIn("error", self.notice(self.hook(root, "record", "Skill", skill="brain-write-skill")).lower())
+        self.assertEqual(sorted(p.name for p in elsewhere.iterdir()), ["s1.json"])  # nothing written through
+        self.assertEqual(forged.read_text(encoding="utf-8"), before)
+        self.assertEqual(self.status(root, "--session", "s1")[1], "ran: nothing")
+
+    def test_a_session_folder_with_the_wrong_mode_is_not_trusted_or_written_through(self):
+        root = self.fake_brain()
+        self.ran(root, "brain-write-skill")
+        folder = self.state_dir(root)
+        state = folder / "s1.json"
+        before = state.read_text(encoding="utf-8")
+        for mode in (0o755, 0o770, 0o500):
+            with self.subTest(mode=oct(mode)):
+                os.chmod(str(folder), mode)
+                try:
+                    message = self.notice(self.write(root, "docs/ROUTING.md"))  # the recorded run is not believed
+                    self.assertTrue(message.startswith("skill gate: cannot keep session state"), message)
+                    self.assertIn("error", self.notice(
+                        self.hook(root, "record", "Skill", skill="brain-retro")).lower())
+                    self.assertEqual(state.read_text(encoding="utf-8"), before)
+                    self.assertEqual(sorted(p.name for p in folder.iterdir()), ["s1.json"])
+                finally:
+                    os.chmod(str(folder), 0o700)
+        self.assert_silent(self.write(root, "docs/ROUTING.md"))  # and right again once it is private
+
     def test_state_that_cannot_be_kept_fails_open(self):
         root = self.fake_brain()
-        (Path(self.env["TMPDIR"]) / "brain-gate").write_text("in the way", encoding="utf-8")  # no state can be kept
+        self.state_base().write_text("in the way", encoding="utf-8")  # no state can be kept
         r = self.hook(root, "record", "Skill", skill="brain-write-skill")
         self.assertIn("skill gate error", self.notice(r))
         # A refusal nobody could ever satisfy is not a refusal: the write goes through, with a warning.
@@ -751,22 +933,6 @@ class GateStateDirTest(GateCase):
         self.assertIn("write allowed", message)
         self.assert_silent(self.write(root, "notes/a.md"))
         self.assert_silent(self.bash(root, "ls"))
-
-    def test_a_failed_record_leaves_an_earlier_state_alone(self):
-        root = self.fake_brain()
-        self.ran(root, "brain-write-skill")
-        state = self.state_dir(root) / "s1.json"
-        before = state.read_text(encoding="utf-8")
-        os.chmod(str(self.state_dir(root)), 0o500)  # read-only: the next record cannot write
-        try:
-            if os.access(str(self.state_dir(root)), os.W_OK):  # running as root: permissions do not bind
-                self.skipTest("directory permissions do not apply to this user")
-            r = self.hook(root, "record", "Skill", skill="brain-retro")
-            self.assertIn("skill gate error", self.notice(r))
-            self.assertEqual(state.read_text(encoding="utf-8"), before)
-            self.assert_silent(self.write(root, "docs/ROUTING.md"))  # the earlier run still counts
-        finally:
-            os.chmod(str(self.state_dir(root)), 0o700)
 
 
 class GateFunctionsTest(GateCase):
@@ -811,6 +977,44 @@ class GateFunctionsTest(GateCase):
             ("echo x > my\\ file.md", ["my file.md"]),
             ("echo `date > a.md`", ["a.md"]),
             ("cp /tmp/SKILL.md .claude/skills/lab-new/", [".claude/skills/lab-new/"]),
+            # comments
+            ("# only a comment", []),
+            ("# it's a comment\necho x > a.md", ["a.md"]),
+            ("echo hi # > a.md", []),
+            ("echo hi; # it's a comment\ncp a b.md", ["b.md"]),
+            ("echo a#b > c.md", ["c.md"]),
+            ("echo ${#x} > c.md", ["c.md"]),
+            ("echo '#' > c.md", ["c.md"]),
+            ("echo x\\# > c.md", ["c.md"]),
+            # quoting and brace expansion
+            ("echo x > $'a\\tb'", ["a\tb"]),
+            ("echo x > $'it\\'s'", ["it's"]),
+            ("echo x > $'a\\\\b\\x41\\101'", ["a\\bAA"]),
+            ("echo x > $'a\\x00b'", ["a"]),
+            ("echo x > $'unterminated", ["unterminated"]),
+            ('echo x > $"a b"', ["a b"]),
+            ("echo x > a$'b'c", ["abc"]),
+            ("echo x > docs/{a,b}.md", ["docs/a.md", "docs/b.md"]),
+            ("echo x > {a,b}/{c,d}", ["a/c", "a/d", "b/c", "b/d"]),
+            ("echo x > a{b,c{d,e}}", ["ab", "acd", "ace"]),
+            ("echo x > a{b}c", ["a{b}c"]),
+            ("echo x > a{,b}", ["a", "ab"]),
+            ("echo x > 'a{b,c}'", ["a{b,c}"]),
+            ('echo x > a\\{b,c}', ["a{b,c}"]),
+            ("echo x > ${HOME}/{a,b}", ["${HOME}/a", "${HOME}/b"]),
+            ("cp a {b,c}.md", ["b.md", "c.md"]),
+            # file-descriptor numbers
+            ("cp a b 2>&1", ["b"]),
+            ("cp a b 1>&2", ["b"]),
+            ("cp a b >/dev/null 2>&1", ["/dev/null", "b"]),
+            ("cp a b 2>/dev/null", ["/dev/null", "b"]),
+            ("cp a 2 > c.md", ["c.md", "2"]),  # separated by a space, 2 is an operand
+            ("echo 2> c.md", ["c.md"]),
+            # ln
+            ("ln -s /tmp/x .brain/gate-waiver.json", [".brain/gate-waiver.json"]),
+            ("ln -sf -- /tmp/x y", ["y"]),
+            ("ln -s /tmp/x", []),
+            ("ln -t docs /tmp/x", ["docs"]),
             ("FOO=1 sudo cp a scripts/x.py", ["scripts/x.py"]),
             ("cat <<EOF > docs/ROUTING.md\nhello > not-a-target\nEOF", ["docs/ROUTING.md"]),
             ("cat > docs/n.md <<'EOF'\ncp a scripts/x.py\necho y > scripts/y.py\nEOF\ncp b docs/practices/p.md",
@@ -845,13 +1049,32 @@ class GateFunctionsTest(GateCase):
         self.assertEqual(targets(notebook_path="docs/../docs/n.ipynb"), [("docs/n.ipynb", False)])
         self.assertEqual(targets(command="echo x > docs/ROUTING.md; cp a /etc/b; cp a ../out"),
                          [("docs/ROUTING.md", True)])
-        self.assertEqual(targets(command="cp a scripts/"), [("scripts/", True)])  # an existing folder
+        # An existing folder is itself a target, and so is each name the sources get in it.
+        self.assertEqual(targets(command="cp a scripts/"),
+                         [("scripts/", True), ("scripts/a", False), ("scripts/a/", False)])
+        self.assertEqual(targets(command="cp -r /tmp/x/dir scripts"),
+                         [("scripts/", True), ("scripts/dir", False), ("scripts/dir/", False)])
+        self.assertEqual(targets(command="cp -t scripts a b"),
+                         [("scripts/", True), ("scripts/a", False), ("scripts/a/", False),
+                          ("scripts/b", False), ("scripts/b/", False)])
+        self.assertEqual(targets(command="mv docs/ROUTING.md scripts"),
+                         [("scripts/", True), ("scripts/ROUTING.md", False)])  # a file, so no folder form
         # A destination that is not there yet may be a folder about to be made: it is tried both ways.
         self.assertEqual(targets(command="cp -r a scripts/new"), [("scripts/new", False), ("scripts/new/", False)])
         self.assertEqual(targets(command="mv a docs/new"), [("docs/new", False), ("docs/new/", False)])
         self.assertEqual(targets(command="cp a docs/new/"), [("docs/new/", False)])  # written as a folder
         self.assertEqual(targets(command="mv a docs/ROUTING.md"), [("docs/ROUTING.md", True)])
         self.assertEqual(targets(command="echo x > docs/new"), [("docs/new", False)])  # a redirection is a file
+        # Globs are matched against the folder the command runs in; no match leaves the name as written.
+        self.assertEqual(targets(command="echo x > docs/ROUT*"), [("docs/ROUTING.md", True)])
+        self.assertEqual(targets(command="echo x > docs/NOPE*"), [("docs/NOPE*", False)])
+        self.assertEqual(targets(command="echo x > 'docs/ROUT*'"), [("docs/ROUT*", False)])
+        self.assertEqual(targets(command="echo x > docs/{ROUTING,new}.md"),
+                         [("docs/ROUTING.md", True), ("docs/new.md", False)])
+        self.assertEqual(gate.targets({"cwd": str(root / "docs"), "tool_input": {"command": "echo x > R*"}}, root),
+                         [("docs/ROUTING.md", True)])
+        self.assertEqual(targets(file_path="docs/ROUT*"), [("docs/ROUT*", False)])  # a tool's path is literal
+        self.assertEqual(targets(file_path="docs/new\0.md"), [("docs/new", False)])  # a C string ends at a NUL
         self.assertEqual(targets(command="tee docs/new"), [("docs/new", False)])
         self.assertEqual(targets(file_path="/etc/hosts"), [])
         self.assertEqual(targets(file_path=str(root)), [])

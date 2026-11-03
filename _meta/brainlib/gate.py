@@ -1,7 +1,7 @@
 """The skill gate (spec §7.9): hook commands that refuse a write until the skill that owns it has run.
 
-`gate record` (PostToolUse on `Skill`) notes the skill against the session id in the OS temp
-directory; `gate check` (PreToolUse on `Write`, `Edit` and `Bash`) refuses a write to a ruled path
+`gate record` (PostToolUse on `Skill`) notes the skill against the session id in a private folder
+(under `$XDG_RUNTIME_DIR` when set, else in the OS temp directory); `gate check` (PreToolUse on `Write`, `Edit` and `Bash`) refuses a write to a ruled path
 unless an owning skill ran this session or the person armed a one-shot waiver. It is friction and
 visibility, not a security boundary, and it never says "allow": the person's own permission prompt
 stays in charge. If the gate itself errors it lets the write through with a visible warning.
@@ -11,9 +11,11 @@ before the config, the rules or any of the heavier modules are loaded.
 """
 from __future__ import annotations
 
+import errno
 import json
 import os
 import re
+import stat
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, NamedTuple, Optional, Tuple
@@ -191,42 +193,114 @@ def _without_heredoc_bodies(command: str) -> str:
 
 
 _OPERATOR = re.compile(r"&>>|&>|>>|>\||>&|<<<|<<|<&|<>|&&|\|\||\|&|;;|[;|&()<>`]")
+_ANSI_ESCAPES = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t",
+                 "v": "\v", "\\": "\\", "'": "'", '"': '"', "?": "?"}
+_ANSI_WIDTH = {"x": 2, "u": 4, "U": 8}
+MAX_EXPANSIONS = 128  # alternatives one word may brace-expand to
+MAX_MATCHES = 256  # names one glob may expand to
+GLOB_SECONDS = 0.25  # how long one glob may spend looking
 
 
-def _tokens(command: str) -> List[Tuple[str, bool]]:
-    """(text, is_operator) for each shell word and operator of `command`.
+class _Word(str):
+    """A shell word with quotes resolved. `mask` has one character per letter: "1" where the letter was
+    quoted, escaped or decoded (so no brace or glob meaning), "0" where bash would read it as syntax."""
 
-    Quotes and backslashes are resolved, so a quoted `>` is a word and not a redirection; a newline
-    ends a command; a quote left open runs to the end of the text (the shell would refuse to run it).
+    mask: str = ""
+
+
+def _word(chars: List[str], flags: List[str]) -> _Word:
+    word = _Word("".join(chars))
+    word.mask = "".join(flags)
+    return word
+
+
+def _ansi_c(command: str, i: int) -> Tuple[str, int]:
+    """The text of the `$'...'` string whose opening quote is `command[i]` and the index after its end.
+    Bash cuts the text at the first NUL it decodes."""
+    out: List[str] = []
+    n = len(command)
+    i += 1
+    while i < n and command[i] != "'":
+        char = command[i]
+        following = command[i + 1] if i + 1 < n else ""
+        if char != "\\" or not following:
+            out.append(char)
+            i += 1
+        elif following in _ANSI_ESCAPES:
+            out.append(_ANSI_ESCAPES[following])
+            i += 2
+        elif following in _ANSI_WIDTH:
+            digits = re.match(r"[0-9A-Fa-f]{1,%d}" % _ANSI_WIDTH[following], command[i + 2:i + 2 + _ANSI_WIDTH[following]])
+            if digits:
+                try:
+                    out.append(chr(int(digits.group(), 16)))
+                except (ValueError, OverflowError):
+                    pass
+                i += 2 + len(digits.group())
+            else:
+                out.append(char + following)
+                i += 2
+        elif following in "01234567":
+            octal = re.match(r"[0-7]*", command[i + 1:i + 4]).group()  # 1 to 3 digits: `following` is one
+            out.append(chr(int(octal, 8)))
+            i += 1 + len(octal)
+        else:
+            out.append(char + following)
+            i += 2
+    return "".join(out).split("\0", 1)[0], i + 1
+
+
+def _tokens(command: str) -> List[Tuple[str, bool, bool]]:
+    """(text, is_operator, attached) for each shell word and operator of `command`.
+
+    Quotes and backslashes are resolved, so a quoted `>` is a word and not a redirection; `$'...'` is
+    decoded and `$"..."` is a double-quoted string; a comment (a `#` that starts a word) runs to the end
+    of its line; a newline ends a command; a quote left open runs to the end of the text (the shell would
+    refuse to run it). Words are `_Word`s that remember which letters were quoted. `attached` is true for
+    an operator that touches the word before it (`2>&1`).
     """
-    tokens: List[Tuple[str, bool]] = []
+    tokens: List[Tuple[str, bool, bool]] = []
     word: List[str] = []
+    flags: List[str] = []
     in_word = False
     i, n = 0, len(command)
     while i < n:
         char = command[i]
         if char in " \t\r\n();<>|&`":  # a word ends here
+            attached = in_word
             if in_word:
-                tokens.append(("".join(word), False))
-                word, in_word = [], False
+                tokens.append((_word(word, flags), False, False))
+                word, flags, in_word = [], [], False
             if char == "\n":
-                tokens.append((";", True))
+                tokens.append((";", True, False))
                 i += 1
             elif char in " \t\r":
                 i += 1
             else:
                 operator = _OPERATOR.match(command, i).group()
-                tokens.append((operator, True))
+                tokens.append((operator, True, attached))
                 i += len(operator)
+        elif char == "#" and not in_word:
+            while i < n and command[i] != "\n":  # the newline itself still ends the command
+                i += 1
         elif char == "\\":
             if i + 1 < n and command[i + 1] != "\n":  # a backslash before a newline joins the lines
                 word.append(command[i + 1])
+                flags.append("1")
                 in_word = True
             i += 2
+        elif char == "$" and command.startswith("$'", i):
+            text, i = _ansi_c(command, i + 1)
+            word.extend(text)
+            flags.extend("1" * len(text))
+            in_word = True
+        elif char == "$" and command.startswith('$"', i):
+            i += 1  # `$"..."` is a double-quoted string, translated if there is a catalogue
         elif char == "'":
             end = command.find("'", i + 1)
             end = n if end < 0 else end
-            word.append(command[i + 1:end])
+            word.extend(command[i + 1:end])
+            flags.extend("1" * (end - i - 1))
             in_word = True
             i = end + 1
         elif char == '"':
@@ -236,18 +310,109 @@ def _tokens(command: str) -> List[Tuple[str, bool]]:
                 if command[i] == "\\" and i + 1 < n and command[i + 1] in '"\\$`\n':
                     if command[i + 1] != "\n":
                         word.append(command[i + 1])
+                        flags.append("1")
                     i += 2
                 else:
                     word.append(command[i])
+                    flags.append("1")
                     i += 1
             i += 1
         else:
             word.append(char)
+            flags.append("0")
             in_word = True
             i += 1
     if in_word:
-        tokens.append(("".join(word), False))
+        tokens.append((_word(word, flags), False, False))
     return tokens
+
+
+def _brace_expand(word: str) -> List[str]:
+    """`word` with its simple `{a,b}` groups expanded, as bash does before it opens a file. Quoted or
+    escaped braces and `${` are left alone; the number of results is capped."""
+    mask = getattr(word, "mask", "0" * len(word))
+    for start, char in enumerate(word):
+        if char != "{" or mask[start] != "0" or (start and word[start - 1] == "$"):
+            continue
+        depth, commas = 0, []
+        for end in range(start, len(word)):
+            if mask[end] != "0":
+                continue
+            if word[end] == "{":
+                depth += 1
+            elif word[end] == "," and depth == 1:
+                commas.append(end)
+            elif word[end] == "}":
+                depth -= 1
+                if depth == 0:
+                    break
+        else:
+            continue  # never closed
+        if not commas:
+            continue  # `{a}` is just text
+        edges = [start] + commas + [end]
+        expanded: List[str] = []
+        for left, right in zip(edges, edges[1:]):
+            joined = _Word(word[:start] + word[left + 1:right] + word[end + 1:])
+            joined.mask = mask[:start] + mask[left + 1:right] + mask[end + 1:]
+            expanded += _brace_expand(joined)
+            if len(expanded) >= MAX_EXPANSIONS:
+                return expanded[:MAX_EXPANSIONS]
+        return expanded
+    return [word]
+
+
+def _has_glob(word: str) -> bool:
+    mask = getattr(word, "mask", "")  # only words out of a command have one: a tool's own path is literal
+    return len(mask) == len(word) and any(char in "*?[" and mask[k] == "0" for k, char in enumerate(word))
+
+
+def _expand_glob(word: str, base: str) -> List[str]:
+    """The existing paths `word` matches when it is read as a glob in the folder `base`, or [] when it
+    has no unquoted glob character or matches nothing. Bounded in matches and in time."""
+    if not _has_glob(word):
+        return []
+    import fnmatch
+    import time
+
+    mask = getattr(word, "mask")
+    segments: List[Tuple[str, str, bool]] = []  # (text, fnmatch pattern, has glob characters)
+    start = 0
+    for end in range(len(word) + 1):
+        if end < len(word) and word[end] != "/":
+            continue
+        text, flags = word[start:end], mask[start:end]
+        start = end + 1
+        if text:
+            pattern = "".join(f"[{c}]" if f == "1" and c in "*?[" else c for c, f in zip(text, flags))
+            segments.append((text, pattern, any(c in "*?[" and f == "0" for c, f in zip(text, flags))))
+    found: List[str] = []
+    deadline = time.monotonic() + GLOB_SECONDS
+
+    def walk(prefix: str, index: int) -> None:
+        if len(found) >= MAX_MATCHES or time.monotonic() > deadline:
+            return
+        if index == len(segments):
+            found.append(prefix)
+            return
+        text, pattern, magic = segments[index]
+        if not magic:
+            following = os.path.join(prefix, text)
+            if os.path.lexists(following):
+                walk(following, index + 1)
+            return
+        try:
+            names = sorted(os.listdir(prefix))
+        except OSError:
+            return
+        for name in names:
+            if name.startswith(".") and not pattern.startswith("."):
+                continue
+            if fnmatch.fnmatchcase(name, pattern):
+                walk(os.path.join(prefix, name), index + 1)
+
+    walk("/" if word.startswith("/") else base, 0)
+    return found
 
 
 def _split_options(args: List[str]) -> Tuple[List[str], List[str]]:
@@ -295,9 +460,18 @@ def _sed_targets(args: List[str]) -> List[str]:
     return [o for o in (operands if script_given else operands[1:]) if o]
 
 
-def _command_targets(words: List[str]) -> List[Tuple[str, bool]]:
-    """(file, may_be_a_folder) for what one simple command writes: `tee` files, the destination of `cp`
-    and `mv` (which may be a folder, existing or about to be made), and the files of `sed -i`."""
+class _Target(NamedTuple):
+    """A file a command writes: as written, whether it may be a folder (the destination of `cp`, `mv`,
+    `ln`), and the sources that land in it when it is an existing folder."""
+
+    word: str
+    folder: bool = False
+    sources: Tuple[str, ...] = ()
+
+
+def _command_targets(words: List[str]) -> List[_Target]:
+    """What one simple command writes: `tee` files, the destination of `cp`, `mv` and `ln` (which may be a
+    folder, existing or about to be made, so the sources count too) and the files of `sed -i`."""
     i = 0
     wrapped = False
     while i < len(words):
@@ -312,66 +486,75 @@ def _command_targets(words: List[str]) -> List[Tuple[str, bool]]:
         return []
     name, args = words[i].rsplit("/", 1)[-1], words[i + 1:]
     if name == "tee":
-        return [(operand, False) for operand in _split_options(args)[1]]
-    if name in ("cp", "mv"):
+        return [_Target(operand) for operand in _split_options(args)[1]]
+    if name in ("cp", "mv", "ln"):
         for position, arg in enumerate(args):  # GNU: the destination folder comes first with -t
             if arg == "--":
                 break
             if arg in ("-t", "--target-directory") and position + 1 < len(args):
-                return [(args[position + 1], True)]
+                rest = args[:position] + args[position + 2:]
+                return [_Target(args[position + 1], True, tuple(_split_options(rest)[1]))]
             if arg.startswith("--target-directory="):
-                return [(arg.split("=", 1)[1], True)]
+                rest = args[:position] + args[position + 1:]
+                return [_Target(arg.split("=", 1)[1], True, tuple(_split_options(rest)[1]))]
         operands = _split_options(args)[1]
-        return [(operands[-1], True)] if len(operands) >= 2 else []
+        return [_Target(operands[-1], True, tuple(operands[:-1]))] if len(operands) >= 2 else []
     if name == "sed":
-        return [(target, False) for target in _sed_targets(args)]
+        return [_Target(target) for target in _sed_targets(args)]
     return []
 
 
-def _bash_targets(command: str) -> List[Tuple[str, bool]]:
-    found: List[Tuple[str, bool]] = []
+def _bash_targets(command: str) -> List[_Target]:
+    found: List[_Target] = []
 
-    def add(target: str, folder: bool) -> None:
-        if not target:
-            return
-        for position, (known, was_folder) in enumerate(found):
-            if known == target:
-                found[position] = (known, was_folder or folder)
-                return
-        found.append((target, folder))
+    def add(target: _Target) -> None:
+        sources = tuple(source for alternatives in map(_brace_expand, target.sources) for source in alternatives)
+        for alternative in _brace_expand(target.word):
+            if not alternative:
+                continue
+            for position, known in enumerate(found):
+                if known.word == alternative:
+                    found[position] = _Target(alternative, known.folder or target.folder,
+                                              known.sources + tuple(s for s in sources if s not in known.sources))
+                    break
+            else:
+                found.append(_Target(alternative, target.folder, sources))
 
     words: List[str] = []
     tokens = _tokens(_without_heredoc_bodies(command))
     i = 0
     while i < len(tokens):
-        text, operator = tokens[i]
+        text, operator, attached = tokens[i]
         i += 1
         if not operator:
             words.append(text)
             continue
-        following = tokens[i] if i < len(tokens) and not tokens[i][1] else None  # the next word, if there is one
+        if attached and text[0] in "<>" and words and words[-1].isdigit():
+            words.pop()  # `2>&1`, `2>/dev/null`: the digits name a file descriptor, not an operand
+        following = tokens[i][0] if i < len(tokens) and not tokens[i][1] else None  # the next word, if any
         if text.startswith((">", "&>")):  # an output redirection takes the next word
             if following is not None:
                 i += 1
-                if not (text.startswith(">&") and (following[0].isdigit() or following[0] == "-")):
-                    add(following[0], False)  # (`2>&1` copies a descriptor; it writes no file)
+                if not (text.startswith(">&") and (following.isdigit() or following == "-")):
+                    add(_Target(following))  # (`2>&1` copies a descriptor; it writes no file)
         elif text.startswith("<"):
             if following is not None:
                 i += 1  # an input redirection or a here-document marker, not a word of the command
         else:  # ; && || | & ( ) `: the command ends here
-            for target, folder in _command_targets(words):
-                add(target, folder)
+            for target in _command_targets(words):
+                add(target)
             words = []
-    for target, folder in _command_targets(words):
-        add(target, folder)
+    for target in _command_targets(words):
+        add(target)
     return found
 
 
 def bash_targets(command: str) -> List[str]:
     """Files a shell command writes, as written: the targets of `>`, `>>`, `tee [-a]`, and the last
-    argument of `cp`, `mv` and `sed -i`. A quoted `>` is text, not a redirection. A heuristic on
-    purpose: it catches the tools one reaches for."""
-    return [target for target, _folder in _bash_targets(command)]
+    argument of `cp`, `mv`, `ln` and `sed -i`, after quotes and `{a,b}` groups are resolved. A quoted `>` is
+    text, not a redirection, and a comment hides the rest of its line. A heuristic on purpose: it catches
+    the tools one reaches for."""
+    return [str(target.word) for target in _bash_targets(command)]
 
 
 def _inside(path: str, base: str) -> Optional[str]:
@@ -386,52 +569,72 @@ def targets(payload: Any, root: Path) -> List[Tuple[str, bool]]:
     """(relpath inside the brain, exists) for each file the tool call writes, in order.
 
     Reads `file_path`, `notebook_path` and the targets of a Bash `command`, resolves them against the
-    payload's `cwd`, normalises `..` and symlinks, and drops what lies outside the brain. A folder
-    comes back with a trailing `/` (so `cp a scripts/` meets the rule for `scripts/**`), and so does
-    a destination of `cp` or `mv` that is not there yet, besides the plain name: it may be a folder
-    the command is about to make (`cp -r draft .claude/skills/new`).
+    payload's `cwd`, normalises `..` and symlinks, and drops what lies outside the brain. Globs in a
+    command's targets are matched against the folder it runs in (no match leaves the name as written).
+    A folder comes back with a trailing `/` (so `cp a scripts/` meets the rule for `scripts/**`), and so
+    does a destination of `cp` or `mv` that is not there yet, besides the plain name: it may be a folder
+    the command is about to make (`cp -r draft .claude/skills/new`). A destination that is a folder also
+    brings the name each source gets in it.
     """
     if not isinstance(payload, dict) or not isinstance(payload.get("tool_input"), dict):
         return []
     tool_input = payload["tool_input"]
     named = [tool_input.get(key) for key in ("file_path", "notebook_path")]
-    raw = [(value, False) for value in named if isinstance(value, str) and value]
+    raw = [_Target(value) for value in named if isinstance(value, str) and value]
     command = tool_input.get("command")
     if isinstance(command, str) and command:
         raw += _bash_targets(command)
     if not raw:
         return []
     cwd = payload.get("cwd")
-    base = cwd if isinstance(cwd, str) and cwd else os.getcwd()
+    base = os.path.abspath(cwd if isinstance(cwd, str) and cwd else os.getcwd())
     roots = [os.path.normpath(os.path.abspath(str(root)))]
     if os.path.realpath(roots[0]) != roots[0]:
         roots.append(os.path.realpath(roots[0]))
     found: List[Tuple[str, bool]] = []
-    for item, may_be_folder in raw:
-        written_as_folder = item.endswith("/")
-        item = os.path.expanduser(item)
-        absolute = os.path.normpath(item if os.path.isabs(item) else os.path.join(base, item))
-        candidates = [absolute]
-        real = os.path.realpath(absolute)
-        if real != absolute:
-            candidates.append(real)
-        for candidate in candidates:
-            for top in roots:
-                relative = _inside(candidate, top)
-                if relative is None:
-                    continue
-                if os.path.isdir(candidate):
-                    entries = [(relative + "/", True)]
-                elif written_as_folder:
-                    entries = [(relative + "/", False)]
-                else:
-                    exists = os.path.exists(candidate)
-                    entries = [(relative, exists)]
-                    if may_be_folder and not exists:
-                        entries.append((relative + "/", False))
-                for entry in entries:
-                    if entry not in found:
-                        found.append(entry)
+
+    def keep(entry: Tuple[str, bool]) -> None:
+        if entry not in found:
+            found.append(entry)
+
+    def keep_names(candidate: str, relative: str, written_as_folder: bool, may_be_folder: bool) -> None:
+        if os.path.isdir(candidate):
+            keep((relative + "/", True))
+        elif written_as_folder:
+            keep((relative + "/", False))
+        else:
+            exists = os.path.exists(candidate)
+            keep((relative, exists))
+            if may_be_folder and not exists:
+                keep((relative + "/", False))
+
+    for target in raw:
+        names = _expand_glob(target.word, base) or [str(target.word)]
+        arrivals: List[Tuple[str, bool]] = []  # (name a source gets in the folder, may be a folder itself)
+        for source in target.sources:
+            for path in _expand_glob(source, base) or [str(source)]:
+                name = os.path.basename(path.rstrip("/"))
+                if name and name not in (".", ".."):
+                    arrivals.append((name, not os.path.isfile(os.path.join(base, os.path.expanduser(path)))))
+        for item in names:
+            item = os.path.expanduser(item.split("\0", 1)[0])
+            if not item:
+                continue
+            written_as_folder = item.endswith("/")
+            absolute = os.path.normpath(item if os.path.isabs(item) else os.path.join(base, item))
+            candidates = [absolute]
+            real = os.path.realpath(absolute)
+            if real != absolute:
+                candidates.append(real)
+            for candidate in candidates:
+                for top in roots:
+                    relative = _inside(candidate, top)
+                    if relative is None:
+                        continue
+                    keep_names(candidate, relative, written_as_folder, target.folder)
+                    if os.path.isdir(candidate):
+                        for name, may_be_folder in arrivals:
+                            keep_names(os.path.join(candidate, name), f"{relative}/{name}", False, may_be_folder)
     return found
 
 
@@ -450,21 +653,46 @@ def _session_id(payload: Any) -> str:
     return cleaned or NO_SESSION
 
 
-def _state_dir(root: Path) -> Path:
-    import hashlib
+def _state_base() -> Tuple[Path, int]:
+    """The shared state folder and the mode it is made with: `$XDG_RUNTIME_DIR/brain-gate` (private to the
+    user) when that variable names a folder the user owns, else `brain-gate` in the OS temp folder, which
+    every user shares, so sticky and world-writable like /tmp itself."""
+    run = os.environ.get("XDG_RUNTIME_DIR")
+    if run:
+        try:
+            info = os.stat(run)
+        except OSError:
+            info = None
+        if info is not None and stat.S_ISDIR(info.st_mode) and info.st_uid == os.getuid():
+            return Path(run) / "brain-gate", 0o700
     import tempfile
 
+    return Path(tempfile.gettempdir()) / "brain-gate", 0o1777
+
+
+def _state_dir(root: Path) -> Path:
+    import hashlib
+
     digest = hashlib.sha1(str(root).encode("utf-8", "surrogateescape"), usedforsecurity=False).hexdigest()[:12]
-    return Path(tempfile.gettempdir()) / "brain-gate" / digest
+    return _state_base()[0] / digest
 
 
 def _state_path(root: Path, session_id: str) -> Path:
     return _state_dir(root) / f"{session_id or NO_SESSION}.json"
 
 
+def _verify_state_dir(folder: Path) -> None:
+    """Raise unless `folder` is a real folder (not a link) of this user that nobody else can use: anything
+    else could hold state someone forged, or lead a write somewhere else."""
+    info = os.lstat(str(folder))
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+        raise PermissionError(errno.EPERM, "not a private folder of this user")
+
+
 def _read_state(path: Path) -> Dict[str, Any]:
     state: Dict[str, Any] = {"ran": {}, "last_refusal": None}
     try:
+        _verify_state_dir(path.parent)
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return state
@@ -490,10 +718,11 @@ def _make_dir(path: Path, mode: int) -> None:
 
 
 def _ensure_state_dir(path: Path) -> None:
-    """The shared `brain-gate` folder is sticky and world-writable, like /tmp itself, so a second user on
-    the machine can still make their own folder in it; each brain's folder is private to its user."""
-    _make_dir(path.parent.parent, 0o1777)
+    """Make the shared `brain-gate` folder (a second user on the machine must still be able to make their
+    own folder in it) and this brain's private one, and insist that the latter is what it should be."""
+    _make_dir(path.parent.parent, _state_base()[1])
     _make_dir(path.parent, 0o700)
+    _verify_state_dir(path.parent)
 
 
 def _write_state(path: Path, state: Dict[str, Any]) -> None:
@@ -558,12 +787,16 @@ def _refusal(blocking: List[Tuple[str, Rule]]) -> Dict[str, Any]:
     reason = f"skill gate: writing {first_rel} needs {_needs(first_rule)} to run first in this session."
     if first_rule.why:
         reason += f" {first_rule.why}"
+    listed = [first_rule]
     for rel, rule in blocking[1:]:
+        if rule in listed:  # the same rule blocking a second name (cp into a folder) is said once
+            continue
+        listed.append(rule)
         lead = "It also needs" if rel == first_rel else f"Writing {rel} needs"
         reason += f" {lead} {_needs(rule)} to run first."
         if rule.why:
             reason += f" {rule.why}"
-    reason += (f" Invoke the skill{'s' if len(blocking) > 1 else ''}; a one-time waiver needs the person's "
+    reason += (f" Invoke the skill{'s' if len(listed) > 1 else ''}; a one-time waiver needs the person's "
                f"express say-so: _meta/brain gate waive {first_rule.skills[0]} \"<reason, and who said so>\"")
     return _deny(reason)
 
@@ -711,6 +944,7 @@ def waive(root: Path, skill: str, reason: str) -> str:
 def _latest_session(root: Path) -> str:
     newest, best = "", -1.0
     try:
+        _verify_state_dir(_state_dir(root))
         for entry in os.scandir(str(_state_dir(root))):
             if entry.name.endswith(".json") and entry.stat().st_mtime > best:
                 newest, best = entry.name[:-len(".json")], entry.stat().st_mtime

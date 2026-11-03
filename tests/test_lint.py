@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -40,6 +41,20 @@ class LintBase(TempDirCase):
         ref.parent.mkdir(exist_ok=True)
         ref.write_text("detail\n", encoding="utf-8")
         return path
+
+    def folded_description_skill(self, root: Path, total_length: int) -> None:
+        """lab-a whose `description: >-` is exactly `total_length` characters once folded."""
+        base = clean_description("lab-b")
+        filler_length = total_length - len(base) - 1
+        words = filler_length // 60
+        while filler_length - 60 * words < 1:
+            words -= 1
+        filler = " ".join(["x" * 59] * words + ["x" * (filler_length - 60 * words)])
+        text = base + " " + filler
+        lines = textwrap.wrap(text, 70)
+        self.assertEqual((len(text), " ".join(lines)), (total_length, text))
+        self.write_raw(root, "lab-a", "---\nname: lab-a\ndescription: >-\n" + "".join(f"  {l}\n" for l in lines)
+                       + "---\n" + clean_body() + "\n")
 
     def brain_with_pair(self, **kwargs) -> Path:
         root = self.fake_brain(**kwargs)
@@ -116,6 +131,39 @@ class LintSkillsTest(LintBase):
         base = clean_description("lab-b")
         self.add_clean(root, "lab-a", "lab-b", description=base + " " + "x" * (1023 - len(base)))
         self.assertEqual(self.lint_skills(root), [])
+
+    def test_folded_description_over_the_limit_is_broken(self):
+        for total, expected in ((1024, []), (1025, [(BROKEN, "lab-a")])):
+            with self.subTest(total):
+                root = self.brain_with_pair()
+                self.folded_description_skill(root, total)
+                findings = self.lint_skills(root)
+                self.assertEqual(self.shape(findings), expected, findings)
+                if expected:
+                    self.assertIn("1025", findings[0].message)
+
+    def test_block_and_multi_line_quoted_descriptions_are_read_whole(self):
+        text = "Does X. Use when Y.\n  Does NOT do Z, which is lab-b."
+        forms = {
+            "folded": f"description: >\n  {text}\n",
+            "folded, stripped": f"description: >-\n  {text}\n",
+            "literal": f"description: |\n  {text}\n",
+            "double quoted": f'description: "{text}"\n',
+            "single quoted": f"description: '{text}'\n",
+        }
+        for label, line in forms.items():
+            with self.subTest(label):
+                root = self.brain_with_pair()
+                self.write_raw(root, "lab-a", f"---\nname: lab-a\n{line}---\n{clean_body()}\n")
+                self.assertEqual(self.lint_skills(root), [])
+
+    def test_block_description_naming_a_missing_skill_is_broken(self):
+        root = self.brain_with_pair()
+        self.write_raw(root, "lab-a", "---\nname: lab-a\ndescription: >-\n  Does X. Use when Y.\n"
+                       "  Does NOT do Z, which is lab-ghost.\n---\n" + clean_body() + "\n")
+        findings = self.lint_skills(root)
+        self.assertEqual(self.shape(findings), [(BROKEN, "lab-a")])
+        self.assertIn("lab-ghost", findings[0].message)
 
     def test_cited_path_found_at_brain_root_is_fine(self):
         root = self.brain_with_pair()
@@ -226,6 +274,58 @@ class LintSkillsTest(LintBase):
                        description="Does X. Does NOT do Z, which is template-intake, nor W, which is lab-b.")
         self.assertEqual(self.lint_skills(root), [])
 
+    def test_prose_tokens_after_does_not_never_raise_broken(self):
+        # "brain-wide" has this template's own prefix but is not a skill name.
+        root = self.brain_with_pair()
+        self.add_clean(root, "lab-a", "lab-b",
+                       description="Does X. Use when Y. Does NOT make brain-wide changes, which is lab-b.")
+        self.assertEqual(self.lint_skills(root), [])
+        self.add_clean(root, "lab-a", "lab-b",
+                       description="Does X. Does NOT touch brain-dump or lab-ghost; ask lab-b.")
+        self.assertEqual(self.lint_skills(root), [])
+
+    def test_only_a_named_skill_introduced_by_which_is_or_that_is_can_be_broken(self):
+        cases = {
+            "which is": "Does NOT make brain-wide changes or a brain-dump, which is lab-ghost.",
+            "that is": "Does NOT make brain-wide changes, that is lab-ghost.",
+            "backticks": "Does NOT do Z, which is `lab-ghost`.",
+            "list with or": "Does NOT do Z, which is lab-b or lab-ghost.",
+            "list with commas and backticks": "Does NOT do Z, which is `lab-b`, `lab-ghost` and `lab-a`.",
+            "list with and": "Does NOT do Z, that is lab-ghost and lab-b.",
+        }
+        for label, clause in cases.items():
+            with self.subTest(label):
+                root = self.brain_with_pair()
+                self.add_clean(root, "lab-a", "lab-b", description=f"Does X. {clause}")
+                findings = self.lint_skills(root)
+                self.assertEqual(self.shape(findings), [(BROKEN, "lab-a")], findings)
+                self.assertIn("lab-ghost", findings[0].message)
+                self.assertNotIn("brain-", findings[0].message)
+
+    def test_names_without_which_is_are_not_checked_for_existence(self):
+        root = self.brain_with_pair()
+        self.add_clean(root, "lab-a", "lab-b",
+                       description="Pairs with lab-ghost. Does NOT replace lab-b; unlike lab-ghost it is small.")
+        self.assertEqual(self.lint_skills(root), [])
+
+    def test_does_not_clause_needs_an_existing_skill_other_than_the_skill_itself(self):
+        cases = {
+            "names only itself": "Does X. Does NOT do Z, which is lab-a.",
+            "names only prose tokens": "Does X. Does NOT make brain-wide changes.",
+            "names only a skill that is not here and has no introducer": "Does X. Does NOT replace lab-ghost.",
+        }
+        for label, description in cases.items():
+            with self.subTest(label):
+                root = self.brain_with_pair()
+                self.add_clean(root, "lab-a", "lab-b", description=description)
+                findings = self.lint_skills(root)
+                self.assertEqual(self.shape(findings), [(GAP, "lab-a")], findings)
+
+    def test_naming_a_sibling_without_which_is_satisfies_the_clause(self):
+        root = self.brain_with_pair()
+        self.add_clean(root, "lab-a", "lab-b", description="Does X. Does NOT replace lab-b.")
+        self.assertEqual(self.lint_skills(root), [])
+
     def test_template_tokens_checked_in_the_template(self):
         root = self.fake_brain(prefix="lab", role="template")
         self.add_clean(root, "template-intake", "template-ghost")
@@ -257,7 +357,8 @@ class LintSkillsTest(LintBase):
 
     def test_adopted_skill_with_extra_frontmatter_keys(self):
         root = self.fake_brain()
-        self.write_raw(root, "lab-a", "---\nname: lab-a\ndescription: \"Does X. Does NOT do Z, which is lab-a.\"\n"
+        self.add_clean(root, "lab-b", "lab-a")
+        self.write_raw(root, "lab-a", "---\nname: lab-a\ndescription: \"Does X. Does NOT do Z, which is lab-b.\"\n"
                        "allowed-tools: [Read, Grep]\nmodel: sonnet\n---\n## Done when\n\n- ok\n")
         self.assertEqual(self.lint_skills(root), [])
 
@@ -371,9 +472,70 @@ class ParseFrontmatterTest(unittest.TestCase):
         self.assertEqual(meta, {"name": "lab-a", "description": "x"})
         self.assertEqual(body, "body\r\n")
 
-    def test_indented_continuations_comments_and_blank_lines_are_ignored(self):
-        meta, _ = self.parse("---\n# comment\nname: lab-a\n\ndescription: >\n  folded text\n  more\nkey_2-x: v\n---\n")
-        self.assertEqual(meta, {"name": "lab-a", "description": ">", "key_2-x": "v"})
+    def test_nested_mappings_comments_and_blank_lines_are_ignored(self):
+        meta, _ = self.parse("---\n# comment\nname: lab-a\n\nmetadata:\n  author: someone\n  tags: [a]\nkey_2-x: v\n---\n")
+        self.assertEqual(meta, {"name": "lab-a", "metadata": "", "key_2-x": "v"})
+
+    def test_folded_block_scalar_joins_lines_with_spaces(self):
+        meta, body = self.parse("---\nname: lab-a\ndescription: >\n  Does X. Use when Y.\n  Does NOT do Z.\n"
+                                "model: sonnet\n---\nbody\n")
+        self.assertEqual(meta, {"name": "lab-a", "description": "Does X. Use when Y. Does NOT do Z.\n",
+                                "model": "sonnet"})
+        self.assertEqual(body, "body\n")
+
+    def test_folded_strip_marker_drops_the_final_newline(self):
+        meta, _ = self.parse("---\ndescription: >-\n  Does X.\n  Does NOT do Z.\n---\n")
+        self.assertEqual(meta, {"description": "Does X. Does NOT do Z."})
+
+    def test_literal_block_scalar_keeps_newlines(self):
+        meta, _ = self.parse("---\ndescription: |\n  line one\n    indented more\n  line three\nname: n\n---\n")
+        self.assertEqual(meta, {"description": "line one\n  indented more\nline three\n", "name": "n"})
+        meta, _ = self.parse("---\ndescription: |-\n  line one\n  line two\n---\n")
+        self.assertEqual(meta, {"description": "line one\nline two"})
+
+    def test_block_scalar_blank_lines_and_keep_marker(self):
+        meta, _ = self.parse("---\na: >-\n  one\n\n  two\nb: |+\n  keep\n\n---\n")
+        self.assertEqual(meta, {"a": "one\ntwo", "b": "keep\n\n"})
+
+    def test_block_scalar_ends_at_the_next_unindented_line(self):
+        meta, _ = self.parse("---\na: >-\n  one\n  two\n# comment\nb: x\n---\n")
+        self.assertEqual(meta, {"a": "one two", "b": "x"})
+
+    def test_empty_block_scalar_and_header_comment(self):
+        meta, _ = self.parse("---\na: >-\nb: |  # note\n  text\n---\n")
+        self.assertEqual(meta, {"a": "", "b": "text\n"})
+
+    def test_block_scalar_with_crlf(self):
+        meta, _ = self.parse("---\r\ndescription: >-\r\n  one\r\n  two\r\nname: n\r\n---\r\n")
+        self.assertEqual(meta, {"description": "one two", "name": "n"})
+
+    def test_multi_line_double_quoted_value(self):
+        meta, _ = self.parse('---\ndescription: "Does X.\n  Use when Y.\n  Does NOT do Z."\nname: n\n---\n')
+        self.assertEqual(meta, {"description": "Does X. Use when Y. Does NOT do Z.", "name": "n"})
+
+    def test_multi_line_single_quoted_value_and_blank_line(self):
+        meta, _ = self.parse("---\ndescription: 'Does X.\n\n  Use when Y.'\n---\n")
+        self.assertEqual(meta, {"description": "Does X.\nUse when Y."})
+
+    def test_escaped_quote_at_a_line_end_does_not_close_the_value(self):
+        meta, _ = self.parse('---\na: "one \\"\n  two"\nb: x\n---\n')
+        self.assertEqual(meta, {"a": 'one \\" two', "b": "x"})
+
+    def test_quoted_value_that_never_closes_swallows_nothing(self):
+        meta, _ = self.parse('---\na: "never closes\nb: x\nc: y\n---\n')
+        self.assertEqual(meta, {"a": '"never closes', "b": "x", "c": "y"})
+
+    def test_doubled_single_quote_does_not_close_a_single_quoted_value(self):
+        meta, _ = self.parse("---\na: 'it''s\n  more'\nb: x\n---\n")
+        self.assertEqual(meta, {"a": "it''s more", "b": "x"})
+
+    def test_quoted_value_followed_by_a_comment_swallows_nothing(self):
+        meta, _ = self.parse('---\na: "quoted" # note\nb: "x"\nc: \'y\'\n---\n')
+        self.assertEqual(meta, {"a": "quoted", "b": "x", "c": "y"})
+
+    def test_quoted_value_with_trailing_text_is_kept_raw_and_swallows_nothing(self):
+        meta, _ = self.parse('---\na: "open\nb: "x" tail\nc: y\n---\n')
+        self.assertEqual(meta, {"a": '"open', "b": '"x" tail', "c": "y"})
 
     def test_empty_value_and_last_duplicate_wins(self):
         meta, _ = self.parse("---\nname:\ndescription: one\ndescription: two\n---\n")
@@ -451,6 +613,22 @@ class NamingTest(TempDirCase):
 
     def test_named_skills_with_no_prefixes(self):
         self.assertEqual(skills.named_skills("lab-a", set()), [])
+
+    def test_introduced_skills(self):
+        prefixes = {"brain", "lab"}
+        text = ("Does NOT make brain-wide changes, which is lab-a. Nor a brain-dump, that is `lab-b`, "
+                "`brain-sync` or lab-c and lab-d, nor lab-e. Also lab-f, which is template-x.")
+        self.assertEqual(skills.introduced_skills(text, prefixes),
+                         ["lab-a", "lab-b", "brain-sync", "lab-c", "lab-d", "lab-e"])
+
+    def test_introduced_skills_needs_the_exact_introducer_and_a_prefixed_name(self):
+        prefixes = {"brain", "lab"}
+        for text in ("this is lab-a", "Which is lab-a", "which isn't lab-a", "which is brain-wide-ish.md",
+                     "which is the lab-a skill", "that is docs/lab-a", "which is", ""):
+            with self.subTest(text):
+                self.assertEqual(skills.introduced_skills(text, prefixes), [])
+        self.assertEqual(skills.introduced_skills("which is brain-wide", prefixes), ["brain-wide"])  # shape only
+        self.assertEqual(skills.introduced_skills("which is lab-a", set()), [])
 
     def test_owned_skills(self):
         def skill(name):

@@ -10,7 +10,8 @@ from typing import Callable, Dict, List, Set
 from . import config, paths
 from .config import Config
 from .report import BROKEN, GAP, ORPHAN, Finding, emit, exit_code
-from .skills import Skill, deep_skill_files, list_skills, named_skills, skill_prefixes, skills_dir
+from .skills import (Skill, deep_skill_files, introduced_skills, list_skills, named_skills, skill_prefixes,
+                     skills_dir)
 
 DESCRIPTION_LIMIT = 1024  # characters Claude Code accepts in a skill's description
 BODY_LINE_LIMIT = 150  # lines after the frontmatter, past which a skill wants splitting
@@ -96,10 +97,13 @@ def _description_findings(skill: Skill, known: Set[str], prefixes: Set[str]) -> 
         found.append(Finding(BROKEN, skill.name,
                              f"description is {len(description)} characters (limit {DESCRIPTION_LIMIT})"))
     clause = _DOES_NOT.search(description)
-    named = named_skills(description[clause.end():], prefixes) if clause else []
-    if not named:
+    after = description[clause.end():] if clause else ""
+    # Only "which is X" / "that is X" claims X is a skill, so prose like "brain-wide" is never BROKEN.
+    ghosts = [n for n in introduced_skills(after, prefixes) if n not in known]
+    siblings = [n for n in named_skills(after, prefixes) if n in known and n != skill.name]
+    if not siblings and not ghosts:
         found.append(Finding(GAP, skill.name, "description has no 'Does NOT' clause naming a sibling skill"))
-    for ghost in (n for n in named if n not in known):
+    for ghost in ghosts:
         found.append(Finding(BROKEN, skill.name, f"'Does NOT' clause names {ghost}, which does not exist"))
     return found
 

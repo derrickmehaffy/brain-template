@@ -13,7 +13,7 @@ Eight meta skills ship in every brain:
 | `brain-retro` | When a skill went wrong or work fit no skill: log it and propose the one change that fixes it; review which skills go unused (`_meta/brain usage`). |
 | `brain-upstream` | Record a proposed change to a template-owned file for the template to take in. |
 | `brain-sync` | Run the checks, commit with a scoped subject, pull with rebase, push when asked. |
-| `brain-write-mod` | Make a mod (a pane, band, command or tool-call hook inside Claude Code) from the kit in `_meta/modkit/`: read-only by default, tested, linked from `mods/<prefix>-<name>/`. See [Building mods](../guides/building-mods.md). |
+| `brain-write-mod` | Make a mod (a pane, band, command or tool-call hook inside Claude Code) from the kit in `_meta/modkit/`: read-only by default, tested, kept in `.claude/mods/<prefix>-<name>/`. See [Building mods](../guides/building-mods.md). |
 | `brain-setup` | Turn a copy of the template into a brain; in a brain, explain it, repair what `doctor` reports and run `update`. |
 
 Two skills work on the template itself and are never copied into a brain:

@@ -59,8 +59,8 @@ never be committed), `--python` and `--packages {stdlib-only,allowed}` for the b
 
 | Command | What it does |
 | --- | --- |
-| `mods list` | The brain's mods in `mods/`, each with its link and whether its kit copy is current. |
-| `mods new NAME [--dry-run]` | Start `mods/<prefix>-NAME/` from the kit's starter, with the kit copied in and the link that loads it. |
+| `mods list` | The brain's mods in `.claude/mods/`, each with its link and whether its kit copy is current. |
+| `mods new NAME [--dry-run]` | Start `.claude/mods/<prefix>-NAME/` from the kit's starter, with the kit copied in and the link that loads it. |
 | `mods sync [--check] [--dry-run]` | Put the kit back into every mod's `hooks/kit/`, or (`--check`) list the copies that differ. |
 | `mods link [NAME…] [--dry-run]` | Make a missing `.claude/skills/<name>` link; never replaces anything else. |
 | `mods check [NAME…]` | Run `claude plugin validate` and `claude plugin test` on each mod (needs the `claude` CLI). |

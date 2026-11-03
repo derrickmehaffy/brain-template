@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="472" viewBox="0 0 1200 472" role="img" aria-labelledby="title desc">
   <title id="title">How a brain's mod is built and loaded</title>
-  <desc id="desc">Three steps. The kit: the template's mod kit in _meta/modkit, which update refreshes. Your mod: mods new copies the starter and the kit into mods/lab-health, where Claude writes the mod and its tests. Every session: a link in .claude/skills loads the mod in each session started at the brain, and reloads it when a file is saved. Underneath: mods sync copies a new kit into every mod, lint warns about a stale copy, and brain-sync commits.</desc>
+  <desc id="desc">Three steps. The kit: the template's mod kit in _meta/modkit, which update refreshes. Your mod: mods new copies the starter and the kit into .claude/mods/lab-health, where Claude writes the mod and its tests. Every session: a link in .claude/skills loads the mod in each session started at the brain, and reloads it when a file is saved. Underneath: mods sync copies a new kit into every mod, lint warns about a stale copy, and brain-sync commits.</desc>
   <style>
     .serif { font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', 'DejaVu Serif', serif; }
     .sans { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, 'Liberation Sans', sans-serif; }
@@ -50,7 +50,7 @@
   <text x="464" y="130" class="sans num" text-anchor="middle">2</text>
   <text x="492" y="134" class="serif head">Your mod</text>
   <text class="mono tree">
-    <tspan x="450" y="176" fill="#1E1D1A">mods/lab-health/</tspan>
+    <tspan x="450" y="176" fill="#1E1D1A">.claude/mods/lab-health/</tspan>
     <tspan x="466" y="200">hooks/register.tsx</tspan>
     <tspan x="466" y="222">hooks/kit/  <tspan fill="#8A8274">a copy</tspan></tspan>
     <tspan x="466" y="244">tests/</tspan>

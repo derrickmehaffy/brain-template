@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import shutil
 import stat
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -72,6 +74,31 @@ class AdoptCase(TempDirCase):
         self.assertEqual(deep_snapshot(self.template), before_template)
         return r
 
+    @contextlib.contextmanager
+    def env_with(self, **extra):
+        """Run adopt (and only adopt) with more in the environment: run_brain hands self.env to the child."""
+        saved, self.env = self.env, dict(self.env, **extra)
+        try:
+            yield
+        finally:
+            self.env = saved
+
+    def out(self, r) -> str:
+        return r.stdout + r.stderr
+
+    def finding(self, r, severity, subject, *words):
+        """The `<severity> <subject>: <message>` line of the output that carries all of `words`, or a failure."""
+        for line in self.lines(r):
+            if re.match(re.escape(severity) + " +" + re.escape(subject) + ": ", line) and all(w in line for w in words):
+                return line
+        self.fail(f"no {severity} line for {subject} with {words} in:\n{r.stdout}{r.stderr}")
+
+    def git_add_dry_run(self, cwd=None):
+        """What `git add -A --dry-run` says in the folder: (returncode, the paths it would add, stderr)."""
+        done = subprocess.run(["git", "add", "-A", "--dry-run"], cwd=str(cwd or self.ws), env=self.env,
+                              stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8")
+        return done.returncode, set(re.findall(r"^add '(.*)'$", done.stdout, re.M)), done.stderr
+
     def read_json(self, path):
         return json.loads(Path(path).read_text(encoding="utf-8"))
 
@@ -119,8 +146,8 @@ class DryRunTest(AdoptCase):
         r = self.adopted("--dry-run")
         self.assertEqual(deep_snapshot(self.ws), before)
         self.assertIn("docs/vendored: no remote, 2 unpushed", [line.strip() for line in self.lines(r)])
-        self.assertNotIn("docs/vendored/", r.stdout)
-        self.assertNotIn("docs/vendored/log.txt", r.stdout)
+        self.finding(r, "WARN", "docs/vendored", "a repository the allowlist lets through")
+        self.assertFalse(any("docs/vendored" in line for line in self.lines(r) if line.startswith("    ")), r.stdout)
 
     def test_dry_run_still_refuses(self):
         (self.ws / "brain.json").write_text("{}\n", encoding="utf-8")
@@ -323,7 +350,9 @@ class RealRunTest(AdoptCase):
         self.git(self.ws, "init", "-q")
         shutil.rmtree(str(self.ws / ".git" / "hooks"))
         (self.ws / ".git" / "hooks").write_text("in the way\n", encoding="utf-8")  # the guard cannot be installed
+        (self.ws / ".claude" / "settings.json").write_text("{ not json", encoding="utf-8")  # and a warning to keep
         r = self.adopt()
+        self.finding(r, "WARN", ".claude/settings.json", "not valid JSON")  # still said when the run stops
         self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
         self.assertNotIn("Traceback", r.stderr)
         self.assertIn("stopped", r.stderr)
@@ -421,13 +450,12 @@ class RealRunTest(AdoptCase):
     def test_settings_of_the_wrong_shape_refuse_before_anything_is_written(self):
         (self.ws / ".claude" / "settings.json").write_text("[1, 2]\n", encoding="utf-8")
         r = self.refused()
-        self.assertIn("settings.json", r.stderr)
+        self.finding(r, "BLOCK", ".claude/settings.json")
 
     def test_a_malformed_managed_block_refuses_before_anything_is_written(self):
         (self.ws / "CLAUDE.md").write_text(managed.MD_BEGIN + "\nhalf a block\n", encoding="utf-8")
         r = self.refused()
-        self.assertIn("CLAUDE.md", r.stderr)
-        self.assertIn("end marker", r.stderr)
+        self.finding(r, "BLOCK", "CLAUDE.md", "end marker")
         self.assertFalse((self.template / "local" / "brains.txt").exists())
 
     def test_no_commit(self):
@@ -581,12 +609,12 @@ class RefusalTest(AdoptCase):
                 make(folder / name)
                 before_elsewhere = deep_snapshot(elsewhere)
                 r = self.refused(dest=folder)
-                self.assertIn(name, r.stderr)
+                self.finding(r, "BLOCK", name)
                 self.assertEqual(deep_snapshot(elsewhere), before_elsewhere)
 
     def test_refuses_when_git_hooks_path_is_set(self):
         self.git(self.ws, "config", "--file", self.env["GIT_CONFIG_GLOBAL"], "core.hooksPath", "elsewhere")
-        self.assertIn("core.hooksPath", self.refused().stderr)
+        self.finding(self.refused(), "BLOCK", "core.hooksPath")
 
     def test_refuses_a_folder_whose_repo_has_another_pre_commit_hook(self):
         self.git(self.ws, "init", "-q")
@@ -594,7 +622,7 @@ class RefusalTest(AdoptCase):
         hook_file.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         hook_file.chmod(0o755)
         r = self.refused()
-        self.assertIn("pre-commit", r.stderr)
+        self.finding(r, "BLOCK", "pre-commit")
         self.assertEqual(hook_file.read_text(encoding="utf-8"), "#!/bin/sh\nexit 0\n")
 
 
@@ -622,6 +650,235 @@ class NestedRepoSafetyTest(AdoptCase):
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertTrue((self.ws / ".git").is_dir())
         self.assertEqual(self.git(other, "ls-files"), "")
+
+
+class AllProblemsTest(AdoptCase):
+    def test_every_problem_is_reported_at_once_after_the_inventory(self):
+        elsewhere = self.tmp / "elsewhere"
+        elsewhere.mkdir()
+        (self.ws / "docs").rename(elsewhere / "docs")
+        (self.ws / "docs").symlink_to(elsewhere / "docs", target_is_directory=True)  # adopt would write through it
+        (self.ws / "CLAUDE.md").write_text(managed.MD_BEGIN + "\nhalf a block\n", encoding="utf-8")
+        (self.ws / "brain.local.json").write_text("{}\n", encoding="utf-8")
+        self.git(self.ws, "config", "--file", self.env["GIT_CONFIG_GLOBAL"], "core.hooksPath", "elsewhere")
+        before_elsewhere = deep_snapshot(elsewhere)
+        for flags in ([], ["--dry-run"]):
+            with self.subTest(flags=flags):
+                r = self.refused(*flags)
+                lines = self.lines(r)
+                blocks = [line for line in lines if line.startswith("BLOCK")]
+                subjects = sorted(re.match(r"BLOCK +(\S+):", line).group(1) for line in blocks)
+                self.assertEqual(subjects, ["CLAUDE.md", "brain.local.json", "core.hooksPath", "docs"], r.stdout)
+                self.assertLess(lines.index("root git repo: no"), lines.index(blocks[0]))  # the inventory came first
+                self.assertIn("nested git repos: 3", [line.strip() for line in lines])
+                self.assertIn("nothing was written", r.stderr)
+        self.assertEqual(deep_snapshot(elsewhere), before_elsewhere)
+
+    def test_a_dry_run_that_will_be_refused_still_shows_the_preview_when_it_can(self):
+        (self.ws / "brain.local.json").write_text("{}\n", encoding="utf-8")
+        r = self.refused("--dry-run")
+        self.assertTrue(any(line.startswith("staging preview") for line in self.lines(r)), r.stdout)
+        self.assertNotRegex(r.stdout, r"adopt would write \d+ files")  # what a refused run would write is moot
+        (self.ws / ".gitignore").write_text(managed.GI_BEGIN + "\nhalf a block\n", encoding="utf-8")
+        r = self.refused("--dry-run")
+        self.finding(r, "BLOCK", ".gitignore", "end marker")
+        self.assertFalse(any(line.startswith("staging preview: what") for line in self.lines(r)), r.stdout)
+
+
+class BlockAlreadyThereTest(AdoptCase):
+    def test_a_complete_managed_block_is_refused_not_replaced(self):
+        cases = {"CLAUDE.md": "<!-- brain:begin -->\nthe old wording\n<!-- brain:end -->\nmine\n",
+                 ".gitignore": "# <!-- brain:begin -->\nold rules\n# <!-- brain:end -->\nmine\n"}
+        for rel, text in cases.items():
+            for flags in ([], ["--dry-run"]):
+                with self.subTest(rel=rel, flags=flags):
+                    original = (self.ws / rel).read_bytes()
+                    (self.ws / rel).write_text(text, encoding="utf-8")
+                    r = self.refused(*flags)  # the snapshot inside proves nothing between the markers was touched
+                    self.finding(r, "BLOCK", rel, "managed block")
+                    self.assertNotIn(f"ok     {rel}: kept", r.stdout)  # a dry run no longer says it keeps it
+                    (self.ws / rel).write_bytes(original)
+
+
+class LinksAndExistingFilesTest(AdoptCase):
+    def test_a_link_above_an_edited_file_is_refused(self):
+        # .claude points outside and already holds the brain-* skills and a settings.json: nothing under it is
+        # new except the merge into settings.json, which would be written into the other folder.
+        elsewhere = self.tmp / "elsewhere"
+        outside = elsewhere / "dot-claude"
+        (outside / "skills").mkdir(parents=True)
+        for skill in sorted((TEMPLATE_ROOT / ".claude" / "skills").glob("brain-*")):
+            shutil.copytree(str(skill), str(outside / "skills" / skill.name))
+        (outside / "settings.json").write_text('{"model": "mine"}\n', encoding="utf-8")
+        folder = self.tmp / "linked claude"
+        folder.mkdir()
+        (folder / ".claude").symlink_to(outside, target_is_directory=True)
+        before = deep_snapshot(elsewhere)
+        r = self.refused(dest=folder)
+        self.finding(r, "BLOCK", ".claude", "link")
+        self.assertEqual(deep_snapshot(elsewhere), before)
+        self.assertEqual((outside / "settings.json").read_text(encoding="utf-8"), '{"model": "mine"}\n')
+
+    def test_a_brain_local_json_or_manifest_that_is_there_is_refused(self):
+        for rel, text in (("brain.local.json", '{"template": {"source": "somewhere"}}\n'),
+                          ("_meta/MANIFEST.sha256", "not ours\n")):
+            with self.subTest(rel=rel):
+                target = self.ws / rel
+                target.parent.mkdir(exist_ok=True)
+                target.write_text(text, encoding="utf-8")
+                r = self.refused()
+                self.finding(r, "BLOCK", rel, "write over")
+                target.unlink()
+
+
+class OwnFilesAndUnreadableTest(AdoptCase):
+    def test_the_persons_own_files_in_the_templates_folders_are_reported(self):
+        (self.ws / "_meta").mkdir()
+        (self.ws / "_meta" / "mine.py").write_text("print('mine')\n", encoding="utf-8")
+        mine = self.ws / ".claude" / "skills" / "brain-mine" / "SKILL.md"
+        mine.parent.mkdir(parents=True)
+        mine.write_text("---\nname: brain-mine\ndescription: x\n---\nmine\n", encoding="utf-8")
+        for flags in (["--dry-run"], []):
+            with self.subTest(flags=flags):
+                r = self.adopted(*flags)
+                self.finding(r, "WARN", "_meta/mine.py", "update")
+                self.finding(r, "WARN", ".claude/skills/brain-mine/SKILL.md", "update")
+        self.assertEqual(manifest.local_edits(self.ws), [".claude/skills/brain-mine/SKILL.md", "_meta/mine.py"])
+        self.assertEqual((self.ws / "_meta" / "mine.py").read_text(encoding="utf-8"), "print('mine')\n")
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root can read any folder")
+    def test_a_folder_that_cannot_be_read_is_a_warning_not_a_silent_skip(self):
+        locked = self.ws / "Mods" / "locked"
+        locked.mkdir(parents=True)
+        (locked / "x.txt").write_text("x\n", encoding="utf-8")
+        locked.chmod(0)
+        self.addCleanup(locked.chmod, 0o755)
+        r = self.adopted("--dry-run")
+        self.finding(r, "WARN", "Mods/locked", "cannot be read")
+        inv = inventory.scan(self.ws)
+        self.assertEqual(inv.unreadable, ["Mods/locked"])
+
+
+class EmbeddedRepoTest(AdoptCase):
+    """What `git add -A --dry-run` does is the authority; the code's own `ls-files -o` is the thing under test."""
+
+    def test_repos_the_allowlist_lets_through_are_called_out(self):
+        fixtures.make_repo(self.ws / "docs" / "vendored", self.env, commits=1)
+        fixtures.make_repo(self.ws / ".claude" / "skills" / "cloned", self.env, commits=2)
+        dry = self.adopted("--dry-run")
+        real = self.adopted()
+        for r in (dry, real):
+            for rel in ("docs/vendored", ".claude/skills/cloned"):
+                line = self.finding(r, "WARN", rel, "a repository the allowlist lets through", "embedded repo",
+                                    f"add /{rel}/ below the managed block")
+                self.assertIn("guard refuses", line)
+            self.assertFalse(any("docs/vendored/" in line or ".claude/skills/cloned/" in line
+                                 for line in self.lines(r) if line.startswith("    ")), r.stdout)  # not a file
+        code, adds, stderr = self.git_add_dry_run()
+        self.assertEqual(code, 0, stderr)
+        warned = set(re.findall(r"adding embedded git repository: (\S+)", stderr))
+        self.assertEqual(warned, {"docs/vendored", ".claude/skills/cloned"})  # git agrees with the warnings
+        listed = {rel for rel, _ in inventory.staging_preview(self.ws, (self.ws / ".gitignore").read_text(
+            encoding="utf-8"))}
+        self.assertEqual(adds, listed | {rel + "/" for rel in warned})  # and nothing git would add is unlisted
+
+    def test_a_repo_with_no_commit_makes_git_add_fail_and_is_said_to(self):
+        fixtures.make_repo(self.ws / "docs" / "empty", self.env, commits=0)
+        for flags in (["--dry-run"], []):
+            with self.subTest(flags=flags):
+                r = self.adopted(*flags)
+                line = self.finding(r, "BLOCK", "docs/empty", "no commit", "add /docs/empty/ below the managed block")
+                self.assertIn("fails", line)
+        code, _adds, stderr = self.git_add_dry_run()
+        self.assertEqual(code, 128)  # git add -A fails outright, as the line says
+        self.assertIn("'docs/empty/' does not have a commit checked out", stderr)
+
+    def test_a_repo_the_root_repo_already_tracks_as_a_submodule_is_not_called_out(self):
+        sub = fixtures.make_repo(self.ws / "docs" / "sub", self.env, commits=1)
+        self.git(self.ws, "init", "-q")
+        sha = self.git(sub, "rev-parse", "HEAD").strip()
+        self.git(self.ws, "update-index", "--add", "--cacheinfo", f"160000,{sha},docs/sub")
+        r = self.adopted("--dry-run")
+        self.assertFalse(any(line.startswith(("WARN", "BLOCK")) and "docs/sub" in line for line in self.lines(r)),
+                         r.stdout)
+        _code, _adds, stderr = self.git_add_dry_run()
+        self.assertNotIn("embedded git repository: docs/sub", stderr)  # git does not call it out either
+
+    def test_every_path_git_add_would_stage_is_in_the_list(self):
+        (self.ws / "docs" / "two words.md").write_text("x\n", encoding="utf-8")
+        (self.ws / "docs" / "deeper").mkdir()
+        (self.ws / "docs" / "deeper" / "a.md").write_text("x\n", encoding="utf-8")
+        self.adopted()
+        _code, adds, _stderr = self.git_add_dry_run()
+        pv = inventory.preview(self.ws, (self.ws / ".gitignore").read_text(encoding="utf-8"), False)
+        self.assertEqual(adds, {rel for rel, _ in pv.files} | {rel + "/" for rel, _ in pv.embedded})
+
+
+class RootRepoTest(AdoptCase):
+    def tracked_workspace(self):
+        (self.ws / "Mods").mkdir()
+        (self.ws / "Mods" / "a.txt").write_text("a\n", encoding="utf-8")
+        self.git(self.ws, "init", "-q")
+        self.git(self.ws, "add", ".env", "Mods/a.txt", "docs/notes.md")
+        self.git(self.ws, "commit", "-q", "-m", "their history")
+        (self.ws / "Mods" / "a.txt").write_text("a changed\n", encoding="utf-8")  # git add -A would stage this
+
+    def test_a_root_repo_shows_what_it_already_tracks_outside_the_allowlist(self):
+        self.tracked_workspace()
+        for flags in (["--dry-run"], []):
+            with self.subTest(flags=flags):
+                r = self.adopted(*flags)
+                env_line = self.finding(r, "BLOCK", ".env", "tracked", "guard refuses an env file")
+                self.assertNotIn("fixture-value", env_line)
+                self.finding(r, "WARN", "Mods/a.txt", "tracked", "managed block")
+                self.assertNotIn("changes nothing", r.stdout)  # the old note was false
+                self.assertTrue(any("already a repository" in line for line in self.lines(r)), r.stdout)
+        _code, adds, _stderr = self.git_add_dry_run()
+        self.assertIn("Mods/a.txt", adds)  # git does stage the change to a tracked file the ignore rules hide
+        pv = inventory.preview(self.ws, (self.ws / ".gitignore").read_text(encoding="utf-8"), True)
+        shown = {rel for rel, _ in pv.files}
+        self.assertTrue(adds <= shown | {rel + "/" for rel, _ in pv.embedded}, (adds, shown))
+        self.assertEqual(sorted(pv.tracked), [".env", "Mods/a.txt"])
+
+    def test_an_untracked_root_has_none_of_that(self):
+        r = self.adopted()
+        self.assertFalse(any("tracked" in line for line in self.lines(r)), r.stdout)
+
+
+class GitTemplateHookTest(AdoptCase):
+    """A hook that `git init` itself would put in the new repository must stop adopt before it writes anything,
+    or the run would end half done (brain.json written, so adopt then refuses to run again)."""
+
+    def make_template_dir(self):
+        folder = self.tmp / "git templates"
+        (folder / "hooks").mkdir(parents=True)
+        hook_file = folder / "hooks" / "pre-commit"
+        hook_file.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        hook_file.chmod(0o755)
+        return folder
+
+    def test_a_pre_commit_hook_from_GIT_TEMPLATE_DIR_is_refused_up_front(self):
+        templates = self.make_template_dir()
+        for flags in (["--dry-run"], []):
+            with self.subTest(flags=flags), self.env_with(GIT_TEMPLATE_DIR=str(templates)):
+                r = self.refused(*flags)
+                self.finding(r, "BLOCK", "pre-commit", "git init")
+
+    def test_a_pre_commit_hook_from_init_templateDir_is_refused_up_front(self):
+        templates = self.make_template_dir()
+        self.git(self.ws, "config", "--file", self.env["GIT_CONFIG_GLOBAL"], "init.templateDir", str(templates))
+        for flags in (["--dry-run"], []):
+            with self.subTest(flags=flags):
+                self.finding(self.refused(*flags), "BLOCK", "pre-commit", "git init")
+
+    def test_a_template_folder_without_a_hook_is_fine_and_leaves_nothing_behind(self):
+        templates = self.tmp / "plain templates"
+        (templates / "info").mkdir(parents=True)
+        with self.env_with(GIT_TEMPLATE_DIR=str(templates)):
+            self.adopted("--dry-run")
+            self.assertEqual(os.listdir(str(self.tmp / "os-tmp")), [])  # the trial repository is gone
+            self.adopted()
+        self.assertEqual((self.ws / ".git" / "hooks" / "pre-commit").read_text(encoding="utf-8"), hook.SHIM)
 
 
 if __name__ == "__main__":

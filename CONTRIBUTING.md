@@ -54,7 +54,8 @@ new route a person takes, not for every branch of the code.
 
 - One scope per commit, with a short, imperative subject: `meta(<area>)`, `skill(<name>)`,
   `docs(<area>)` or `test(<area>)`.
-- Open pull requests against `main`. CI runs the tests on Linux and macOS.
+- Open pull requests against `main`. CI runs the tests on Linux and macOS, and a pull request
+  merges (squash or rebase) once they pass; `main` takes no force-push.
 
 ## Licence
 

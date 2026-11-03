@@ -3,6 +3,9 @@ contact_links:
   - name: Setting up your first brain
     url: https://github.com/derrickmehaffy/brain-template/blob/main/docs/guides/start-here.md
     about: From nothing to a working brain, with Claude doing the technical parts.
+  - name: Ask a question
+    url: https://github.com/derrickmehaffy/brain-template/discussions
+    about: How to do something with a brain, or an idea to talk through before it is a suggestion.
   - name: Report a vulnerability
     url: https://github.com/derrickmehaffy/brain-template/security/advisories/new
     about: Privately, never in a public issue.

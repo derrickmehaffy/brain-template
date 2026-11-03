@@ -1,6 +1,6 @@
 ---
 name: brain-retro
-description: "Record what went wrong when a skill failed on real work, or when work fit no skill, and propose the one change that fixes it: an edit to the brain's own skill, a missing gate rule, a missing router rule, or an upstream suggestion. Use when a skill just went wrong on real work, when output was written without its skill running, when the same kind of input went to different skills, or when a router fell through to its default. Does NOT write or edit the skill itself, which is brain-write-skill, and does NOT edit template-owned files, which is brain-upstream."
+description: "Record what went wrong when a skill failed on real work, or when work fit no skill, or which skills go unused, and propose the one change that fixes it: an edit to the brain's own skill, a missing gate rule, a missing router rule, or an upstream suggestion. Use when a skill just went wrong on real work, when output was written without its skill running, when the same kind of input went to different skills, when a router fell through to its default, or to review which skills are used. Does NOT write or edit the skill itself, which is brain-write-skill, and does NOT edit template-owned files, which is brain-upstream."
 ---
 
 # brain-retro
@@ -33,6 +33,9 @@ kind of input was routed differently, or a router returned its default; nothing 
 - The same kind of input went to different skills on different occasions.
 - A router fell through to its `default` (which is this skill unless the brain says otherwise), or
   work came in that no skill fits.
+- A periodic look at what the brain is used for: `_meta/brain usage` lists each skill's runs and the
+  skills that never ran. A skill unused for months is a candidate to merge or remove, and the
+  busiest are where an improvement pays most; propose one change for the person, as below.
 
 Run it right after the failure, on what actually happened. A retro about a hypothetical has no
 evidence to test the fix against.

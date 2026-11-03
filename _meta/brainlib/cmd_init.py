@@ -40,6 +40,10 @@ TEMPLATE_ONLY = [".claude/skills/template-*", "tests", "docs", "CLAUDE.md", "REA
                  ".claude/settings.json", "brain.json", "LICENSE", "CONTRIBUTING.md", "SECURITY.md",
                  "CODE_OF_CONDUCT.md", ".github"]
 
+# The template's guides, their pictures and the reference they link to: template-only, but `--keep-guides` leaves
+# them in the brain for the person to read while it is new; they stay until the person asks for them to go
+# (brain-setup removes them).
+GUIDES = ("docs/guides", "docs/images", "docs/reference")
 HISTORY_DIR = ".brain/template-history.git"
 SET_ASIDE_DIR = ".brain/template-only"  # where a folder with no repository keeps the template-only paths
 # How the history of the copy is handled.
@@ -65,6 +69,9 @@ def add_arguments(parser) -> None:
     parser.add_argument("--private", action="append", default=[], metavar="PATTERN",
                         help="a regular expression that must never be committed; written to .brain-private "
                              "(repeatable)")
+    parser.add_argument("--keep-guides", action="store_true",
+                        help="keep the template's guides (docs/guides, docs/images, docs/reference) in the brain, listed in "
+                             "docs/README.md, until the person asks for them to go")
     parser.add_argument("--dry-run", action="store_true",
                         help="list what would be removed and written, and change nothing")
 
@@ -293,11 +300,14 @@ def _foreign_hook_problem(root: Path) -> Optional[str]:
     return None
 
 
-def _template_only_present(root: Path) -> List[str]:
-    """The `TEMPLATE_ONLY` paths that exist, as `/`-separated paths from the root, sorted within each entry."""
+def _template_only_present(root: Path, keep_guides: bool = False) -> List[str]:
+    """The `TEMPLATE_ONLY` paths that exist, as `/`-separated paths from the root, sorted within each entry. With
+    `keep_guides`, `docs` is listed by what it holds, less the `GUIDES`."""
     found: List[str] = []
     for entry in TEMPLATE_ONLY:
-        if _GLOB_CHARS.search(entry):
+        if entry == "docs" and keep_guides and (root / "docs").is_dir() and not (root / "docs").is_symlink():
+            found.extend(f"docs/{p.name}" for p in sorted((root / "docs").iterdir()) if f"docs/{p.name}" not in GUIDES)
+        elif _GLOB_CHARS.search(entry):
             matches = glob.glob(os.path.join(glob.escape(str(root)), *entry.split("/")))
             found.extend(sorted(os.path.relpath(match, str(root)).replace(os.sep, "/") for match in matches))
         elif os.path.lexists(str(root / entry)):
@@ -418,13 +428,17 @@ _HISTORY_LINE = {
 }
 
 
-def _dry_run(root: Path, plan: _Plan, mode: str, present: List[str], written: List[str], message: str) -> int:
+def _dry_run(root: Path, plan: _Plan, mode: str, present: List[str], written: List[str], message: str,
+             keep_guides: bool) -> int:
     print(f"dry run: nothing is changed. init would turn {root} into a brain from template v{plan.version}:")
     print(f"  history: {_HISTORY_LINE[mode]}")
     for rel in present:
         print(f"  move {rel} to {SET_ASIDE_DIR}/{rel}" if mode == CREATE else f"  remove {rel}")
     for rel in written:
         print(f"  write {rel}")
+    if keep_guides:
+        print(f"  keep {', '.join(rel for rel in GUIDES if (root / rel).is_dir())} (the template's guides), "
+              "listed in docs/README.md")
     print(f"then it would install the pre-commit guard and make the first commit:\n  {message}")
     print("rehearsed in a temporary copy, since discarded: the whole conversion, first commit and pre-commit guard "
           "included, went through")
@@ -483,6 +497,8 @@ def _convert(target: Path, mode: str, plan: _Plan, present: List[str], args) -> 
         else:
             _remove(target, rel)
     install.write_tree(target, plan.filled, overwrite=False)
+    if args.keep_guides:
+        _list_kept_guides(target, plan.raw)
     config.write_raw(target, plan.raw)
     if plan.local_source:
         install.write_local(target, plan.local_source)
@@ -493,6 +509,22 @@ def _convert(target: Path, mode: str, plan: _Plan, present: List[str], args) -> 
     install.write_practices_index(target)
     hook.install(target)
     return warnings
+
+
+def _list_kept_guides(target: Path, raw: dict) -> None:
+    """Name the kept guides in the new `docs/README.md`, so `doctor` finds every docs folder indexed."""
+    kept = [rel for rel in GUIDES if (target / rel).is_dir()]
+    if not kept:
+        return
+    source = (raw.get("template") or {}).get("source")
+    online = f" The latest are online at {source}." if source else ""
+    index = target / "docs" / "README.md"
+    text = index.read_text(encoding="utf-8")
+    index.write_text(text.rstrip("\n") + "\n\nKept from the template at setup, until you ask Claude to remove them:\n\n"
+                     "- `guides/`: the template's guides: setting up, the four shapes of brain, things to say."
+                     f"{online}\n- `images/`: the guides' pictures\n"
+                     "- `reference/`: how the harness works: commands, the gate, the guard, updates\n",
+                     encoding="utf-8")
 
 
 def _git_detail(exc: gitutil.GitError) -> str:
@@ -562,7 +594,7 @@ def run(args) -> int:
         if problem:
             return _refuse(problem)
         plan = _plan(args, root, cfg, mode)
-        present = _template_only_present(root)
+        present = _template_only_present(root, args.keep_guides)
         written = _paths_written(plan, bool(args.private))
         problem = _link_problem(root, present + written) or _links_back_problem(root)
         if problem:
@@ -575,7 +607,7 @@ def run(args) -> int:
         return _refuse(f"rehearsed in a temporary copy, the conversion would fail, so nothing was changed:\n{problem}")
 
     if args.dry_run:
-        return _dry_run(root, plan, mode, present, written, message)
+        return _dry_run(root, plan, mode, present, written, message, args.keep_guides)
 
     try:
         warnings = _convert(root, mode, plan, present, args)

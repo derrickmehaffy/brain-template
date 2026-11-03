@@ -25,14 +25,14 @@ local edit to a template-owned file; when it came from a failure, `brain-retro` 
 
 - A `brain-*` skill or the harness fell short on real work, usually handed on by `brain-retro`.
 - `brain-write-skill` or `brain-write-script` found that the change belongs in the template.
-- `update` refused because of a local edit, or `doctor` warns that a template-owned file differs
-  from `_meta/MANIFEST.sha256`.
+- `update` refused because of a local edit, or `doctor` warns that template-owned files differ
+  from `_meta/MANIFEST.sha256` (an edited, a missing, or an extra file).
 - The person asks which suggestions have been answered.
 
 Template-owned means `_meta/**`, `.claude/skills/brain-*/**`, the managed blocks between the
 `brain:begin` and `brain:end` markers in `CLAUDE.md` and `.gitignore`, and the gate hooks and `.env`
-deny entries in `.claude/settings.json`. Everything else is the brain's own; a skill of its own is
-fixed through `brain-write-skill`.
+deny entries in `.claude/settings.json`; the rest of those three files is the brain's own, like
+everything else. A skill of the brain's own is fixed through `brain-write-skill`.
 
 ## Record a suggestion
 
@@ -66,13 +66,21 @@ fixed through `brain-write-skill`.
    knows the patterns someone wrote down, so reread the entry yourself before saving it.
 5. **Show the person the entry.**
 6. **Restore the local edit**, if there is one, **only after the entry is written and only on a
-   yes**: `git checkout -- <file>`, or for an edit already committed,
-   `git checkout <installing commit> -- <file>`. The entry comes first because until then the edit
-   is the only copy of the proposal. Restore it at all because `update` refuses while a
-   template-owned file differs from what was installed, and would overwrite it anyway. If the person
-   needs the edit for now, leave it, and say that `update` stays blocked until it is restored. After
-   a restore, `_meta/brain doctor --quick` shows no manifest edit.
-7. **Hand to `brain-sync`** to commit.
+   yes**. The entry comes first because until then the edit is the only copy of the proposal; restore
+   at all because `update` refuses while template-owned files differ from what was installed.
+   - An edited or missing file under `_meta/` or a `brain-*` skill: `git checkout -- <file>`, or
+     from the installing commit, `git checkout <installing commit> -- <file>`.
+   - An extra file there that the template never shipped (a hand-made `brain-*` skill folder, say):
+     remove it, with `git rm -r` when it is tracked. Checking it out would do nothing.
+   - A managed block, or the gate and `.env` entries in `.claude/settings.json`: never check out the
+     whole file, which would throw away the brain's own part. Put the block back between its markers
+     from `_meta/managed/CLAUDE.block.md` or `_meta/managed/gitignore.block`, or run the update
+     (`brain-setup`), which rewrites the blocks and the settings entries.
+
+   If the person needs the edit for now, leave it, and say `update` stays blocked meanwhile. After a
+   restore, `_meta/brain doctor --quick` shows no manifest edit.
+7. **Hand to `brain-sync`** to commit: the entry as `docs(upstream)`, a restore alone as
+   `meta(brain): restore <file>`.
 
 ## See the answers
 
@@ -88,6 +96,7 @@ them here: the flip records that this brain has taken the answer in, which is th
 - Write into the template, even when `template.source` is a folder on this machine. The template
   reads this file; nothing here writes there.
 - Restore a file before its entry is written, or without a yes.
+- Check out all of `CLAUDE.md`, `.gitignore` or `.claude/settings.json` to restore a managed part.
 
 ## Done when
 

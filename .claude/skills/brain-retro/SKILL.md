@@ -58,7 +58,7 @@ evidence to test the fix against.
 | What happened | The one change | Made by |
 | --- | --- | --- |
 | The brain's own skill (its prefix is in `brain.json`) went wrong | One concrete edit to that skill: the missing step, rule or reason | `brain-write-skill`, on a yes |
-| A `brain-*` skill went wrong, or the fault is in `_meta/` | An upstream suggestion | `brain-upstream` |
+| A `brain-*` skill went wrong, or the fault is in `_meta/` | An upstream suggestion; in the template's own checkout (`role` `template`, `local/` present), a direct edit | `brain-upstream`; in the template, `brain-write-skill` for a skill |
 | Output written while its skill never ran, or a skill imitated rather than invoked | A gate rule on that output's path in `brain.json` `gates` | `brain-write-skill` |
 | The same kind of input went to different skills | A rule and a `cases` entry in that router's `rules.json`, or a router where the entry point has none | `brain-write-skill` |
 | A router fell to `default` although an existing skill fits | A router rule for that skill (a `RETRO-LOG.md` row) | `brain-write-skill` |

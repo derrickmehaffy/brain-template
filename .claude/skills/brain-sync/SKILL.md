@@ -5,9 +5,8 @@ description: "Bring this brain's repo up to date and commit its changes the same
 
 # brain-sync
 
-Every change reaches the brain's history the same way: checked, grouped by what it is, reviewed
-before it is committed, and pushed only when the person says so. The sameness is the point: a
-history of scoped commits can be read, reverted, and compared with what the template brought.
+Every change reaches the history the same way: checked, grouped by scope, reviewed, and pushed only
+when the person says so. A history of scoped commits can be read, reverted and compared.
 
 ## Where this sits
 
@@ -23,9 +22,8 @@ has just run, or `doctor` reports unpushed or uncommitted work; nothing needs to
 ## 1. Where it stands
 
 `git status --short --branch`; with a remote, `git fetch`, then `git log --oneline @{u}..` (not
-pushed) and `git log --oneline ..@{u}` (not pulled). Tell the person in a few lines what changed,
-grouped by the scopes below, and how far ahead or behind it is. A template that is behind is an
-update, which `brain-setup` runs; come back here to commit it.
+pushed) and `git log --oneline ..@{u}` (not pulled). Tell the person briefly what changed, by scope,
+and how far ahead or behind it is. A template that is behind is an update, run by `brain-setup`.
 
 ## 2. Run the checks
 
@@ -37,10 +35,11 @@ _meta/brain doctor --quick
 <scripts.python> -m unittest discover -s ./scripts/tests -t ./scripts   # when scripts/ changed
 ```
 
-`<scripts.python>` is `brain.json` `scripts.python`. A BROKEN or BLOCK line stops the commit: fix it
+`<scripts.python>` is `brain.json` `scripts.python`. A BROKEN or BLOCK line stops the commit. Fix it
 through the skill that owns the file (skills and the map: `brain-write-skill`; practices:
-`brain-write-practice`; scripts: `brain-write-script`; a template-owned file: `brain-upstream`) and
-run the checks again. GAPs and doctor's warning about uncommitted work do not stop it; say so.
+`brain-write-practice`; scripts: `brain-write-script`; a template-owned file: `brain-upstream`); a
+BLOCK about no file (the hook, `core.hooksPath`, a missing tool, a copy never set up) goes to
+`brain-setup`. Then run the checks again. GAPs and doctor's uncommitted-work warning do not stop it.
 
 ## 3. Commit by scope
 
@@ -54,31 +53,35 @@ run the checks again. GAPs and doctor's warning about uncommitted work do not st
 
 For each group, in turn:
 
-1. Stage it by path: `git add -- <paths>`. Never `git add -f`, never everything at once, and never
-   a path inside a nested project repo, nor any git command run inside one: it is not the brain. The
-   allowlist `.gitignore` keeps project folders out; forcing past it is exactly how a project repo,
-   a large asset or a `.env` gets into the brain.
+1. Stage it by path: `git add -- <paths>`. Never `git add -f`, never everything at once, never a
+   path inside a nested project repo, and no git command inside one: it is not the brain. Forcing
+   past the allowlist `.gitignore` is exactly how a project repo, an asset or a `.env` gets in.
 2. Read `git diff --cached --stat`: only this group's files, nothing large, nothing you did not mean
    to stage. Unstage the rest with `git restore --staged -- <path>`.
-3. Commit with `git commit -F -` and the subject `<scope>: <what changed>`, imperative and short.
-   Follow any commit convention the brain's `CLAUDE.md` sets (a trailer, a language).
+3. Commit with `git commit -F -` and the subject `<scope>: <what changed>`, imperative and short,
+   following any commit convention in the brain's `CLAUDE.md` (a trailer, a language).
 
-The pre-commit guard runs on every commit. When it refuses, fix what it names. **Never
+The pre-commit guard runs on every commit; when it refuses, fix what it names. **Never
 `--no-verify`**: the guard is the only check between a secret, a private name or a project repo and
-a history that may be pushed. A refusal that looks wrong is a `privacy` setting in `brain.json` for
-the person to change, or an upstream suggestion; never a bypass.
+a history that may be pushed. A refusal that looks wrong is a `privacy` setting for the person to
+change, or an upstream suggestion; never a bypass.
 
 A change to a template-owned file (`_meta/`, a `brain-*` skill, a managed block) outside an update
-is a local edit: never commit it, and never make one to get a check to pass; hand it to
-`brain-upstream`.
+is a local edit: never commit it, or make one to get a check to pass; hand it to `brain-upstream`.
+A restore to the installed version is the exception: once `doctor --quick` shows no manifest edit,
+commit it alone as `meta(brain): restore <file>`.
+
+**In the template** (`brain.json` `role` is `template` and `local/` exists), `_meta/` and the
+`brain-*` skills are the template's own work, not local edits. Run the test suite as well
+(`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t .`), commit under
+`meta(<area>)`, `skill(<name>)`, `test(<area>)` or `docs(<area>)`, and skip section 4.
 
 ## 4. After an update
 
 `update` writes but never commits. Commit what it changed on its own, so the history shows exactly
 what the template brought:
 
-1. Commit any other pending work first, in its own groups, including any other change to
-   `docs/UPSTREAM.md`.
+1. Commit any other pending work first, in its own groups, including other `docs/UPSTREAM.md` edits.
 2. For each id `update` reported as answered (`_meta/brain upstream list` shows them with the
    template's answer), set that entry's line to `- status: landed <version>` or
    `- status: declined: <reason>`, as the template's `CHANGELOG.md` says. The flips belong to the
@@ -102,6 +105,6 @@ rewrite a commit that is already pushed. With no remote, say so; adding one is t
 - Each commit holds one scope, its subject starts with that scope, and its staged stat was read.
 - A template update is its own `meta(brain): update template to <version>` commit, with every
   answered `docs/UPSTREAM.md` entry flipped in it.
-- No path inside a nested repo, no `.env` and no file over `max_file_kb` was staged; no commit used
-  `--no-verify`.
+- No nested repo path, no `.env` and no file over `max_file_kb` was staged; no `--no-verify`.
+- In the template, the test suite passed before each commit.
 - The branch is rebased on its remote, and pushed only if the person asked.

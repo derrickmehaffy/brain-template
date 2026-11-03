@@ -93,7 +93,15 @@ def _local_path(root: Path, location: str) -> Optional[Path]:
 
 def _normal(location: str) -> str:
     text = location.strip().rstrip("/")
-    return text[:-len(".git")] if text.endswith(".git") else text
+    return text[:-len(".git")] if text.lower().endswith(".git") else text
+
+
+_USERINFO = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*://)[^/]*@(.*)$")
+
+
+def _strip_userinfo(location: str) -> str:
+    """`location` without the `user:password@` (or `token@`) of a `scheme://` URL; anything else is as it was."""
+    return _USERINFO.sub(r"\1\2", location)
 
 
 _URL = re.compile(r"^(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*)://(?P<authority>[^/]*)/?(?P<path>.*)$")
@@ -242,9 +250,17 @@ def _hooks_path_problem(root: Path, mode: str) -> Optional[str]:
 
 
 def _foreign_hook_problem(root: Path) -> Optional[str]:
-    """A repo that is kept may hold a pre-commit hook of its own, which `hook.install` would refuse to replace."""
+    """A repo that is kept may hold a pre-commit hook of its own, which `hook.install` would refuse to replace. A
+    hooks folder or a hook that is a link is refused too: the installer, here and in the rehearsal copy, would
+    write through it, possibly outside this folder."""
     common = str(gitutil.git(root, "rev-parse", "--git-common-dir")).rstrip("\n")
-    target = (root / common).resolve() / "hooks" / "pre-commit"
+    git_dir = root / common
+    for link in (git_dir / "hooks", git_dir / "hooks" / "pre-commit"):
+        if os.path.islink(str(link)):
+            shown = os.path.relpath(str(link), str(root)).replace(os.sep, "/")
+            return (f"{shown} is a link; the guard is installed there, and init does not write through links. "
+                    "Replace the link with the real folder or file, then run init again")
+    target = git_dir.resolve() / "hooks" / "pre-commit"
     if os.path.lexists(str(target)):
         try:
             same = target.read_bytes() == hook.SHIM.encode("utf-8")
@@ -350,14 +366,16 @@ def _plan(args, root: Path, cfg: config.Config, mode: str) -> _Plan:
     # The tracked brain.json holds a location that is the same on every machine: the origin when it is a URL, else
     # the template's canonical source (null until published). A folder on this machine goes to brain.local.json,
     # which git ignores, as `new` and `adopt` do (spec §4).
+    # An origin that is the canonical source records that, never the origin as typed: a URL may carry a user and a
+    # password (or a token), which must not reach a tracked file.
     source, local_source = cfg.template_source, None
     origin = _origin(root) if mode == MOVE else None
     if origin is not None:
         folder = _local_path(root, origin)
-        if folder is None:
-            source = origin
-        else:
+        if folder is not None:
             local_source = os.path.realpath(str(folder))
+        elif not (cfg.template_source and _same_location(root, origin, cfg.template_source)):
+            source = _strip_userinfo(origin)
     raw = install.new_brain_json(name, args.prefix, description, source, version, args.python, args.packages,
                                  bool(args.private))
     return _Plan(shipped, filled, raw, version, local_source)
@@ -454,7 +472,8 @@ def _rehearse(root: Path, mode: str, plan: _Plan, present: List[str], args, mess
     """Do the whole conversion, the first commit and the pre-commit guard included, in a copy of the folder under the
     OS temporary folder, then discard the copy. None when it all went through, else why it would not. The folder
     itself is only read. A copy that is to get a fresh repository is copied without its `.git`, which would be
-    moved away; one that keeps its history takes its `.git` along, so the commit is made on top of it."""
+    moved away; one that keeps its history takes its `.git` along (links inside it followed, so nothing written in the
+    copy can reach the real repository), so the commit is made on top of it."""
     base = os.path.realpath(str(root))
     try:
         scratch = Path(tempfile.mkdtemp(prefix="brain-init-"))
@@ -464,7 +483,7 @@ def _rehearse(root: Path, mode: str, plan: _Plan, present: List[str], args, mess
         if os.path.realpath(str(scratch)).startswith(base + os.sep):
             return (f"the temporary folder {scratch} is inside this folder; point TMPDIR somewhere else and run "
                     "init again")
-        at_root = {".brain"} | (set() if mode == KEEP else {".git"})  # left out of the copy, at the top only
+        at_root = {".brain", ".git"}  # left out of the copy, at the top only; a kept .git is copied below
 
         def leave_out(folder, names):
             skipped = {name for name in names if name == "__pycache__"}
@@ -472,6 +491,8 @@ def _rehearse(root: Path, mode: str, plan: _Plan, present: List[str], args, mess
 
         copy = scratch / "copy"
         shutil.copytree(str(root), str(copy), symlinks=True, ignore=leave_out)
+        if mode == KEEP:  # links inside .git are followed, so no write in the copy can reach the real repository
+            shutil.copytree(str(root / ".git"), str(copy / ".git"), symlinks=False)
         _convert(copy, KEEP if mode == KEEP else CREATE, plan, present, args)
         try:
             install.first_commit(copy, message)

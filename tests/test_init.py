@@ -216,7 +216,8 @@ class ConvertTest(InitCase):
         self.assertFalse((used / HISTORY).exists())
         self.assertEqual(self.commits(used), [f"meta(brain): initialise from template v{version}", "Initial commit"])
         self.assertEqual(self.git(used, "rev-parse", "HEAD~1").strip(), first)
-        self.assertEqual(self.git(used, "remote", "get-url", "origin").strip(), "https://example.invalid/me/mybrain.git")
+        self.assertEqual(self.git(used, "remote", "get-url", "origin").strip(),
+                         "https://example.invalid/me/mybrain.git")
         # the template's tests are deleted in that commit, not left tracked
         self.assertEqual([p for p in self.git(used, "ls-files").splitlines() if p.startswith("tests/")], [])
 
@@ -251,6 +252,41 @@ class ConvertTest(InitCase):
                 self.assertEqual(self.read_json(clone / "brain.json")["template"]["source"], CANONICAL)
                 self.assertNotIn(str(self.tmp), (clone / "brain.json").read_text(encoding="utf-8"))
                 self.assertEqual(self.read_json(clone / "brain.local.json"), {"template": {"source": str(template)}})
+
+    def test_credentials_in_the_origin_are_never_recorded_or_printed(self):
+        # The origin names the template, so init knows it, but its user and password are not the template's to record.
+        secret = "pw" + "q" * 12  # put together here, so no source file holds one
+        for label, userinfo in (("user and password", f"deploy:{secret}"), ("token as the user", secret)):
+            with self.subTest(label):
+                _template, clone = self.plain_clone(source=CANONICAL_GH)
+                self.git(clone, "remote", "set-url", "origin",
+                         f"https://{userinfo}@github.com/example/brain-template.git")
+                dry = self.init(clone, "--dry-run")
+                self.assertEqual(dry.returncode, 0, dry.stdout + dry.stderr)
+                self.assertNotIn(secret, dry.stdout + dry.stderr)
+                r = self.done(clone)
+                self.assertNotIn(secret, r.stdout + r.stderr)
+                self.assertEqual(self.read_json(clone / "brain.json")["template"]["source"], CANONICAL_GH)
+                for rel in self.git(clone, "ls-files").splitlines():
+                    self.assertNotIn(secret.encode(), (clone / rel).read_bytes(), rel)
+                self.assertFalse((clone / "brain.local.json").exists())
+
+    def test_a_recorded_origin_has_no_user_or_password(self):
+        # Only a URL equal to the canonical source is recognised as the template, which records the canonical
+        # source; this is the second line of defence for any other URL that gets this far.
+        self.assertEqual(cmd_init._strip_userinfo("https://deploy:pw@example.invalid/o/r.git"),
+                         "https://example.invalid/o/r.git")
+        self.assertEqual(cmd_init._strip_userinfo("ssh://git@example.invalid:2222/o/r.git"),
+                         "ssh://example.invalid:2222/o/r.git")
+        for unchanged in ("https://example.invalid/o/r.git", "git@example.invalid:o/r.git", "/some/folder",
+                          "https://example.invalid/o@r.git"):
+            self.assertEqual(cmd_init._strip_userinfo(unchanged), unchanged)
+        _template, clone = self.plain_clone()
+        self.git(clone, "remote", "set-url", "origin", "https://deploy:" + "pw" + "q" * 12 + "@example.invalid/o/r.git")
+        args = argparse.Namespace(name="homelab", prefix="lab", description="", python="python3",
+                                  packages="stdlib-only", private=[], dry_run=True)
+        plan = cmd_init._plan(args, clone, config.load(clone), cmd_init.MOVE)
+        self.assertEqual(plan.raw["template"]["source"], "https://example.invalid/o/r.git")
 
     def test_no_repo_creates_one(self):
         folder = self.bare_folder()
@@ -651,6 +687,32 @@ class RefusalTest(InitCase):
                     if outside is not None:
                         self.assertEqual(self.snapshot(outside), before)
 
+    def test_refuses_a_hooks_folder_or_hook_that_is_a_link(self):
+        # `.git/hooks` is written by the guard's installer, in the rehearsal copy of a kept repository and in the real
+        # one; through a link it would write outside the folder, even on a dry run.
+        def folder_link(used):
+            outside = self._new_dir("hooks")
+            shutil.rmtree(str(used / ".git" / "hooks"))
+            (used / ".git" / "hooks").symlink_to(outside)  # absolute
+            return outside
+
+        def hook_link(used):
+            outside = self._new_dir("hooks")
+            (outside / "mine").write_text("#!/bin/sh\n", encoding="utf-8")
+            (used / ".git" / "hooks" / "pre-commit").symlink_to(outside / "mine")
+            return outside
+
+        for label, arrange, name in (("hooks folder", folder_link, ".git/hooks"),
+                                     ("pre-commit hook", hook_link, ".git/hooks/pre-commit")):
+            for flags in ([], ["--dry-run"]):
+                with self.subTest(label, flags=flags):
+                    used = self.used_template()
+                    outside = arrange(used)
+                    before = self.snapshot(outside)
+                    stderr = self.refused(used, *flags, message=name)
+                    self.assertIn("link", stderr)
+                    self.assertEqual(self.snapshot(outside), before)  # nothing was written through the link
+
     def test_refuses_an_absolute_link_that_points_back_into_the_folder(self):
         # Not on a removed or written path, but a rehearsal copy that keeps it would point into the real folder.
         for flags in ([], ["--dry-run"]):
@@ -730,6 +792,7 @@ class IsPlainCloneTest(InitCase):
             "https://someone@github.com/example/brain-template.git",
             "https://github.com:443/example/brain-template.git",
             "HTTPS://GitHub.com/Example/Brain-Template.git",
+            "https://github.com/example/brain-template.GIT",
             "git@github.com:example/brain-template.git",
             "git@github.com:example/brain-template",
             "github.com:example/brain-template.git",

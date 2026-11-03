@@ -1,6 +1,6 @@
 ---
 name: brain-write-practice
-description: Create or update one entry in docs/practices/, the store of facts this brain has already worked out, with its evidence level, when it was verified and how to re-check it. Use when work produced a fact a second occurrence would need, when a stored fact turned out wrong or stale, or for a periodic sweep of stale entries. Does NOT write rules about how to work, which belong in the skill that governs the work (brain-write-skill), and does NOT write scripts, which is brain-write-script.
+description: Create or update one entry in docs/practices/, the store of facts this brain has already worked out, with its evidence level, when it was verified and how to re-check it. Use when work produced a fact a second occurrence would need, when a stored fact turned out wrong or stale, or for a periodic sweep of stale entries; a term that misled goes in docs/GLOSSARY.md instead. Does NOT write rules about how to work, which belong in the skill that governs the work (brain-write-skill), and does NOT write scripts, which is brain-write-script.
 ---
 
 # brain-write-practice
@@ -31,6 +31,11 @@ Write nothing unless both hold:
 2. **It is a fact, not a rule about how to work.** "The mod loader reads mod folders in name order,
    case-sensitive" is a fact. "Always check the load order first" is a rule: it belongs in the skill
    that governs that work, changed through `brain-write-skill`. Say so and stop.
+
+**A term is not a practice.** When a word misled (two words for one thing, or a word read as
+something it is not here), add one line to `docs/GLOSSARY.md` instead, in its format: `**term**:
+what it means here. Avoid: other words for it. Not: what it is taken for.` Keep the lines in
+alphabetical order and the file short: every session loads it.
 
 ## 2. Set the evidence honestly
 
@@ -103,7 +108,8 @@ lie. Read `references/review.md` for the procedure in full. Finish with step 5.
 
 ## Done when
 
-- Both gates held, or you told the person why this is not a practice and where a rule belongs.
+- Both gates held, or you told the person why this is not a practice and where a rule belongs (a
+  term that misled went into `docs/GLOSSARY.md`).
 - `evidence` is the lowest level that is true, with `reproduced-by`, `recheck` and `source` to match.
 - Every listed candidate was ruled distinct, merge or supersede and (the merge target aside) is in
   `reviewed-against`; a superseded entry carries `superseded-by`; nothing was deleted.

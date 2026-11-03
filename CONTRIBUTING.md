@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping. The template is small on purpose: standard-library Python, seven meta skills and
+Thanks for helping. The template is small on purpose: standard-library Python, eight meta skills and
 a few checks, written for any kind of brain. Changes that keep it that way are the easiest to take.
 
 ## Before you start

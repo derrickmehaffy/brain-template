@@ -99,7 +99,8 @@ If the rebase stops on a conflict, show it to the person and resolve it with the
 `git rebase --abort` to go back. Run the checks again if the pull brought skills, map or practices.
 
 Push only when the person asks for it in this conversation: `git push`. Never `--force`, and never
-rewrite a commit that is already pushed. With no remote, say so; adding one is the person's call.
+rewrite a commit that is already pushed. With no remote, say so, and offer `brain-setup`'s online
+backup; whether to have one is the person's call.
 
 ## Done when
 

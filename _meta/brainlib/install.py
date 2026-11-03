@@ -24,6 +24,7 @@ SKELETON_RENAMES = {
     "gitignore": ".gitignore",
     "env.example": ".env.example",
     "claude-settings.json": ".claude/settings.json",
+    "mcp.json": ".mcp.json",
 }
 SETTINGS = ".claude/settings.json"
 PRIVATE_HEADER = (

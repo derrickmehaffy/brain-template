@@ -5,6 +5,8 @@
   comes from its rules; if the route looks wrong, fix the rule, never override it.
 - A write blocked by the skill gate means: invoke the skill it names. Never route around the gate.
   A waiver needs the person's express say-so, every time.
+- Terms mean what the glossary says: use its word, never one it lists under Avoid. A term that
+  misled goes in it, through `brain-write-practice`. The glossary: @docs/GLOSSARY.md
 - Before deciding a system cannot do something, read `docs/CAPABILITIES.md`.
 - Before re-deriving a fact, search `docs/practices/` (`_meta/brain practices search <terms>`); for
   a `volatile` entry, run its `recheck` first.
@@ -14,8 +16,10 @@
   fix the brain.
 - Never edit `_meta/`, a `brain-*` skill or a managed block here. A change one of them needs goes
   to `brain-upstream`, which records it for the template.
-- Skill, script, practice and sync work in this brain goes through the `brain-*` skills, even when
-  a globally installed skill (from another brain or a plugin) does a similar job: only the
-  `brain-*` ones know this brain's conventions.
-- Secrets live in `.env` (ignored). Never read, print or commit values.
-  Secret names: `_meta/brain env-sync --list`.
+- Skill, agent, script, practice and sync work in this brain goes through the `brain-*` skills,
+  even when a globally installed skill (from another brain or a plugin) does a similar job: only
+  the `brain-*` ones know this brain's conventions.
+- Secrets live in `.env` (ignored), each a value or an `op://` 1Password reference. Never read,
+  print or commit values. Names: `_meta/brain env-sync --list`. Scripts take them through their
+  loader; anything else gets them through `_meta/brain secret run KEY COMMAND`.
+- An MCP server only this brain needs goes in its `.mcp.json`, through `brain-write-script`.

@@ -12,7 +12,8 @@ This folder is the template, not a brain: `brain.json` has `role: template` and 
 - **Shipped means copied into brains:** `_meta/**` and `.claude/skills/brain-*/**`, plus the managed
   blocks and the skeleton in `_meta/skeleton/`. Everything else here is template-only: this file,
   `README.md`, `brain.json`, `tests/`, `docs/`, `local/`. Skeleton files that are dotfiles or sit
-  under `.claude/` are stored renamed (`gitignore`, `env.example`, `claude-settings.json`).
+  under `.claude/` are stored renamed (`gitignore`, `env.example`, `claude-settings.json`,
+  `mcp.json`).
 - **Run the test suite before committing:**
   `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t . -v`. Then
   `_meta/brain doctor` (it needs `local/` and the pre-commit hook: `_meta/brain hook install`).

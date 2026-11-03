@@ -4,6 +4,7 @@
 !/CLAUDE.md
 !/README.md
 !/.env.example
+!/.mcp.json
 !/.claude/
 !/_meta/
 !/docs/

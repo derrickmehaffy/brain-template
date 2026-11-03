@@ -8,6 +8,7 @@ An index of what lives under `docs/`. Add a line here when a new folder lands.
 The standing files:
 
 - `ROUTING.md`: the routing map of this brain's own skills
+- `GLOSSARY.md`: terms that mean something specific here, loaded into every session
 - `CAPABILITIES.md`: what each system can and cannot do, dated
 - `RETRO-LOG.md`: failures on real work, and the change that fixed each
 - `UNCLASSIFIED-LOG.md`: work no skill fit, which is where new skills come from

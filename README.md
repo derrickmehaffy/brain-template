@@ -15,6 +15,10 @@ Requirements: Python 3.9+ (standard library only, no packages) and `git`, on Lin
 
 ## Setting up a brain
 
+New to this? [docs/guides/making-a-brain.md](docs/guides/making-a-brain.md) covers what a brain is
+for and how it grows, and [docs/guides/prompts.md](docs/guides/prompts.md) has what to say to Claude
+at each step, with starting points for common kinds of work.
+
 There are three ways in. All end in the same state: the first commit made, the pre-commit guard
 installed, `_meta/brain doctor` with nothing blocking, and none of the template's own files present.
 (`doctor` is the read-only health check: one `ok`, `WARN` or `BLOCK` line per check, exit 1 if
@@ -48,8 +52,10 @@ ignored). Everything else takes the defaults in `brain.json`.
   Before publishing the template, set `template.source` in its `brain.json` to the published URL, so
   `init` in a clone of it starts a fresh history and never keeps the template as `origin`.
 
-Open Claude Code **at the brain's root**. The `.env` deny and the skill gate are read from
-`.claude/settings.json` there, and only there. A session started in a plain subfolder should still
+Open Claude Code **at the brain's root**. The `.env` deny, the skill gate and the brain's MCP servers
+are read from `.claude/settings.json` and `.mcp.json` there, and only there. Each session starts with
+`_meta/brain doctor --brief`, a hook that prints only what needs attention, so a brain that is behind
+its template or has unpushed work says so before the work begins. A session started in a plain subfolder should still
 find the brain's skills, but one started inside a nested project repo likely will not, and gets
 neither the deny nor the gate. Start it with `claude --add-dir <brain>` to load the brain's skills; the deny and the
 gate still need a session started at the root.
@@ -84,10 +90,10 @@ Seven meta skills ship in every brain:
 
 | Skill | One line |
 | --- | --- |
-| `brain-write-skill` | Create, change, split or rename one of the brain's skills, starting from where it sits in the routing map; write a router when an entry point fans out; gate output that must not be improvised. |
-| `brain-write-script` | Decide whether code earns a file, place it by the system it touches, keep it read-only unless its name says otherwise, and record what the system can and cannot do. |
-| `brain-write-practice` | Record one verified fact with its evidence and how to re-check it, after ruling out a duplicate. |
-| `brain-retro` | When a skill went wrong or work fit no skill: log it and propose the one change that fixes it. |
+| `brain-write-skill` | Create, change, split or rename one of the brain's skills, starting from where it sits in the routing map; write a router when an entry point fans out; gate output that must not be improvised; write the report-only agents a skill dispatches. |
+| `brain-write-script` | Decide whether code earns a file, place it by the system it touches, keep it read-only unless its name says otherwise, and record what the system can and cannot do; connect a system's MCP server in `.mcp.json`. |
+| `brain-write-practice` | Record one verified fact with its evidence and how to re-check it, after ruling out a duplicate; add a term that misled to the glossary. |
+| `brain-retro` | When a skill went wrong or work fit no skill: log it and propose the one change that fixes it; review which skills go unused (`_meta/brain usage`). |
 | `brain-upstream` | Record a proposed change to a template-owned file for the template to take in. |
 | `brain-sync` | Run the checks, commit with a scoped subject, pull with rebase, push when asked. |
 | `brain-setup` | Turn a copy of the template into a brain; in a brain, explain it, repair what `doctor` reports and run `update`. |
@@ -112,6 +118,22 @@ only be written after that skill ran in the session. A skill file is refused unt
 has run, a script until `brain-write-script` has, and so on; a brain adds rules for its own skills.
 The refusal names the skill to invoke. A one-time waiver exists (`_meta/brain gate waive`), and only
 on the person's say-so. The gate is friction and visibility, not a security boundary.
+
+## Secrets, MCP servers, agents and the glossary
+
+- **Secrets** live in `.env`, which git ignores and Claude is denied reading. A value can be the
+  secret or a 1Password reference (`op://vault/item/field`, read with `op read` when needed). Names
+  go in with `_meta/brain env-sync --add KEY`. Scripts read secrets through their loader; anything
+  else gets them through `_meta/brain secret run KEY[,KEY] COMMAND`, which puts them in that
+  command's environment and never prints one.
+- **MCP servers** a brain needs go in its `.mcp.json`, not in user settings, where every session
+  everywhere would load their tools. A server that needs a secret runs under `secret run`.
+- **Agents** (`.claude/agents/<prefix>-*.md`) are helpers a skill dispatches: explicit tools, a
+  model, and a report back rather than edits. `lint` checks each one.
+- **The glossary** (`docs/GLOSSARY.md`) is loaded into every session: one line per term that means
+  something specific here, with the words to avoid.
+- **Skill usage**: the gate logs every skill run to `.brain/skill-usage.log`, and
+  `_meta/brain usage` shows which skills earn their place.
 
 ## The privacy guard
 

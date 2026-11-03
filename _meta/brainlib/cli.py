@@ -11,6 +11,7 @@ from . import paths
 # add_arguments(parser) and run(args) -> int; it is imported only when its command is chosen.
 COMMANDS: dict[str, tuple[str, str]] = {
     "lint": ("lint", "check skills and the routing map"),
+    "route": ("route", "apply a router's rules file and name one skill"),
 }
 
 

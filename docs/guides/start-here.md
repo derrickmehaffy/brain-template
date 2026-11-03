@@ -1,8 +1,9 @@
 # Start here
 
-How to get your own brain, from nothing, with Claude doing the technical parts. You need no
-experience with git, terminals or code. Claude asks a few plain questions, shows you what it will do
-before it does it, and explains anything it needs you to click.
+Your own brain, from nothing, in about ten minutes, with Claude doing every technical part. You need
+no experience with git, terminals or code. Claude asks plain questions, shows you what it will do
+before it does it, and explains anything it needs you to click. (Comfortable with a terminal?
+[Setting up](../reference/setting-up.md) has the technical version.)
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="../images/getting-started-dark.svg"><img src="../images/getting-started.svg" width="100%" alt="Three steps: get your copy, open the folder in Claude Code, ask for a brain."></picture></p>
 
@@ -52,15 +53,26 @@ the game mod I'm making", "for answering our customers' questions".
 
 Claude then:
 
-1. Checks the computer has what a brain needs, and helps install anything missing.
-2. Asks your name and email for the saved history, if this computer has none yet. They stay on your
+1. **Checks the computer** has what a brain needs, and helps install anything missing. If this
+   computer has no name and email for the saved history yet, it asks for them; they stay on your
    computer unless you later turn on an online backup.
-3. Asks for anything that must never be saved in the brain's history: server names, addresses,
-   client or customer names, unreleased project names. Say them as you would write them; Claude
-   turns them into the safety rules. Never type a password here.
-4. Shows a rehearsal of everything it will do, and goes ahead only when you say yes.
+2. **Asks: quick, or an interview first?** Quick takes a few minutes. The interview (say **"grill
+   me"**) takes 10 to 15, and your brain starts out knowing your goals, the work you repeat, the
+   apps you use and how you like to work, instead of learning it over the first month.
+3. **Works out the brain's shape**: one project, several, a big brain for a whole team's work, or a
+   hub over your other brains. [Choosing a shape](choosing-a-shape.md) shows all four.
+4. **Asks what must never be saved** in the brain's history: server names, addresses, client or
+   customer names, unreleased project names. Say them as you would write them; Claude turns them
+   into the safety rules. Never type a password here.
+5. **Asks whether to keep these guides** in the brain for now. Say yes if you would like them to
+   hand; Claude removes them whenever you ask.
+6. **Shows a rehearsal** of everything it will do, and goes ahead only when you say yes.
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="../images/setup-flow-dark.svg"><img src="../images/setup-flow.svg" width="100%" alt="Setting up a brain in nine steps: check the computer; quick or interview; pick the shape; never-saved names; keep the guides; rehearse, then yes; lay it out; backup; start a new chat in the brain. The interview covers your goal, the work that recurs, where it lives, systems and keys (names only), people, words and what must never happen."></picture></p>
 
 ## The boxes you will see
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="../images/boxes-you-will-see-dark.svg"><img src="../images/boxes-you-will-see.svg" width="100%" alt="Three boxes you will see. Do you trust this folder: yes, it is yours. Allow Claude to run a command starting with _meta/brain or git: during setup, allow it. Approve an MCP server: approve the ones you asked for."></picture></p>
 
 - **"Do you trust this folder?"**: yes, it is yours.
 - **Permission requests** for commands Claude wants to run. During setup they start with
@@ -69,6 +81,8 @@ Claude then:
   the ones you asked for.
 
 ## 4. Use it
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="../images/health-check-dark.svg"><img src="../images/health-check.svg" width="100%" alt="The start of a chat: before we start, two things need attention. Three changes are not saved yet; want me to save them? One hand-off is waiting from the hub: renew the certificates; start on it? The health check only speaks up when something needs you."></picture></p>
 
 <p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="../images/things-to-say-dark.svg"><img src="../images/things-to-say.svg" width="100%" alt="Seven things to say to a brain, and what each one does."></picture></p>
 
@@ -79,12 +93,16 @@ it records what went wrong and proposes the fix. [prompts.md](prompts.md) has th
 
 ## Keeping a copy online (optional)
 
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="../images/online-backup-dark.svg"><img src="../images/online-backup.svg" width="100%" alt="Your brain on this computer, and its private online copy on GitHub that only you can see, updated when you ask. Projects inside the brain keep their own backups. Or keep it on this computer only, and the reminder stops."></picture></p>
+
 The brain's history lives on your computer. For an online backup, say **"Back this brain up to
 GitHub"**: you need a free GitHub account, and Claude walks you through signing in and creates a
 private copy that only you can see. If you would rather not, say **"Keep this brain on this computer
 only"**, and Claude stops reminding you.
 
 ## Keys and passwords for other apps
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="../images/keys-and-passwords-dark.svg"><img src="../images/keys-and-passwords.svg" width="100%" alt="Claude adds the key's name and opens the private .env file in your text editor. Paste the key after the equals sign, or a 1Password reference, then save and close. Never paste a key into the chat."></picture></p>
 
 When the brain needs a key to reach another service, Claude adds its name and opens a private file
 in your text editor. Paste the key after the `=` sign, save and close. The file never leaves your
@@ -93,5 +111,8 @@ you can paste a reference such as `op://Private/Server/token` instead of the key
 
 ## More than one brain
 
-Make one brain per kind of work, each in its own folder: repeat steps 1 to 3. For when a brain is
-worth making, and how it grows, read [making-a-brain.md](making-a-brain.md).
+Make one brain per kind of work, each in its own folder: repeat steps 1 to 3. Keep them side by
+side, for example in `Documents/Brains/`, never one inside another. With several, a
+[brain of brains](brain-of-brains.md) gives you one place to ask "where does this go?", and leaves
+work waiting in the right brain for its next chat. For when a brain is worth making, and how it
+grows, read [Making a brain](making-a-brain.md).

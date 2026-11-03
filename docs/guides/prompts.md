@@ -15,8 +15,18 @@ the skill. Naming the skill works too. Paths and names below are examples.
 | "Do a dry run of a brain for my open-source work at `~/brains/oss` first; don't write anything yet." | `template-make-brain` → `new --dry-run` |
 | "Take in the upstream suggestions my brains have recorded." | `template-intake` |
 
-In a copy of the template (a clone, or GitHub's "Use this template"): "Set this up as a brain for
-<the work>." lands in `brain-setup`, which runs `init`.
+## In a copy of the template: setting up
+
+A copy is what GitHub's "Use this template", a clone or a download gives you.
+
+| Say | Lands in |
+| --- | --- |
+| "Set this up as a brain for <the work>." | `brain-setup` → `init`, quick |
+| "Grill me first, then set this up as a brain for <the work>." | `brain-setup` → the interview, then `init` |
+| "Set this up as a brain for our marketing site. The repo is at <address>." | `brain-setup` → a [single-project](single-project.md) brain |
+| "Set this up for our company's repos: api, web and infra." | `brain-setup` → a [multi-project](multi-project.md) brain |
+| "Make this a hub for my other brains. They're next to this folder." | `brain-setup` → a [brain of brains](brain-of-brains.md) |
+| "Keep the guides for now." / "Don't keep the guides." | `brain-setup` → `init --keep-guides`, or not |
 
 ## In a brain: every day
 
@@ -35,10 +45,22 @@ In a copy of the template (a clone, or GitHub's "Use this template"): "Set this 
 | "Which skills haven't we used in the last three months?" | `brain-retro` (`usage`) |
 | "Commit this." / "Sync and push." | `brain-sync` |
 | "Update this brain from the template." | `brain-setup` (`update`) |
+| "Add our billing repo to this brain." | `brain-setup` (the shape: clone it in, a folder-map line) |
+| "What's waiting in my inbox?" | `brain-setup` (hand-offs from other brains) |
+| "Remove the template's guides." | `brain-setup` |
 | "Every brain should have <X>. Suggest it upstream." | `brain-upstream` |
 
 When the gate refuses a write, the refusal names a skill. Answer "run the skill it names", never
 "waive it". A waiver is for when you, the person, decide the skill does not apply this once.
+
+## In a hub: several brains
+
+| Say | Lands in |
+| --- | --- |
+| "Which brain handles <the work>?" | the hub's routing skill (`<prefix>-route-work`) |
+| "Queue this in homelab: <the request>." | the hub's routing skill → `_meta/brain brains handoff` |
+| "What's waiting in my brains?" | `_meta/brain brains list` (open hand-offs per brain) |
+| "I made a new brain next to this one. Add it." | `brain-setup` → `_meta/brain brains add` |
 
 ## Starting points for common kinds of work
 

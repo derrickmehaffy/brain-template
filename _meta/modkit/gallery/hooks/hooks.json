@@ -1,0 +1,4 @@
+{
+  "description": "The mod kit's gallery: /modkit draws every piece and layout",
+  "modules": ["./register.tsx"]
+}

@@ -1,0 +1,7 @@
+{
+  "name": "modkit-starter",
+  "version": "0.1.0",
+  "description": "Shows what this brain's health check says needs attention: a band above the prompt, a pane, and a command.",
+  "author": { "name": "Brain template" },
+  "types": "./types/index.d.ts"
+}

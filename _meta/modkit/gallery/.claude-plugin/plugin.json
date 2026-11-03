@@ -1,0 +1,7 @@
+{
+  "name": "brain-modkit",
+  "version": "0.1.0",
+  "description": "The brain template's mod kit: tokens, pieces and layouts a brain's mods copy, and /modkit to see every one with made-up data. Load it with --plugin-dir while building a mod.",
+  "author": { "name": "Brain template" },
+  "types": "./types/index.d.ts"
+}

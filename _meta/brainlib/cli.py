@@ -14,6 +14,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "gate": ("gate", "the skill gate: record, check, waive, status"),
     "hook": ("hook", "the pre-commit privacy guard: pre-commit, install, self-test"),
     "lint": ("lint", "check skills and the routing map"),
+    "new": ("cmd_new", "make a brain from this template checkout (a dry run with --dry-run)"),
     "practices": ("practices", "check, index and search the practices store"),
     "rename-skill": ("rename", "rename a skill everywhere it is named (a dry run unless --apply)"),
     "route": ("route", "apply a router's rules file and name one skill"),

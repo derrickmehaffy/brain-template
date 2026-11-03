@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 — 2026-11-03
+
+- Setup offers a quick setup or an interview ("grill me"): the brain's goals, the work that recurs, where it lives, its systems (names of keys only), the people involved, its words and what must never happen. Each answer lands through the skill that owns it: `CLAUDE.md` sections, the glossary (`brain-write-practice`), systems (`brain-write-script`), unclassified rows (`brain-retro`), a first skill (`brain-write-skill`). `brain-setup` keeps the question bank in `references/interview.md`.
+- Four shapes of brain, picked at setup and laid out by `brain-setup` (`references/shapes.md`): a single project, several projects with a shared `work/` folder, a massive brain with an entry point per kind of work, and a brain of brains (a hub) beside the brains it knows, never above them.
+- Hand-offs between brains: every brain has `docs/INBOX.md`; `doctor` (and so the session-start check) warns about each open entry, and the managed `CLAUDE.md` block says how to work one. A hub lists its brains in `brain.json` `brains` and uses `_meta/brain brains list`, `brains add` and `brains handoff`, which writes only the other brain's inbox and commits nothing there.
+- `init --keep-guides` keeps the template's guides, pictures and reference (`docs/guides`, `docs/images`, `docs/reference`) in the new brain, listed in its `docs/README.md`; `brain-setup` removes them when asked.
+- Mods: `_meta/modkit/` is a mod kit (pieces and layouts for every surface Claude Code draws, a `/modkit` gallery) and a starter mod. A brain keeps its mods in `mods/<prefix>-<name>/`, loaded through a link in `.claude/skills/`; `_meta/brain mods` starts, syncs, links and checks them, `lint` reports a missing link or a stale kit copy, and the new meta skill `brain-write-mod` writes them (gated on `mods/<prefix>-*/**`). The managed `.gitignore` block saves `mods/`.
+- `brain-setup`'s doctor table moved to `references/doctor.md`, and its online-backup steps to `references/backup.md`.
+- Existing brains: `update` brings the harness, the skills and the managed block; `docs/INBOX.md` is a skeleton file, so a brain without one gets it on its first hand-off (or copy the skeleton's).
+
 ## 0.3.1 — 2026-11-03
 
 - The template is public, under the MIT License, at https://github.com/derrickmehaffy/brain-template, which is now its `template.source`. `_meta/LICENSE` carries the licence for the harness and the `brain-*` skills into every brain.

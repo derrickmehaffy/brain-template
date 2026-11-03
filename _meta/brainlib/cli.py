@@ -10,6 +10,7 @@ from . import paths
 # name -> (module under brainlib, one-line help). Each module exposes
 # add_arguments(parser) and run(args) -> int; it is imported only when its command is chosen.
 COMMANDS: dict[str, tuple[str, str]] = {
+    "gate": ("gate", "the skill gate: record, check, waive, status"),
     "lint": ("lint", "check skills and the routing map"),
     "practices": ("practices", "check, index and search the practices store"),
     "route": ("route", "apply a router's rules file and name one skill"),

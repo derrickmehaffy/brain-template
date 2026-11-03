@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import shutil
 import textwrap
 import unittest
 from pathlib import Path
@@ -25,6 +26,22 @@ def clean_body(extra_lines: int = 0, done: bool = True) -> str:
 
 
 class LintBase(TempDirCase):
+    def fake_brain(self, *args, **kwargs) -> Path:
+        """A fake brain holding none of what the template ships as skills: no `brain-*` or `template-*`
+        skill and no `_meta/ROUTING-META.md` (which draws them), so these tests see only what they make."""
+        root = super().fake_brain(*args, **kwargs)
+        base = root / ".claude" / "skills"
+        for pattern in ("brain-*", "template-*"):
+            for folder in base.glob(pattern):
+                shutil.rmtree(str(folder))
+        for empty in (base, base.parent):
+            if empty.is_dir() and not any(empty.iterdir()):
+                empty.rmdir()
+        meta_map = root / "_meta" / "ROUTING-META.md"
+        if meta_map.exists():
+            meta_map.unlink()
+        return root
+
     def write_raw(self, root: Path, folder: str, text: str) -> Path:
         path = root / ".claude" / "skills" / folder / "SKILL.md"
         path.parent.mkdir(parents=True, exist_ok=True)

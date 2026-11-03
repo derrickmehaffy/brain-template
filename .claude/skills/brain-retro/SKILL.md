@@ -1,6 +1,6 @@
 ---
 name: brain-retro
-description: "Record what went wrong when a skill failed on real work, or when work fit no skill, and propose the one change that fixes it: an edit to the brain's own skill, a missing gate rule, a missing router rule, or an upstream suggestion. Use right after a skill went wrong, after output was written without its skill running, after the same kind of input went to different skills, or when a router fell through to its default. Does NOT write or edit the skill itself, which is brain-write-skill, and does NOT edit template-owned files, which is brain-upstream."
+description: "Record what went wrong when a skill failed on real work, or when work fit no skill, and propose the one change that fixes it: an edit to the brain's own skill, a missing gate rule, a missing router rule, or an upstream suggestion. Use when a skill just went wrong on real work, when output was written without its skill running, when the same kind of input went to different skills, or when a router fell through to its default. Does NOT write or edit the skill itself, which is brain-write-skill, and does NOT edit template-owned files, which is brain-upstream."
 ---
 
 # brain-retro

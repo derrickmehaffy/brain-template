@@ -352,6 +352,31 @@ class SkillGateTest(GateCase):
             ("if x\nthen\n  cp a scripts/x.py\nelse\n  true\nfi", "scripts/x.py"),
             # A here-document marker inside a comment opens no here-document.
             ("echo hi # <<EOF\ncp a scripts/x.py\nEOF", "scripts/x.py"),
+            # (( and $(( are arithmetic only when they end in "))"; otherwise they open subshells, as in bash.
+            ("((cd a && cp x scripts/y.py) && echo ok)", "scripts/y.py"),
+            ("echo $((cp a scripts/x.py) )", "scripts/x.py"),
+            ('echo "$((cp a scripts/x.py) )"', "scripts/x.py"),
+            ("if (( 1 << 2 )); then cp a scripts/x.py; fi", "scripts/x.py"),
+            ("a=1; (( a <<= 2 )) && cp a scripts/x.py", "scripts/x.py"),
+            ("y=$[1<<2]\ncp a scripts/x.py", "scripts/x.py"),
+            # A quote, group or substitution left open does not swallow what follows it.
+            ("x=`cat <<EOF\nit's\nEOF`; cp a scripts/x.py", "scripts/x.py"),
+            ("echo 'unterminated > docs/ROUTING.md", "docs/ROUTING.md"),
+            ('echo "unterminated; cp a scripts/x.py', "scripts/x.py"),
+            ("echo $((1 + 2; cp a scripts/x.py", "scripts/x.py"),
+            ("(( 1 + 2; cp a scripts/x.py", "scripts/x.py"),
+            ("echo $[1; cp a scripts/x.py", "scripts/x.py"),
+            # A case pattern's ")" inside $(...) does not end the substitution.
+            ('v="$(case $x in a) echo "it\'s" ;; esac)" && cp a scripts/x.py && echo \'done\'', "scripts/x.py"),
+            ('v="$(case $x in (a) echo "it\'s" ;; b|c) echo b ;& *) echo z ;;& esac)" && cp a scripts/x.py && echo \'x\'',
+             "scripts/x.py"),
+            ('echo "$(echo "$(case a in a) echo "it\'s";; esac)")" && cp a scripts/x.py && echo \'x\'', "scripts/x.py"),
+            ('v="$(case $x in a) echo "it\'s"\nesac)" && cp a scripts/x.py && echo \'done\'', "scripts/x.py"),
+            # Inside $(...) a line that starts with the delimiter and goes on to a ")" ends the here-document (bash).
+            ("git commit -m \"$(cat <<'EOF'\nFix the user's path\nEOF)\" && cp a scripts/x.py", "scripts/x.py"),
+            ("git commit -m \"$(cat <<'EOF'\nFix the user's path\nEOF )\" && cp a scripts/x.py", "scripts/x.py"),
+            ("git commit -m \"$(cat <<EOF\nit's\nEOF)\"; echo x > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("git commit -m \"$(cat <<-'EOF'\n\tit's\n\tEOF)\" && cp a scripts/x.py", "scripts/x.py"),
         ]
         for command, rel in commands:
             with self.subTest(command=command):
@@ -475,9 +500,47 @@ class SkillGateTest(GateCase):
                         "git commit -m \"$(cat <<'EOF'\ncp a scripts/x.py\necho x > docs/ROUTING.md\nEOF\n)\" && git status",
                         "v=$(cat <<EOF\nit's\nEOF\n)\necho \"$v\"", "x=$((1<<2))", "(( y = 1 << 3 ))\necho $y",
                         "echo $[1<<2]", "n=$(grep -c x docs/a.md  # it's a count\n)\necho $n", "cat <(echo a)",
-                        "echo \"$(date)\" docs/ROUTING.md"):
+                        "echo \"$(date)\" docs/ROUTING.md",
+                        # arithmetic, and a (( that is a subshell
+                        "x=$((1<<2)); echo $x", "if (( 1 << 2 )); then echo yes; fi", "a=1; (( a <<= 2 )); echo $a",
+                        "for ((i=0; i<3; i++)); do echo $i; done", "echo $(( (1 + 2) * 3 ))",
+                        "x=$(( $(wc -l < docs/ROUTING.md) + 1 ))", "((cd docs && cat ROUTING.md) && echo ok)",
+                        # a case inside a substitution
+                        'v="$(case $x in a) echo "it\'s" ;; esac)" && echo "$v" && echo \'done\'',
+                        'v="$(case $x in a) echo "> docs/ROUTING.md " ;; esac)"',
+                        "kind=$(case docs/ROUTING.md in *.md) echo doc;; *) echo other;; esac); echo \"$kind\"",
+                        # a here-document that "EOF)" closes inside $(...) hides its body; at the top level it is body text
+                        "git commit -m \"$(cat <<'EOF'\nFix the user's path > scripts/x.py\ncp a docs/ROUTING.md\nEOF)\"",
+                        "git commit -m \"$(cat <<'EOF'\nFix the user's path\nEOF)\" && git log -1",
+                        "cat <<EOF\nEOF) > docs/ROUTING.md\nEOF"):
             with self.subTest(command=command):
                 self.assert_silent(self.bash(root, command))
+
+    def test_a_double_parenthesis_that_is_not_arithmetic_runs_its_commands(self):
+        root = self.fake_brain()
+        (root / "a").mkdir()
+        # Run from a folder inside the brain, `../scripts/y.py` is the brain's scripts folder (the `cd` is not followed).
+        r = self.hook(root, "check", "Bash", cwd=root / "a", command="((cd a && cp x ../scripts/y.py) && echo ok)")
+        self.assertIn("writing scripts/y.py needs brain-write-script", self.denied(r))
+
+    def test_a_command_nested_too_deep_to_check_is_refused(self):
+        root = self.fake_brain()
+        over, limit = gate.MAX_NESTING + 1, gate.MAX_NESTING
+        for command in ("echo " + "$(" * over + "true" + ")" * over,
+                        "ls; echo " + "$(" * over + ")" * over,
+                        "cat " + "<(" * over + "x" + ")" * over,
+                        'echo "' + '$(echo "' * over + "x" + '")' * over + '"',
+                        "echo " + "$((" * over + "true" + ") ) " * over):  # no "))", so none is arithmetic
+            with self.subTest(command=command[:40]):
+                reason = self.denied(self.bash(root, command))
+                self.assertIn(f"more than {limit} levels deep", reason)
+                self.assertIn("Split it into smaller commands", reason)
+        self.assertTrue(self.status(root, "--session", "s1")[3].startswith(
+            f"last refusal: a command nested more than {limit} levels deep ("))
+        # At the limit the command is read as usual.
+        self.assert_silent(self.bash(root, "echo " + "$(" * limit + "true" + ")" * limit))
+        self.assertIn("writing scripts/x.py needs",
+                      self.denied(self.bash(root, "echo " + "$(" * limit + "cp a scripts/x.py" + ")" * limit)))
 
     def test_gates_off_and_exempt(self):
         root = self.fake_brain(extra={
@@ -1033,7 +1096,8 @@ class GateFunctionsTest(GateCase):
             ("echo a; cp x y.py && echo b > z.md", ["y.py", "z.md"]),
             ("cp a b\ncp c d", ["b", "d"]),
             ("cp a \\\n  b", ["b"]),
-            ("echo 'unterminated > docs/ROUTING.md", []),  # the shell refuses to run it: it is all one word
+            # An open quote does not swallow the rest (bash would not run it either way).
+            ("echo 'unterminated > docs/ROUTING.md", ["docs/ROUTING.md"]),
             ("echo hi > docs/ROUTING.md\necho 'unterminated", ["docs/ROUTING.md"]),
             ("grep -n '>' docs/ROUTING.md", []),
             ('grep -- "-->" docs/ROUTING.md', []),
@@ -1060,7 +1124,7 @@ class GateFunctionsTest(GateCase):
             ("echo x > $'it\\'s'", ["it's"]),
             ("echo x > $'a\\\\b\\x41\\101'", ["a\\bAA"]),
             ("echo x > $'a\\x00b'", ["a"]),
-            ("echo x > $'unterminated", ["unterminated"]),
+            ("echo x > $'unterminated", ["$'unterminated"]),  # left open: plain characters
             ('echo x > $"a b"', ["a b"]),
             ("echo x > a$'b'c", ["abc"]),
             ("echo x > docs/{a,b}.md", ["docs/a.md", "docs/b.md"]),
@@ -1126,6 +1190,35 @@ class GateFunctionsTest(GateCase):
             ("cat <<EOF > a.md\nx\nEOF", ["a.md"]),
             ("echo $((1 + 2)) # it's\ncp a b.md", ["b.md"]),
             ("(true # it's\n) > a.md", ["a.md"]),  # in a plain subshell it is a comment
+            # (( and $(( are arithmetic only when they close with "))"
+            ("((cd a && cp x ../scripts/y.py) && echo ok)", ["../scripts/y.py"]),
+            ("echo $((cp a b.md) )", ["b.md"]),
+            ('echo "$((cp a b.md) )"', ["b.md"]),
+            ("(( (1 + 2) * 3 )) && cp a b.md", ["b.md"]),
+            ("echo $(( (1 + 2) * 3 )) > a.md", ["a.md"]),
+            ("if (( 1 << 2 )); then cp a b.md; fi", ["b.md"]),
+            ("a=1; (( a <<= 2 )) && cp a b.md", ["b.md"]),
+            # nothing left open swallows the rest
+            ('echo "unterminated; cp a b.md', ["b.md"]),
+            ('echo "$(date)" "open; cp a b.md', ["b.md"]),
+            ("echo $((1 + 2; cp a b.md", ["b.md"]),
+            ("(( 1 + 2; cp a b.md", ["b.md"]),
+            ("echo $[1; cp a b.md", ["b.md"]),
+            ("echo ${x\n# it's\ncp a b.md", ["b.md"]),
+            ("x=`cat <<EOF\nit's\nEOF`; cp a b.md", ["b.md"]),
+            ("echo $(cp a b.md", ["b.md"]),
+            # case patterns inside $(...)
+            ('v="$(case $x in a) echo "it\'s" ;; esac)" && cp a b.md && echo \'done\'', ["b.md"]),
+            ('v="$(case $x in a) echo "> b.md" ;; esac)"', []),
+            ("x=$(case $1 in (a) cp a b.md;; esac)", ["b.md"]),
+            ("x=$(case a in a) cp a b.md;; esac; cp c d.md)", ["b.md", "d.md"]),
+            ("x=$(case a in a) echo x ;; esac) > e.md", ["e.md"]),
+            ("x=$(echo case a in b) > e.md", ["e.md"]),  # not a case: the ")" ends the substitution
+            ('x="$(echo > case; for f in a; do :; done)" && cp a b.md && echo "x"', ["case", "b.md"]),  # a file name
+            # "EOF)" ends a here-document inside $(...), not at the top level
+            ("echo \"$(cat <<'EOF'\nit's > a.md\nEOF)\" && cp a b.md", ["b.md"]),
+            ("echo \"$(cat <<'EOF'\nit's > a.md\nEOF )\" > c.md", ["c.md"]),
+            ("cat <<EOF\nEOF) > a.md\nEOF\ncp a b.md", ["b.md"]),
             # reserved words
             ("if true; then cp a b.md; fi", ["b.md"]),
             ("while x; do cp a b.md; done", ["b.md"]),
@@ -1160,6 +1253,19 @@ class GateFunctionsTest(GateCase):
             "deep (": "(" * 5000 + "cp a b.md" + ")" * 5000,
             "deep ${": "echo " + "${" * 5000 + " > a.md",
             "many heredocs": "cat <<E" * 3000 + "\nE\n" * 3000,
+            "64 open heredocs a line, 1000 lines": ("cat " + "<<X " * 64 + "\n") * 1000,
+            "distinct open heredocs": "".join("cat " + "".join(f"<<X{k}y{j} " for j in range(64)) + "\n" for k in range(1000)),
+            "open heredocs in $(": "$(" * 31 + ("cat " + "<<X " * 64 + "\n") * 300,
+            "open heredocs, lines with )": "echo $(" + ("cat " + "<<X " * 64 + "\nXy) a\n") * 500,
+            "distinct heredocs, lines with )": "echo $(" + "".join(f"cat <<A{k} <<B{k}\n(A{k}) a\n" for k in range(3000)),
+            "one delimiter, lines with )": "echo $(" + "".join(f"cat <<A <<A\n(A{k}) a\n" for k in range(3000)),
+            "open (( x5000": "(( " * 5000,
+            "open $(( x5000": "echo " + "$((" * 5000,
+            "open $[ x5000": "echo " + "$[" * 5000,
+            "open \"$( x5000": "echo " + '"$(' * 5000,
+            "open quotes in $( x31": "echo " + '"$(echo "' * 31 + "x",
+            "open quotes x5000": "echo " + "\"'" * 5000,
+            "case patterns x5000": "x=$(case a in " + "a) b;; " * 5000 + "esac)",
         }
         for label, command in cases.items():
             with self.subTest(label=label):

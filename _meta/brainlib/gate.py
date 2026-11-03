@@ -170,14 +170,18 @@ _RESERVED = {"if", "then", "else", "elif", "fi", "while", "until", "do", "done",
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
-_OPERATOR = re.compile(r"&>>|&>|>>|>\||>&|<<<|<<-|<<|<&|<>|&&|\|\||\|&|;;|[;|&()<>`]")
+_OPERATOR = re.compile(r"&>>|&>|>>|>\||>&|<<<|<<-|<<|<&|<>|&&|\|\||\|&|;;&|;;|;&|[;|&()<>`]")
+_BRACKETS = re.compile(r"[\[\](){}]")
+_OPENER = {")": "(", "]": "[", "}": "{"}
 _ANSI_ESCAPES = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t",
                  "v": "\v", "\\": "\\", "'": "'", '"': '"', "?": "?"}
 _ANSI_WIDTH = {"x": 2, "u": 4, "U": 8}
 MAX_EXPANSIONS = 128  # alternatives one word may brace-expand to
 MAX_BRACE_WORD = 4096  # a longer word, or one with more than MAX_BRACE_GROUPS braces, is taken literally
 MAX_BRACE_GROUPS = 64
-MAX_NESTING = 32  # `$(` inside `$(`: deeper than this is read as plain text
+MAX_NESTING = 32  # `$(` inside `$(`: a command nested deeper than this is refused, since it cannot be checked
+TOO_DEEP = f"a command nested more than {MAX_NESTING} levels deep"
+_RESERVED_WHY = "reserved for gate waive"
 MAX_HEREDOCS = 64  # here-documents opened on one line
 MAX_MATCHES = 256  # names one glob may expand to
 GLOB_SECONDS = 0.25  # how long one glob may spend looking
@@ -198,9 +202,9 @@ def _word(chars: List[str], flags: List[str], subs: Optional[List[Any]] = None) 
     return word
 
 
-def _ansi_c(command: str, i: int) -> Tuple[str, int]:
-    """The text of the `$'...'` string whose opening quote is `command[i]` and the index after its end.
-    Bash cuts the text at the first NUL it decodes."""
+def _ansi_c(command: str, i: int) -> Tuple[str, int, bool]:
+    """The text of the `$'...'` string whose opening quote is `command[i]`, the index after its end, and
+    whether it was closed at all. Bash cuts the text at the first NUL it decodes."""
     out: List[str] = []
     n = len(command)
     i += 1
@@ -231,50 +235,152 @@ def _ansi_c(command: str, i: int) -> Tuple[str, int]:
         else:
             out.append(char + following)
             i += 2
-    return "".join(out).split("\0", 1)[0], i + 1
-
-
-def _skip_heredoc(command: str, start: int, delimiter: str, strip_tabs: bool) -> int:
-    """The index after the body of a here-document that starts at `start`; `start` itself when its closing
-    line is missing, so a stray `<<` hides nothing."""
-    closing = re.compile(("^\t*" if strip_tabs else "^") + re.escape(delimiter) + "\r?$", re.MULTILINE)
-    found = closing.search(command, start)
-    return start if found is None else min(found.end() + 1, len(command))
+    return "".join(out).split("\0", 1)[0], i + 1, i < n
 
 
 Token = Tuple[str, bool, bool]  # (text, is_operator, attached)
 
 
-def _skip_group(command: str, start: int, opener: str, closer: str, depth: int) -> int:
-    """The index after the `closer` that brings `depth` open groups to none, scanning from `start`."""
-    n = len(command)
-    while start < n:
-        if command[start] == opener:
-            depth += 1
-        elif command[start] == closer:
-            depth -= 1
-            if depth == 0:
-                return start + 1
-        start += 1
-    return n
+class _Source:
+    """One command being read, and what every nested part of it shares: where each bracket closes and
+    where each line starts (each found once, and only when first needed), the substitutions already read,
+    and whether any part is nested too deep to read."""
+
+    def __init__(self, command: str) -> None:
+        self.command = command
+        self.too_deep = False
+        self._inner: Dict[Tuple[int, int], Tuple[List[Token], int, bool]] = {}
+        self._closes: Optional[Dict[int, int]] = None
+        self._lines: Optional[Tuple[Dict[str, List[Tuple[int, int]]], ...]] = None
+        self._closers: Tuple[List[Tuple[str, int, int]], ...] = ()
+        self._spots: Dict[Tuple[str, bool], List[Tuple[int, int]]] = {}
+
+    def nested(self, start: int, depth: int) -> Tuple[List[Token], int]:
+        """`_scan` of the substitution whose text starts at `start`. Each is read once: a double quote left
+        open is read a second time as plain text, and must not read everything inside it again."""
+        key = (start, depth)
+        if key not in self._inner:
+            outside, self.too_deep = self.too_deep, False
+            tokens, end = _scan(self, start, depth)
+            self._inner[key] = (tokens, end, self.too_deep)
+            self.too_deep = outside
+        tokens, end, too_deep = self._inner[key]
+        self.too_deep = self.too_deep or too_deep
+        return tokens, end
+
+    def close(self, start: int) -> int:
+        """Where the bracket at `start` closes, counting brackets as plain characters; -1 when it never does."""
+        if self._closes is None:
+            closes: Dict[int, int] = {}
+            open_at: Dict[str, List[int]] = {"(": [], "[": [], "{": []}
+            for match in _BRACKETS.finditer(self.command):
+                char = match.group()
+                if char in open_at:
+                    open_at[char].append(match.start())
+                elif open_at[_OPENER[char]]:
+                    closes[open_at[_OPENER[char]].pop()] = match.start()
+            self._closes = closes
+        return self._closes.get(start, -1)
+
+    def arithmetic_end(self, inner: int) -> int:
+        """The index after the `))` of the `((` whose second parenthesis is at `inner`, or -1 when bash reads
+        it as subshells: the parenthesis that closes `inner` must be followed straight away by another."""
+        close = self.close(inner)
+        return close + 2 if close >= 0 and self.command.startswith(")", close + 1) else -1
+
+    def _index(self) -> Tuple[Dict[str, List[Tuple[int, int]]], ...]:
+        """(lines by text, lines by text without leading tabs): each a list of (start, index after the line),
+        a trailing `\\r` ignored. Lines holding a `)` also go into `_closers`, sorted by the text before it."""
+        if self._lines is None:
+            exact: Dict[str, List[Tuple[int, int]]] = {}
+            tabbed: Dict[str, List[Tuple[int, int]]] = {}
+            plain: List[Tuple[str, int, int]] = []
+            stripped: List[Tuple[str, int, int]] = []
+            start, n = 0, len(self.command)
+            for line in self.command.split("\n"):
+                after = min(start + len(line) + 1, n)
+                text = line[:-1] if line.endswith("\r") else line
+                exact.setdefault(text, []).append((start, after))
+                tabbed.setdefault(text.lstrip("\t"), []).append((start, after))
+                cut = line.find(")")
+                if cut >= 0:
+                    head = line[:cut]
+                    bare = head.lstrip("\t")
+                    plain.append((head, start, 0))
+                    stripped.append((bare, start, cut - len(bare)))  # with how many tabs it starts
+                start += len(line) + 1
+            plain.sort()
+            stripped.sort()
+            self._lines, self._closers = (exact, tabbed), (plain, stripped)
+        return self._lines
+
+    def heredoc_end(self, start: int, delimiter: str, strip_tabs: bool, nested: bool) -> Tuple[int, bool]:
+        """(where reading goes on, whether that is in the middle of a line) after the body of a here-document
+        whose first line starts at `start`. The body ends at a line that is the delimiter (after tabs, for
+        `<<-`); inside a substitution also at one that starts with it and goes on to a `)`, where bash reads
+        on right after the delimiter (`EOF)"`). With no such line nothing is skipped: a stray `<<` hides
+        nothing."""
+        from bisect import bisect_left
+
+        rows = self._index()[1 if strip_tabs else 0].get(delimiter, [])
+        found = bisect_left(rows, (start,))
+        best = rows[found] if found < len(rows) else None
+        mid_line = False
+        if nested:
+            spots = self._spots.get((delimiter, strip_tabs))
+            if spots is None:  # lines whose text before the first `)` starts with the delimiter
+                table = self._closers[1 if strip_tabs else 0]
+                spots = []
+                at = bisect_left(table, (delimiter,))  # they sort together, right from here
+                while at < len(table) and table[at][0].startswith(delimiter):
+                    _head, line_start, lead = table[at]
+                    spots.append((line_start, line_start + lead + len(delimiter)))
+                    at += 1
+                spots.sort()
+                self._spots[(delimiter, strip_tabs)] = spots
+            found = bisect_left(spots, (start,))
+            if found < len(spots) and (best is None or spots[found][0] < best[0]):
+                best, mid_line = spots[found], True
+        return (start, False) if best is None else (best[1], mid_line)
 
 
-def _scan(command: str, i: int, depth: int = 0) -> Tuple[List[Token], int]:
-    """(tokens, index after them) for the shell text from `command[i]`.
+def _follow_case(cases: List[str], text: "_Word", at_command: bool) -> None:
+    """Move the open `case` commands on past one word: `case WORD in`, then patterns up to their `)`, a
+    body up to `;;` (or `;&`, `;;&`), more patterns, and `esac`. A quoted word is never a reserved word."""
+    keyword = str(text) if "1" not in getattr(text, "mask", "1") else ""
+    state = cases[-1] if cases else ""
+    if state == "subject":
+        cases[-1] = "in"
+    elif state == "in":
+        if keyword == "in":
+            cases[-1] = "pattern"
+    elif state == "pattern":
+        if keyword == "esac":
+            cases.pop()
+    elif keyword == "case" and at_command:
+        cases.append("subject")
+    elif keyword == "esac" and state == "body" and at_command:
+        cases.pop()
+
+
+def _scan(source: _Source, i: int, depth: int = 0) -> Tuple[List[Token], int]:
+    """(tokens, index after them) for the shell text from `source.command[i]`.
 
     A call with `depth` above 0 reads the inside of a `$(...)` or `<(...)` and stops after its closing
-    parenthesis; each substitution is scanned by such a call, with its own quotes, comments and
-    here-documents, whether it stands in a command or inside double quotes, and hangs on the word it
-    belongs to (`_Word.subs`).
+    parenthesis; each substitution is scanned by such a call, with its own quotes, comments, here-documents
+    and `case` patterns (whose `)` closes nothing), whether it stands in a command or inside double quotes,
+    and hangs on the word it belongs to (`_Word.subs`). Deeper than MAX_NESTING, `source.too_deep` is set.
 
     Quotes and backslashes are resolved, so a quoted `>` is a word and not a redirection; `$'...'` is
     decoded and `$"..."` is a double-quoted string; a comment (a `#` that starts a word, outside `${...}`;
     inside backticks it ends at the closing backtick) runs to the end of its line; the body of a
     here-document is skipped; arithmetic (`$((...))`, `((...))`, `$[...]`) is skipped, so a `<<` in it is a
-    shift; a newline ends a command; a quote left open runs to the end of the text (the shell would refuse
-    to run it). Words are `_Word`s that remember which letters were quoted. `attached` is true for an
-    operator that touches the word before it (`2>&1`).
+    shift, but a `((` or `$((` that does not close with `))` opens subshells, as in bash; a newline ends a
+    command. Nothing left open swallows what follows it: a quote, `$[`, `$((` or `${` that never closes is
+    read as plain characters and the text after it as usual. Words are `_Word`s that remember which letters
+    were quoted. `attached` is true for an operator that touches the word before it (`2>&1`).
     """
+    command = source.command
     nested = depth > 0
     tokens: List[Token] = []
     word: List[str] = []
@@ -282,23 +388,37 @@ def _scan(command: str, i: int, depth: int = 0) -> Tuple[List[Token], int]:
     subs: List[Any] = []
     in_word = False
     ticks = param = paren = 0  # open backticks (0 or 1), `${` depth, plain `(` depth
+    cases: List[str] = []  # each open `case`: "subject", "in", "pattern" or "body"
     heredoc: Optional[bool] = None  # a `<<` is waiting for its delimiter; True when it is `<<-`
     waiting: List[Tuple[str, bool]] = []  # here-documents whose bodies start after this line
     n = len(command)
 
+    def command_position() -> bool:
+        """True where a command may start: after an operator, a reserved word, or `for`."""
+        return not tokens or tokens[-1][1] or str(tokens[-1][0]) in _RESERVED or str(tokens[-1][0]) == "for"
+
     def end_word() -> None:
         nonlocal word, flags, subs, in_word, heredoc
         text = _word(word, flags, subs)
-        tokens.append((text, False, False))
         if heredoc is not None:
             if len(waiting) < MAX_HEREDOCS:
                 waiting.append((str(text), heredoc))
             heredoc = None
+        else:  # the word after a redirection is a file name (`echo > case`), never a reserved word
+            redirected = bool(tokens) and tokens[-1][1] and any(c in tokens[-1][0] for c in "<>")
+            _follow_case(cases, text, command_position() and not redirected)
+        tokens.append((text, False, False))
         word, flags, subs, in_word = [], [], [], False
 
-    def command_position() -> bool:
-        """True where a command may start: after an operator, a reserved word, or `for`."""
-        return not tokens or tokens[-1][1] or str(tokens[-1][0]) in _RESERVED or str(tokens[-1][0]) == "for"
+    def substitution(start: int) -> int:
+        """Read the substitution whose text starts at `start` onto this word; the index after it, or -1 when
+        it is nested too deep to read (the command is then refused)."""
+        if depth >= MAX_NESTING:
+            source.too_deep = True
+            return -1
+        inner, after = source.nested(start, depth + 1)
+        subs.append(inner)
+        return after
 
     while i < n:
         char = command[i]
@@ -310,7 +430,9 @@ def _scan(command: str, i: int, depth: int = 0) -> Tuple[List[Token], int]:
                 tokens.append((";", True, False))
                 i += 1
                 for delimiter, strip_tabs in waiting:
-                    i = _skip_heredoc(command, i, delimiter, strip_tabs)
+                    i, mid_line = source.heredoc_end(i, delimiter, strip_tabs, nested)
+                    if mid_line:  # `EOF)`: what follows the delimiter is read on, and ends any other body
+                        break
                 waiting = []
                 continue
             if char in " \t\r":
@@ -318,23 +440,32 @@ def _scan(command: str, i: int, depth: int = 0) -> Tuple[List[Token], int]:
                 continue
             operator = _OPERATOR.match(command, i).group()
             heredoc = (operator == "<<-") if operator in ("<<", "<<-") else None
-            if operator in (">", "<") and command.startswith("(", i + 1) and depth < MAX_NESTING:
-                inner, i = _scan(command, i + 2, depth + 1)  # `>(cmd)`: a word standing for a pipe
-                word, flags, subs, in_word = list(operator + "()"), ["1"] * 3, [inner], True
-                continue
-            if operator == "`":
+            if operator in (">", "<") and command.startswith("(", i + 1):
+                after = substitution(i + 2)  # `>(cmd)`: a word standing for a pipe
+                if after >= 0:
+                    word, flags, in_word, i = list(operator + "()"), ["1"] * 3, True, after
+                    continue
+            state = cases[-1] if cases else ""
+            if state == "pattern" and operator in ("(", ")"):  # `(a)` or `a)` in a case: a pattern, not a group
+                if operator == ")":
+                    cases[-1] = "body"
+            elif operator == "`":
                 ticks ^= 1
             elif operator == "(":
-                if command.startswith("((", i) and command_position():  # `(( a << 1 ))`: arithmetic
-                    i = _skip_group(command, i + 2, "(", ")", 2)
-                    tokens.append((_word(list("(())"), ["1"] * 4), False, False))
-                    continue
-                paren += 1
+                if command.startswith("((", i) and command_position():
+                    after = source.arithmetic_end(i + 1)
+                    if after >= 0:  # `(( a << 1 ))`: arithmetic
+                        tokens.append((_word(list("(())"), ["1"] * 4), False, False))
+                        i = after
+                        continue
+                paren += 1  # a subshell; `((cd a && cp x y) && echo ok)` opens two
             elif operator == ")":
                 if paren:
                     paren -= 1
                 elif nested:
                     return tokens, i + 1
+            elif operator in (";;", ";&", ";;&") and state == "body":
+                cases[-1] = "pattern"
             tokens.append((operator, True, attached))
             i += len(operator)
         elif char == "#" and not in_word and not param:
@@ -347,34 +478,48 @@ def _scan(command: str, i: int, depth: int = 0) -> Tuple[List[Token], int]:
                 flags.append("1")
                 in_word = True
             i += 2
-        elif char == "$" and command.startswith("$'", i):
-            text, i = _ansi_c(command, i + 1)
-            word.extend(text)
-            flags.extend("1" * len(text))
-            in_word = True
         elif char == "$" and command.startswith('$"', i):
             i += 1  # `$"..."` is a double-quoted string, translated if there is a catalogue
-        elif char == "$" and (command.startswith("$((", i) or command.startswith("$[", i)):
-            arithmetic = command.startswith("$((", i)
-            i = _skip_group(command, i + 3, "(", ")", 2) if arithmetic else _skip_group(command, i + 2, "[", "]", 1)
+        elif char == "$" and command.startswith("$((", i) and source.arithmetic_end(i + 2) >= 0:
+            i = source.arithmetic_end(i + 2)
             word.extend("$(())")
             flags.extend("11111")
             in_word = True
-        elif char == "$" and command.startswith("$(", i) and depth < MAX_NESTING:
-            inner, i = _scan(command, i + 2, depth + 1)
-            subs.append(inner)
-            word.extend("$()")
-            flags.extend("111")
+        elif char == "$" and command.startswith("$[", i) and source.close(i + 1) >= 0:
+            i = source.close(i + 1) + 1
+            word.extend("$(())")
+            flags.extend("11111")
+            in_word = True
+        elif char == "$" and command[i + 1:i + 2] in ("'", "("):
+            # `$'...'`, decoded; `$(...)`, also a `$((cmd) )` that is no arithmetic. Left open, or nested too
+            # deep to read (refused then), the `$` is a plain character.
+            if command[i + 1] == "'":
+                text, after, closed = _ansi_c(command, i + 1)
+            else:
+                text, after = "$()", substitution(i + 2)
+                closed = after >= 0
+            if closed:
+                word.extend(text)
+                flags.extend("1" * len(text))
+                i = after
+            else:
+                word.append(char)
+                flags.append("0")
+                i += 1
             in_word = True
         elif char == "'":
             end = command.find("'", i + 1)
-            end = n if end < 0 else end
-            word.extend(command[i + 1:end])
-            flags.extend("1" * (end - i - 1))
+            if end < 0:  # never closed: a plain character, and what follows is read as usual
+                word.append(char)
+                flags.append("1")
+                i += 1
+            else:
+                word.extend(command[i + 1:end])
+                flags.extend("1" * (end - i - 1))
+                i = end + 1
             in_word = True
-            i = end + 1
         elif char == '"':
-            in_word = True
+            start, kept, too_deep = i, (len(word), len(subs)), source.too_deep
             i += 1
             while i < n and command[i] != '"':
                 if command[i] == "\\" and i + 1 < n and command[i + 1] in '"\\$`\n':
@@ -382,23 +527,31 @@ def _scan(command: str, i: int, depth: int = 0) -> Tuple[List[Token], int]:
                         word.append(command[i + 1])
                         flags.append("1")
                     i += 2
-                elif command.startswith("$((", i):
-                    i = _skip_group(command, i + 3, "(", ")", 2)
+                elif command.startswith("$((", i) and source.arithmetic_end(i + 2) >= 0:
+                    i = source.arithmetic_end(i + 2)
                     word.extend("$(())")
                     flags.extend("11111")
-                elif command.startswith("$(", i) and depth < MAX_NESTING:
-                    inner, i = _scan(command, i + 2, depth + 1)  # its own quotes, comments, here-documents
-                    subs.append(inner)
-                    word.extend("$()")
-                    flags.extend("111")
+                elif command.startswith("$(", i):
+                    after = substitution(i + 2)  # its own quotes, comments, here-documents
+                    text = "$()" if after >= 0 else "$"
+                    word.extend(text)
+                    flags.extend("1" * len(text))
+                    i = after if after >= 0 else i + 1
                 else:
                     word.append(command[i])
                     flags.append("1")
                     i += 1
+            if i >= n:  # never closed: the quote is a plain character, and what follows is read as usual
+                del word[kept[0]:], flags[kept[0]:], subs[kept[1]:]
+                source.too_deep = too_deep
+                word.append(char)
+                flags.append("1")
+                i = start
+            in_word = True
             i += 1
         else:
-            if char == "{" and command[i - 1:i] == "$":
-                param += 1
+            if char == "{" and command[i - 1:i] == "$" and source.close(i) >= 0:
+                param += 1  # a `${` that never closes is plain text, so a later `#` is still a comment
             elif char == "}" and param:
                 param -= 1
             word.append(char)
@@ -410,8 +563,10 @@ def _scan(command: str, i: int, depth: int = 0) -> Tuple[List[Token], int]:
     return tokens, n
 
 
-def _tokens(command: str) -> List[Token]:
-    return _scan(command, 0)[0]
+def _tokens(command: str) -> Tuple[List[Token], bool]:
+    """The tokens of `command`, and whether some part of it is nested too deep to read."""
+    source = _Source(command)
+    return _scan(source, 0)[0], source.too_deep
 
 
 def _brace_expand(word: str) -> List[str]:
@@ -595,7 +750,8 @@ def _command_targets(words: List[str]) -> List[_Target]:
     return []
 
 
-def _bash_targets(command: str) -> List[_Target]:
+def _bash_targets(command: str) -> Tuple[List[_Target], bool]:
+    """What `command` writes, and whether some part of it is nested too deep to read."""
     found: List[_Target] = []
 
     def add(target: _Target) -> None:
@@ -642,8 +798,9 @@ def _bash_targets(command: str) -> List[_Target]:
         for target in _command_targets(words):
             add(target)
 
-    collect(_tokens(command))
-    return found
+    tokens, too_deep = _tokens(command)
+    collect(tokens)
+    return found, too_deep
 
 
 def bash_targets(command: str) -> List[str]:
@@ -651,7 +808,7 @@ def bash_targets(command: str) -> List[str]:
     argument of `cp`, `mv`, `ln` and `sed -i`, after quotes and `{a,b}` groups are resolved. A quoted `>` is
     text, not a redirection, and a comment hides the rest of its line. A heuristic on purpose: it catches
     the tools one reaches for."""
-    return [str(target.word) for target in _bash_targets(command)]
+    return [str(target.word) for target in _bash_targets(command)[0]]
 
 
 def _inside(path: str, base: str) -> Optional[str]:
@@ -673,16 +830,23 @@ def targets(payload: Any, root: Path) -> List[Tuple[str, bool]]:
     the command is about to make (`cp -r draft .claude/skills/new`). A destination that is a folder also
     brings the name each source gets in it.
     """
+    return _targets(payload, root)[0]
+
+
+def _targets(payload: Any, root: Path) -> Tuple[List[Tuple[str, bool]], bool]:
+    """`targets(payload, root)`, and whether the call's command is nested too deep to read."""
     if not isinstance(payload, dict) or not isinstance(payload.get("tool_input"), dict):
-        return []
+        return [], False
     tool_input = payload["tool_input"]
     named = [tool_input.get(key) for key in ("file_path", "notebook_path")]
     raw = [_Target(value) for value in named if isinstance(value, str) and value]
     command = tool_input.get("command")
+    too_deep = False
     if isinstance(command, str) and command:
-        raw += _bash_targets(command)
+        written, too_deep = _bash_targets(command)
+        raw += written
     if not raw:
-        return []
+        return [], too_deep
     cwd = payload.get("cwd")
     base = os.path.abspath(cwd if isinstance(cwd, str) and cwd else os.getcwd())
     roots = [os.path.normpath(os.path.abspath(str(root)))]
@@ -743,7 +907,7 @@ def targets(payload: Any, root: Path) -> List[Tuple[str, bool]]:
                                 keep_names(os.path.join(candidate, name), f"{relative}/{name}", False, may_be_folder)
             except (ValueError, OSError):
                 continue
-    return found
+    return found, too_deep
 
 
 # -- session state, waivers --------------------------------------------------------------------------
@@ -914,6 +1078,12 @@ def _reserved_refusal(rel: str) -> Dict[str, Any]:
                  f"_meta/brain gate waive, and only on the person's express say-so. No skill run opens this path.")
 
 
+def _too_deep_refusal() -> Dict[str, Any]:
+    return _deny(f"skill gate: this is {TOO_DEEP} ($(...) or <(...) inside one another), too deep for the gate "
+                 f"to see what it writes, so it is refused. Split it into smaller commands, keeping intermediate "
+                 f"results in variables or files; no real command nests that deep.")
+
+
 def _remember_refusal(state_path: Path, state: Dict[str, Any], rel: str, skills: List[str], why: str) -> None:
     state["last_refusal"] = {"time": _now(), "path": rel, "skills": list(skills), "why": why}
     try:
@@ -1007,13 +1177,17 @@ def check(root: Path, payload: Any) -> Optional[Dict[str, Any]]:
     satisfied; the waiver files are refused unconditionally.
     """
     root = Path(root)
-    found = targets(payload, root)
+    found, too_deep = _targets(payload, root)
+    if too_deep:  # fail closed: what it writes cannot be seen, and no skill run or waiver changes that
+        state_path = _state_path(root, _session_id(payload))
+        _remember_refusal(state_path, _read_state(state_path), "", [], TOO_DEEP)
+        return _too_deep_refusal()
     if not found:
         return None
     for rel, _exists in found:
         if rel in RESERVED:
             state_path = _state_path(root, _session_id(payload))
-            _remember_refusal(state_path, _read_state(state_path), rel, [], "reserved for gate waive")
+            _remember_refusal(state_path, _read_state(state_path), rel, [], _RESERVED_WHY)
             return _reserved_refusal(rel)
     from . import config
 
@@ -1111,7 +1285,9 @@ def _format_status(info: Dict[str, Any]) -> List[str]:
         lines.append(f"waiver: {waiver['skill']} armed {waiver.get('armed', '?')} (reason: {waiver.get('reason', '')})")
     else:
         lines.append("waiver: none")
-    if refusal and not refusal.get("skills"):
+    if refusal and not refusal.get("skills") and refusal.get("why") not in (None, _RESERVED_WHY):
+        lines.append(f"last refusal: {refusal['why']} ({refusal.get('time', '?')})")  # a command nested too deep
+    elif refusal and not refusal.get("skills"):
         lines.append(f"last refusal: {refusal.get('path', '?')} is reserved for gate waive ({refusal.get('time', '?')})")
     elif refusal:
         needs = " or ".join(refusal["skills"])

@@ -997,9 +997,9 @@ def _session_id(payload: Any) -> str:
 
 
 def _state_base() -> Tuple[Path, int]:
-    """The shared state folder and the mode it is made with: `$XDG_RUNTIME_DIR/brain-gate` (private to the
-    user) when that variable names a folder the user owns, else `brain-gate` in the OS temp folder, which
-    every user shares, so sticky and world-writable like /tmp itself."""
+    """This user's state folder and the mode it is made with: `$XDG_RUNTIME_DIR/brain-gate` when that variable
+    names a folder the user owns, else `brain-gate-<uid>` in the OS temp folder. Both are the user's alone
+    (0700): a folder shared with other accounts would let one of them put state, or a link, in the way."""
     run = os.environ.get("XDG_RUNTIME_DIR")
     if run:
         try:
@@ -1010,7 +1010,7 @@ def _state_base() -> Tuple[Path, int]:
             return Path(run) / "brain-gate", 0o700
     import tempfile
 
-    return Path(tempfile.gettempdir()) / "brain-gate", 0o1777
+    return Path(tempfile.gettempdir()) / f"brain-gate-{os.getuid()}", 0o700
 
 
 def _state_dir(root: Path) -> Path:
@@ -1035,6 +1035,7 @@ def _verify_state_dir(folder: Path) -> None:
 def _read_state(path: Path) -> Dict[str, Any]:
     state: Dict[str, Any] = {"ran": {}, "last_refusal": None}
     try:
+        _verify_state_dir(path.parent.parent)
         _verify_state_dir(path.parent)
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
@@ -1061,9 +1062,10 @@ def _make_dir(path: Path, mode: int) -> None:
 
 
 def _ensure_state_dir(path: Path) -> None:
-    """Make the shared `brain-gate` folder (a second user on the machine must still be able to make their
-    own folder in it) and this brain's private one, and insist that the latter is what it should be."""
+    """Make this user's `brain-gate` folder and this brain's folder in it, and insist that both are what they
+    should be: real folders of this user that nobody else can use."""
     _make_dir(path.parent.parent, _state_base()[1])
+    _verify_state_dir(path.parent.parent)
     _make_dir(path.parent, 0o700)
     _verify_state_dir(path.parent)
 

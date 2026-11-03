@@ -1,0 +1,1025 @@
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import unittest
+from datetime import date
+from pathlib import Path
+from unittest import mock
+
+from tests.helpers import TEMPLATE_ROOT, TempDirCase  # first: puts <template>/_meta on sys.path
+from brainlib import config, gitutil, hook, practices, routing_sync
+from brainlib.report import BLOCK
+
+# Planted secrets are assembled at run time: no source file may hold a literal credential shape,
+# because the template's own pre-commit guard scans every file it commits.
+PLANTED = {
+    "private-key": "-----BEGIN " + "RSA PRIVATE KEY" + "-----",
+    "github-token": "gh" + "p_" + "a" * 36,
+    "aws-key": "AK" + "IA" + "B" * 16,
+    "slack-token": "xo" + "xb-" + "1234567890" + "abcdef",
+    "anthropic-key": "sk-" + "ant-" + "c" * 24,
+    "openai-key": "sk-" + "d" * 24,
+    "assignment": "pass" + "word=" + '"' + "hunter2" + "hunter2" + '"',  # a quoted literal
+}
+DOTENV = "API_" + "TOKEN=" + "abcdefgh" + "12345678"  # the other `assignment` shape: a dotenv line
+
+VALUE = "abcdefgh" + "12345678"  # an 8+ character literal for the `assignment` shapes below
+WORD = "pass" + "word"
+TERM = "zqx" + "acme"  # a private term, built at run time like the secrets
+GITHUB = "github-token"  # kept apart from the text after it: "<that word>: <8 characters>" is itself a finding
+
+SHIM_TEXT = (
+    "#!/bin/sh\n"
+    "# brain-template pre-commit shim\n"
+    'exec "$(git rev-parse --show-toplevel)/_meta/brain" hook pre-commit\n'
+)
+
+FENCE = "`" * 3
+MAP = f"{FENCE}mermaid\nflowchart LR\nIN(a request):::entry --> lab-a:::work\n{FENCE}\n"
+SKILL_BODY = "Does the thing.\n\n**Call it directly when:** the person names it.\n\n## Done when\n\n- it is done\n"
+ENTRY = (
+    "---\nid: sample-fact\ntags: [demo]\ndurability: durable\nevidence: researched\n"
+    f"verified: {date.today().isoformat()}\nsource: a note\nreviewed-against: []\n---\nA short fact.\n"
+)
+
+
+class HookCase(TempDirCase):
+    def setUp(self) -> None:
+        super().setUp()
+        # hook.install and hook.self_test run git in this process: give them the isolated environment too,
+        # so the person's global git config (signing, hooks path, ...) never reaches a test.
+        patcher = mock.patch.dict(os.environ, self.env, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def brain_repo(self, extra=None, private=None, skills=False) -> Path:
+        """A git repository holding a brain: the harness, a minimal brain.json and the managed allowlist."""
+        root = self.fake_brain(extra=extra)
+        if not skills:  # shipped brain-* skills are not under test here
+            shutil.rmtree(str(root / ".claude" / "skills"), ignore_errors=True)
+        shipped_map = root / "_meta" / "ROUTING-META.md"
+        if shipped_map.exists():
+            shipped_map.unlink()
+        allowlist = (TEMPLATE_ROOT / "_meta" / "managed" / "gitignore.block").read_text(encoding="utf-8")
+        (root / ".gitignore").write_text(allowlist, encoding="utf-8")
+        if private is not None:
+            (root / ".brain-private").write_text("\n".join(private) + "\n", encoding="utf-8")
+        self.git(root, "init", "-q")
+        self.git(root, "symbolic-ref", "HEAD", "refs/heads/main")
+        return root
+
+    def stage(self, root: Path, rel: str, data="x\n") -> None:
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(data, str):
+            data = data.encode("utf-8")
+        target.write_bytes(data)
+        self.git(root, "add", "-f", "--", rel)
+
+    def pre_commit(self, root: Path) -> subprocess.CompletedProcess:
+        return self.run_brain(root, "hook", "pre-commit")
+
+    def blocked(self, root: Path, rule: str, location: str) -> subprocess.CompletedProcess:
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+        self.assertIn(f"BLOCK  {rule}: {location}", r.stdout)
+        return r
+
+    def passes(self, root: Path) -> subprocess.CompletedProcess:
+        r = self.pre_commit(root)
+        self.assertEqual((r.returncode, "BLOCK" in r.stdout), (0, False), r.stdout + r.stderr)
+        return r
+
+    def commit_attempt(self, root: Path, message: str = "change") -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", "commit", "-q", "-m", message], cwd=str(root), env=self.env,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL,
+        )
+
+    def synced_skill_brain(self) -> Path:
+        """A brain with one skill and a map that names it, the skill's Where block written."""
+        root = self.brain_repo()
+        self.make_skill(root, "lab-a", "Does X. Use when Y.", SKILL_BODY)
+        (root / "docs").mkdir()
+        (root / "docs" / "ROUTING.md").write_text(MAP, encoding="utf-8")
+        routing_sync.sync(root, config.load(root), check=False)
+        return root
+
+
+class BlocksEachRuleTest(HookCase):
+    def test_blocks_each_rule(self):
+        doc = "docs/notes.md"
+        cases = [
+            # (rule, files to stage, brain.json extra, .brain-private lines, expected location)
+            ("env-file", {".env": "A=1\n"}, None, None, ".env"),
+            ("env-file", {"config/.env.local": "A=1\n"}, None, None, "config/.env.local"),
+            ("private-key", {doc: "a\nb\n" + PLANTED["private-key"] + "\n"}, None, None, doc + ":3"),
+            ("github-token", {doc: "ref " + PLANTED["github-token"] + "\n"}, None, None, doc + ":1"),
+            ("github-token", {doc: "pat " + "github" + "_pat_" + "E" * 50 + "\n"}, None, None, doc + ":1"),
+            ("aws-key", {doc: "\n" + PLANTED["aws-key"] + "\n"}, None, None, doc + ":2"),
+            ("slack-token", {doc: PLANTED["slack-token"] + "\n"}, None, None, doc + ":1"),
+            ("anthropic-key", {doc: "k " + PLANTED["anthropic-key"] + "\n"}, None, None, doc + ":1"),
+            ("openai-key", {doc: "k " + PLANTED["openai-key"] + "\n"}, None, None, doc + ":1"),
+            ("assignment", {doc: "x\n" + PLANTED["assignment"] + "\n"}, None, None, doc + ":2"),
+            ("assignment", {doc: "x\ny\n" + DOTENV + "\n"}, None, None, doc + ":3"),
+            ("assignment", {doc: "export DB_" + "PASSWORD=" + "abcdefgh1234\n"}, None, None, doc + ":1"),
+            ("deny-pattern", {doc: "the host 10.13.4.5 is up\n"},
+             {"privacy": {"deny_patterns": [r"10\.13\.\d+\.\d+"]}}, None, doc + ":1"),
+            ("private-pattern", {doc: "x\nthe castle-black host\n"}, None, [r"\bcastle-black\b"], doc + ":2"),
+            ("large-file", {"docs/big.md": "a" * 2000}, {"privacy": {"max_file_kb": 1}}, None, "docs/big.md"),
+        ]
+        for rule, files, extra, private, location in cases:
+            with self.subTest(rule=rule, location=location):
+                root = self.brain_repo(extra=extra, private=private)
+                for rel, text in files.items():
+                    self.stage(root, rel, text)
+                self.blocked(root, rule, location)
+
+    def test_private_patterns_ignore_case(self):
+        root = self.brain_repo(private=[r"\bcastle-black\b"])
+        self.stage(root, "docs/notes.md", "Visit Castle-Black on Monday.\n")
+        self.blocked(root, "private-pattern", "docs/notes.md:1")
+
+    def test_deny_patterns_are_exactly_as_written(self):
+        root = self.brain_repo(extra={"privacy": {"deny_patterns": ["internal-host", "(?i)SHOUTING"]}})
+        self.stage(root, "docs/notes.md", "Internal-Host is fine; shouting is not.\n")
+        self.blocked(root, "deny-pattern", "docs/notes.md:1")
+        quiet = self.brain_repo(extra={"privacy": {"deny_patterns": ["internal-host"]}})
+        self.stage(quiet, "docs/notes.md", "Internal-Host is not matched by a case-sensitive pattern.\n")
+        self.passes(quiet)
+
+    def test_private_and_deny_terms_in_file_names_are_blocked_and_masked(self):
+        root = self.brain_repo(
+            extra={"privacy": {"deny_patterns": [r"10\.13\.\d+\.\d+"]}}, private=[r"\bcastle-black\b"],
+        )
+        self.stage(root, "docs/projects/castle-black/notes.md", "fine\n")
+        self.stage(root, "docs/hosts/10.13.4.5.md", "fine\n")
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  private-pattern: docs/projects/***/notes.md (in the file name)", r.stdout)
+        self.assertIn("BLOCK  deny-pattern: docs/hosts/***.md (in the file name)", r.stdout)
+        for term in ("castle-black", "10.13.4.5"):
+            self.assertNotIn(term, r.stdout + r.stderr)
+
+    def test_a_private_term_in_a_file_name_is_masked_in_every_message_about_that_file(self):
+        root = self.brain_repo(private=[r"\bcastle-black\b"])
+        self.stage(root, "docs/castle-black/.env", "A=1\n")  # env-file, and the name
+        self.stage(root, "docs/castle-black.md", "ref " + PLANTED["github-token"] + "\n")  # content, and the name
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  env-file: docs/***/.env", r.stdout)
+        self.assertIn(f"BLOCK  {GITHUB}: docs/***.md:1", r.stdout)
+        self.assertNotIn("castle-black", r.stdout + r.stderr)
+
+    def test_a_file_name_that_matches_nothing_is_untouched(self):
+        root = self.brain_repo(private=[r"\bcastle-black\b"], extra={"privacy": {"deny_patterns": ["internal-host"]}})
+        self.stage(root, "docs/castle/black.md", "x\n")
+        self.passes(root)
+
+    def test_the_machines_private_files_are_never_committed(self):
+        for rel in (".brain-private", "brain.local.json", "docs/sub/.brain-private", "tools/brain.local.json"):
+            with self.subTest(path=rel):
+                root = self.brain_repo()
+                self.stage(root, rel, "castle-black\n" if rel.endswith("private") else "{}\n")
+                r = self.blocked(root, "private-file", rel)
+                self.assertNotIn("castle-black", r.stdout + r.stderr)
+
+    def test_a_staged_nested_repo_is_blocked(self):
+        root = self.brain_repo()
+        inner = root / "docs" / "inner"
+        inner.mkdir(parents=True)
+        self.git(inner, "init", "-q")
+        self.git(inner, "commit", "-q", "--allow-empty", "-m", "i")
+        subprocess.run(["git", "add", "-f", "docs/inner"], cwd=str(root), env=self.env, capture_output=True, check=True)
+        self.blocked(root, "nested-repo", "docs/inner")
+
+    def test_a_nested_repo_is_blocked_even_when_git_is_told_to_ignore_submodules(self):
+        root = self.brain_repo()
+        self.git(root, "config", "diff.ignoreSubmodules", "all")  # hides a staged gitlink from a plain `git diff`
+        inner = root / "docs" / "inner"
+        inner.mkdir(parents=True)
+        self.git(inner, "init", "-q")
+        self.git(inner, "commit", "-q", "--allow-empty", "-m", "i")
+        subprocess.run(["git", "add", "-f", "docs/inner"], cwd=str(root), env=self.env, capture_output=True, check=True)
+        self.blocked(root, "nested-repo", "docs/inner")
+
+    def test_a_file_inside_a_nested_repo_is_blocked(self):
+        root = self.brain_repo()
+        inner = root / "docs" / "inner"
+        inner.mkdir(parents=True)
+        self.git(inner, "init", "-q")
+        (inner / "page.md").write_text("hello\n", encoding="utf-8")
+        # git itself may refuse to add a file below an unindexed repository; the guard must hold either way.
+        self.git(root, "update-index", "--add", "--cacheinfo",
+                 "100644," + self.git(root, "hash-object", "-w", "docs/inner/page.md").strip() + ",docs/inner/page.md")
+        self.blocked(root, "nested-repo", "docs/inner/page.md")
+
+    def test_every_rule_has_a_case_in_the_self_test_and_here(self):
+        self.assertEqual(len(hook.RULES), len(set(hook.RULES)))
+        names = [name for name, _pattern in hook.CREDENTIAL_PATTERNS]
+        self.assertEqual(  # `assignment` is two patterns under one name
+            names,
+            ["private-key", "github-token", "aws-key", "slack-token", "anthropic-key", "openai-key",
+             "assignment", "assignment"],
+        )
+        for name in names:
+            self.assertIn(name, hook.RULES)
+        self.assertIn("private-file", hook.RULES)
+
+    def test_an_invalid_pattern_blocks_without_echoing_it(self):
+        root = self.brain_repo(extra={"privacy": {"deny_patterns": ["(unclosed-castle"]}}, private=["(unclosed-keep"])
+        self.stage(root, "docs/notes.md", "fine\n")
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  deny-pattern:", r.stdout)
+        self.assertIn("BLOCK  private-pattern:", r.stdout)
+        self.assertNotIn("castle", r.stdout + r.stderr)
+        self.assertNotIn("keep", r.stdout + r.stderr)
+
+    def test_an_unreadable_brain_json_blocks(self):
+        root = self.brain_repo()
+        self.stage(root, "docs/notes.md", "fine\n")
+        (root / "brain.json").write_text("{not json", encoding="utf-8")
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  config:", r.stdout)
+
+    def test_outside_a_repository_blocks(self):
+        root = self.fake_brain()  # no git init
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  git:", r.stdout)
+
+
+class MaskingTest(HookCase):
+    """A private or deny term must not reach the output by any path: not through a file name in a staged
+    check's finding, not through two terms that overlap, not through git's own error text."""
+
+    def test_staged_check_findings_never_print_a_private_name(self):
+        with self.subTest(check="practices lint, by file name and by the id in its message"):
+            root = self.brain_repo(private=[TERM])
+            self.stage(root, f"docs/practices/{TERM}.md", ENTRY)  # its id says sample-fact, not the file name
+            r = self.pre_commit(root)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("BLOCK  practices-lint: docs/practices/***.md: id must equal the file name (***)", r.stdout)
+            self.assertNotIn(TERM, r.stdout + r.stderr)
+
+        with self.subTest(check="practices lint, no frontmatter"):
+            root = self.brain_repo(private=[TERM])
+            self.stage(root, f"docs/practices/{TERM}.md", "no frontmatter at all\n")
+            r = self.pre_commit(root)
+            self.assertIn("BLOCK  practices-lint: docs/practices/***.md: no frontmatter", r.stdout)
+            self.assertNotIn(TERM, r.stdout + r.stderr)
+
+        with self.subTest(check="lint, by skill name"):
+            root = self.brain_repo(private=[TERM])
+            self.stage(root, f".claude/skills/lab-{TERM}/SKILL.md", f"---\nname: lab-{TERM}\ndescription:\n---\nBody.\n")
+            r = self.pre_commit(root)
+            self.assertRegex(r.stdout, r"BLOCK  lint: lab-\*\*\*: .*description")
+            self.assertNotIn(TERM, r.stdout + r.stderr)
+
+        with self.subTest(check="routing sync, by path"):
+            root = self.brain_repo(private=[TERM])
+            self.make_skill(root, f"lab-{TERM}", "Does X. Use when Y.", SKILL_BODY)
+            (root / "docs").mkdir()
+            (root / "docs" / "ROUTING.md").write_text(MAP.replace("lab-a", f"lab-{TERM}"), encoding="utf-8")
+            routing_sync.sync(root, config.load(root), check=False)
+            path = root / ".claude" / "skills" / f"lab-{TERM}" / "SKILL.md"
+            text = path.read_text(encoding="utf-8")
+            at = text.index("\n", text.index("<!-- where:begin")) + 1
+            path.write_text(text[:at] + "Words that sync did not write.\n" + text[at:], encoding="utf-8")
+            self.git(root, "add", "-f", ".claude", "docs")
+            r = self.pre_commit(root)
+            self.assertIn("BLOCK  routing-sync: .claude/skills/lab-***/SKILL.md: out of date", r.stdout)
+            self.assertNotIn(TERM, r.stdout + r.stderr)
+
+    def test_overlapping_and_adjacent_terms_are_masked_as_one(self):
+        other = "acme-" + "zqx" + "merger"  # overlaps TERM in "acme"
+        for label, private, name, shown in (
+            ("overlapping terms", [TERM, other], f"{TERM}-zqxmerger.md", "***.md"),
+            ("terms in the other order", [other, TERM], f"{TERM}-zqxmerger.md", "***.md"),
+            ("adjacent terms", ["aaaa", "bbbb"], "aaaabbbb.md", "***.md"),
+            ("a term overlapping itself", ["qq"], "qqq.md", "***.md"),
+            ("a term twice", [TERM], f"{TERM}-and-{TERM}.md", "***-and-***.md"),
+        ):
+            with self.subTest(case=label):
+                root = self.brain_repo(private=private)
+                self.stage(root, f"docs/{name}", "fine\n")
+                r = self.pre_commit(root)
+                self.assertEqual(r.returncode, 1)
+                self.assertIn(f"BLOCK  private-pattern: docs/{shown} (in the file name)", r.stdout)
+                for fragment in ("zqx", "merger", "acme", "aaa", "bbb", "qq"):
+                    self.assertNotIn(fragment, r.stdout + r.stderr)
+
+    def test_a_git_read_error_does_not_echo_the_path(self):
+        root = self.brain_repo(private=[TERM])
+        self.stage(root, f"docs/{TERM}.md", "one\n")
+        self.git(root, "commit", "-q", "-m", "base")
+        self.git(root, "checkout", "-q", "-b", "side")
+        self.stage(root, f"docs/{TERM}.md", "two\n")
+        self.git(root, "commit", "-q", "-m", "side")
+        self.git(root, "checkout", "-q", "main")
+        self.stage(root, f"docs/{TERM}.md", "three\n")
+        self.git(root, "commit", "-q", "-m", "main")
+        merged = subprocess.run(["git", "merge", "side"], cwd=str(root), env=self.env, capture_output=True)
+        self.assertNotEqual(merged.returncode, 0, "the merge was meant to conflict")
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  git: cannot read the staged docs/***.md: ", r.stdout)  # git says why, minus the name
+        self.assertIn("not at stage 0", r.stdout)
+        self.assertNotIn(TERM, r.stdout + r.stderr)
+
+
+class AnchoredMaskingTest(HookCase):
+    """Deny and private patterns are written for a bare path or a content line, so `^docs/hosts/` or a `\\b` at the
+    edge of a path matches the path alone. Each path must be masked in that context, before it is put into a message."""
+
+    DENY = "^docs/" + "hosts/"  # anchored: only a path that starts with it
+    PRIVATE = "^docs/" + "zqx"
+    PRIVATE_SKILL = "^\\.claude/skills/lab-" + "zqx"
+    PRIVATE_PRACTICE = "^docs/practices/" + "zqx"
+
+    def inner_repo(self, root: Path, rel: str) -> None:
+        inner = root / rel
+        inner.mkdir(parents=True)
+        self.git(inner, "init", "-q")
+        self.git(inner, "commit", "-q", "--allow-empty", "-m", "i")
+
+    def test_a_content_finding_masks_the_bare_path(self):
+        for label, kwargs, path, shown in (
+            ("anchored deny", {"extra": {"privacy": {"deny_patterns": [self.DENY]}}}, "docs/hosts/web.md", "***web.md"),
+            ("anchored private", {"private": [self.PRIVATE]}, "docs/zqxacme.md", "***acme.md"),
+        ):
+            with self.subTest(case=label):
+                root = self.brain_repo(**kwargs)
+                self.stage(root, path, "ref " + PLANTED["github-token"] + "\n")
+                r = self.pre_commit(root)
+                self.assertEqual(r.returncode, 1)
+                self.assertIn(f"BLOCK  {GITHUB}: {shown}:1", r.stdout)
+                self.assertIn(f"{shown} (in the file name)", r.stdout)
+                for fragment in ("hosts", "zqx", "docs/"):
+                    self.assertNotIn(fragment, r.stdout + r.stderr)
+
+    def test_a_nested_repo_finding_masks_its_path(self):
+        root = self.brain_repo(extra={"privacy": {"deny_patterns": [self.DENY]}})
+        self.inner_repo(root, "docs/hosts/inner")
+        subprocess.run(["git", "add", "-f", "docs/hosts/inner"], cwd=str(root), env=self.env, capture_output=True, check=True)
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  nested-repo: ***inner (a repository inside this one)", r.stdout)
+        self.assertNotIn("hosts", r.stdout + r.stderr)
+
+    def test_a_file_inside_a_nested_repo_masks_the_file_and_the_repo(self):
+        root = self.brain_repo(extra={"privacy": {"deny_patterns": [self.DENY]}})
+        self.inner_repo(root, "docs/hosts/inner")
+        (root / "docs" / "hosts" / "inner" / "page.md").write_text("hello\n", encoding="utf-8")
+        blob = self.git(root, "hash-object", "-w", "docs/hosts/inner/page.md").strip()
+        self.git(root, "update-index", "--add", "--cacheinfo", f"100644,{blob},docs/hosts/inner/page.md")
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  nested-repo: ***inner/page.md (inside the repository at ***inner)", r.stdout)
+        self.assertNotIn("hosts", r.stdout + r.stderr)
+
+    def test_lint_and_practices_findings_mask_a_name_that_only_the_whole_path_matches(self):
+        with self.subTest(check="lint"):
+            root = self.brain_repo(private=[self.PRIVATE_SKILL])
+            self.stage(root, ".claude/skills/lab-zqxfoo/SKILL.md", "---\nname: lab-zqxfoo\ndescription:\n---\nBody.\n")
+            r = self.pre_commit(root)
+            self.assertRegex(r.stdout, r"BLOCK  lint: \*\*\*: .*description")  # the skill name starts the pattern's match
+            self.assertNotIn("zqx", r.stdout + r.stderr)
+
+        with self.subTest(check="practices lint, a path and the id in its message"):
+            root = self.brain_repo(private=[self.PRIVATE_PRACTICE])
+            self.stage(root, "docs/practices/zqxfoo.md", ENTRY)  # its id says sample-fact, not the file name
+            r = self.pre_commit(root)
+            self.assertIn("BLOCK  practices-lint: ***foo.md: id must equal the file name (***)", r.stdout)
+            self.assertNotIn("zqx", r.stdout + r.stderr)
+
+        with self.subTest(check="practices lint, no frontmatter"):
+            root = self.brain_repo(private=[self.PRIVATE_PRACTICE])
+            self.stage(root, "docs/practices/zqxfoo.md", "no frontmatter at all\n")
+            r = self.pre_commit(root)
+            self.assertIn("BLOCK  practices-lint: ***foo.md: no frontmatter", r.stdout)
+            self.assertNotIn("zqx", r.stdout + r.stderr)
+
+        with self.subTest(check="routing sync"):
+            root = self.brain_repo(private=[self.PRIVATE_SKILL])
+            self.make_skill(root, "lab-zqxfoo", "Does X. Use when Y.", SKILL_BODY)
+            (root / "docs").mkdir()
+            (root / "docs" / "ROUTING.md").write_text(MAP.replace("lab-a", "lab-zqxfoo"), encoding="utf-8")
+            routing_sync.sync(root, config.load(root), check=False)
+            path = root / ".claude" / "skills" / "lab-zqxfoo" / "SKILL.md"
+            text = path.read_text(encoding="utf-8")
+            at = text.index("\n", text.index("<!-- where:begin")) + 1
+            path.write_text(text[:at] + "Words that sync did not write.\n" + text[at:], encoding="utf-8")
+            self.git(root, "add", "-f", ".claude", "docs")
+            r = self.pre_commit(root)
+            self.assertIn("BLOCK  routing-sync: ***foo/SKILL.md: out of date", r.stdout)
+            self.assertNotIn("zqx", r.stdout + r.stderr)
+
+    def test_a_skill_name_is_masked_only_when_the_matched_term_covers_it(self):
+        # the term is in a file name under references/, not in the skill's folder name: the skill is still named
+        root = self.brain_repo(private=["zq" + "xnotes"])
+        self.stage(root, ".claude/skills/lab-a/SKILL.md", "---\nname: lab-a\ndescription:\n---\nBody.\n")
+        self.stage(root, ".claude/skills/lab-a/references/zqxnotes.md", "x\n")
+        r = self.pre_commit(root)
+        self.assertRegex(r.stdout, r"BLOCK  lint: lab-a: .*description")
+        self.assertIn("BLOCK  routing-sync: .claude/skills/lab-a/SKILL.md: out of date", r.stdout)
+        self.assertNotIn("zqx", r.stdout + r.stderr)
+
+    def test_a_git_read_error_masks_the_path_git_repeats(self):
+        root = self.brain_repo(private=[self.PRIVATE])
+        self.stage(root, "docs/zqxacme.md", "one\n")
+        self.git(root, "commit", "-q", "-m", "base")
+        self.git(root, "checkout", "-q", "-b", "side")
+        self.stage(root, "docs/zqxacme.md", "two\n")
+        self.git(root, "commit", "-q", "-m", "side")
+        self.git(root, "checkout", "-q", "main")
+        self.stage(root, "docs/zqxacme.md", "three\n")
+        self.git(root, "commit", "-q", "-m", "main")
+        merged = subprocess.run(["git", "merge", "side"], cwd=str(root), env=self.env, capture_output=True)
+        self.assertNotEqual(merged.returncode, 0, "the merge was meant to conflict")
+        r = self.pre_commit(root)
+        self.assertIn("BLOCK  git: cannot read the staged ***acme.md: fatal: path '***acme.md' is in the index", r.stdout)
+        self.assertNotIn("zqx", r.stdout + r.stderr)
+
+    def test_the_early_git_error_is_masked(self):
+        root = self.brain_repo(private=[r"\b" + TERM + r"\b"])
+        broken = gitutil.GitError(("diff", "--cached"), f"fatal: bad object docs/{TERM}/x", 128)
+        with mock.patch.object(gitutil, "staged_entries", side_effect=broken):
+            found = hook.pre_commit(root)
+        self.assertEqual([(f.severity, f.subject) for f in found], [(BLOCK, "git")])
+        self.assertEqual(found[0].message, "cannot read the staged files: fatal: bad object docs/***/x")
+
+    def test_a_name_is_masked_before_it_is_made_printable(self):
+        # `zqx[^?]` matches the undecodable byte in the real name, but not the `?` printing would turn it into
+        root = self.brain_repo(private=["zqx[^?]"])
+        name = os.fsdecode(b"docs/zqx\xe9.md")
+        try:
+            self.stage(root, name, "ref " + PLANTED["github-token"] + "\n")
+        except (OSError, AssertionError, ValueError):
+            self.skipTest("this file system does not allow a non-UTF-8 file name")
+        r = self.pre_commit(root)
+        self.assertIn(f"BLOCK  {GITHUB}: docs/***.md:1", r.stdout)
+        self.assertIn("BLOCK  private-pattern: docs/***.md (in the file name)", r.stdout)
+        self.assertNotIn("zqx", r.stdout + r.stderr)
+
+
+class MaskTermsTest(unittest.TestCase):
+    @staticmethod
+    def patterns(*texts: str):
+        import re
+
+        return [("private-pattern", re.compile(text, re.IGNORECASE)) for text in texts]
+
+    def test_terms_are_replaced_once_over_the_original_text(self):
+        mask = hook._mask_terms
+        self.assertEqual(mask("a/zqxacme-zqxmerger.md", self.patterns("zqxacme", "acme-zqxmerger")), "a/***.md")
+        self.assertEqual(mask("a/zqxacme-zqxmerger.md", self.patterns("acme-zqxmerger", "zqxacme")), "a/***.md")
+        self.assertEqual(mask("AaBb", self.patterns("aa", "bb")), "***")  # touching terms, any case
+        self.assertEqual(mask("qqqq", self.patterns("qq")), "***")
+        self.assertEqual(mask("one two one", self.patterns("one")), "*** two ***")
+
+    def test_text_without_a_term_and_patterns_that_match_nothing_or_everything_are_safe(self):
+        mask = hook._mask_terms
+        self.assertEqual(mask("plain text", self.patterns("zqx")), "plain text")
+        self.assertEqual(mask("plain text", []), "plain text")
+        self.assertEqual(mask("plain text", self.patterns("z*", "^", "$")), "plain text")  # empty matches mask nothing
+        self.assertEqual(mask("", self.patterns("zqx")), "")
+
+
+class CleanCommitsTest(HookCase):
+    def test_clean_commit_and_env_example_pass(self):
+        root = self.brain_repo()
+        self.stage(root, "docs/notes.md", "Plain notes about the homelab.\n")
+        self.stage(root, ".env.example", "# names only\nAPI_KEY=\nDB_PASSWORD=\n")
+        self.stage(root, "config/.env.example", "TOKEN=\n")
+        r = self.passes(root)
+        self.assertIn("ok     pre-commit: 3 staged file(s) checked", r.stdout)
+
+    def test_deleting_a_file_is_not_a_finding(self):
+        root = self.brain_repo()
+        self.stage(root, "docs/old.md", "old\n")
+        self.git(root, "commit", "-q", "-m", "base")
+        self.git(root, "rm", "-q", "docs/old.md")
+        r = self.passes(root)
+        self.assertIn("ok     pre-commit: 0 staged file(s) checked", r.stdout)
+
+    def test_nothing_staged_passes(self):
+        self.passes(self.brain_repo())
+
+    def test_placeholders_not_flagged(self):
+        root = self.brain_repo()
+        lines = [
+            'token = os.environ["TOKEN"]',
+            "api_key=$API_KEY",
+            "password=<your password>",
+            "password: ${PASSWORD}",
+            'token = response.json()["token"]',
+            'token = env.secret("FORGE_TOKEN")',
+            "tokens = fetch_tokens(command)",
+            "tokens = _tokens(command)",
+            'secret = "short"',
+            "TOKEN=$FROM_THE_SHELL",
+            'DEFAULT_TOKEN_HEADER = "Authorization"',
+            'TOKEN_URL = "https://example.invalid/token"',
+            'secret_name = "projects/x/secrets/y"',
+            'token_type = "bearer"',
+        ]
+        self.stage(root, "docs/setup.md", "\n".join(lines) + "\n")
+        self.passes(root)
+
+    def test_bare_begin_marker_is_not_a_private_key(self):
+        root = self.brain_repo()
+        self.stage(root, "docs/notes.md", 'pattern = re.compile(r"-----BEGIN")\n-----BEGIN CERTIFICATE-----\n')
+        self.passes(root)
+
+    def test_brain_json_skipped_for_deny_patterns_only(self):
+        root = self.brain_repo(
+            extra={"description": "talks to internal-host", "privacy": {"deny_patterns": ["internal-host"]}},
+            private=[r"\bcastle-black\b"],
+        )
+        self.git(root, "add", "brain.json")
+        self.passes(root)  # its own deny list does not match itself
+        self.stage(root, "docs/notes.md", "uses internal-host\n")
+        self.blocked(root, "deny-pattern", "docs/notes.md:1")
+
+        private = self.brain_repo(extra={"description": "the castle-black box"}, private=[r"\bcastle-black\b"])
+        self.git(private, "add", "brain.json")
+        self.blocked(private, "private-pattern", "brain.json:")
+
+        credential = self.brain_repo(extra={"note": "key " + PLANTED["github-token"]})
+        self.git(credential, "add", "brain.json")
+        self.blocked(credential, "github-token", "brain.json:")
+
+    def test_large_file_allow_glob(self):
+        root = self.brain_repo(extra={"privacy": {"max_file_kb": 1, "large_file_allow": ["assets/**", "*.pdf"]}})
+        self.stage(root, "assets/big.txt", "a" * 3000)
+        self.stage(root, "manual.pdf", "b" * 3000)
+        self.stage(root, "docs/exact.md", "c" * 1024)  # at the limit, not over it
+        self.passes(root)
+        self.stage(root, "docs/big.md", "a" * 1025)
+        r = self.blocked(root, "large-file", "docs/big.md")
+        self.assertNotIn("assets/big.txt", r.stdout)
+        self.assertNotIn("manual.pdf", r.stdout)
+        self.assertNotIn("exact.md", r.stdout)
+
+
+class SafetyTest(HookCase):
+    def test_findings_never_echo_secret(self):
+        root = self.brain_repo(
+            extra={"privacy": {"deny_patterns": [r"10\.13\.\d+\.\d+"]}}, private=[r"\bcastle-black\b"],
+        )
+        lines = list(PLANTED.values()) + [DOTENV, "host 10.13.4.5", "the castle-black box"]
+        self.stage(root, "docs/notes.md", "\n".join(lines) + "\n")
+        self.stage(root, "docs/other.md", "ref " + PLANTED["github-token"] + "\n")
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        out = r.stdout + r.stderr
+        for rule in PLANTED:
+            self.assertIn(f"BLOCK  {rule}: docs/notes.md:", r.stdout)
+        for value in list(PLANTED.values()) + [DOTENV, "abcdefgh12345678", "10.13.4.5", "castle-black", "hunter2"]:
+            self.assertNotIn(value, out)
+        for fragment in ("p_" + "a" * 8, "ant-" + "c" * 8, "A" * 8, "1234567890", "RSA PRIVATE"):
+            self.assertNotIn(fragment, out)
+
+    def test_binary_and_latin1_files_do_not_crash(self):
+        root = self.brain_repo()
+        png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + bytes(range(256)) * 8
+        self.stage(root, "docs/logo.png", png)
+        self.stage(root, "docs/cafe.txt", "café résumé naïve\n".encode("latin-1"))
+        self.stage(root, "docs/mixed.txt", b"ok \xff\xfe\xfd still text\n")
+        r = self.passes(root)
+        self.assertNotIn("Traceback", r.stderr)
+
+    def test_latin1_text_is_still_scanned(self):
+        root = self.brain_repo()
+        data = "café\n".encode("latin-1") + PLANTED["github-token"].encode("ascii") + b"\n"
+        self.stage(root, "docs/cafe.txt", data)
+        self.blocked(root, "github-token", "docs/cafe.txt:2")
+
+    def test_a_non_utf8_file_name_is_reported_without_crashing(self):
+        root = self.brain_repo()
+        name = os.fsdecode(b"docs/caf\xe9.md")
+        try:
+            self.stage(root, name, "ref " + PLANTED["github-token"] + "\n")
+        except (OSError, AssertionError, ValueError):
+            self.skipTest("this file system does not allow a non-UTF-8 file name")
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn(f"BLOCK  {GITHUB}: docs/caf", r.stdout)
+        self.assertNotIn("Traceback", r.stderr)
+
+    def test_the_credential_patterns_have_the_pinned_boundaries(self):
+        def hits(text: str):
+            return [rule for rule, line in hook.credential_hits(text.encode("utf-8"))]
+
+        self.assertEqual(hits("gh" + "p_" + "a" * 36), ["github-token"])
+        self.assertEqual(hits("gh" + "p_" + "a" * 35), [])
+        self.assertEqual(hits("AK" + "IA" + "A" * 15), [])
+        self.assertEqual(hits("sk-" + "a" * 19), [])
+        self.assertEqual(hits("sk-" + "a" * 20), ["openai-key"])
+        self.assertEqual(sorted(hits("sk-" + "ant-" + "a" * 20)), ["anthropic-key", "openai-key"])
+        self.assertEqual(hits("xo" + "xb-" + "1" * 9), [])
+        self.assertEqual(hits("xo" + "xs-" + "1" * 10), ["slack-token"])
+        self.assertEqual(hits("-----BEGIN " + "PRIVATE KEY" + "-----"), ["private-key"])
+        self.assertEqual(hits("Token: " + '"' + "abcdefgh" + '"'), ["assignment"])  # quoted literal, any case
+        self.assertEqual(hits("secret = " + "'" + "abcdefgh" + "'"), ["assignment"])
+        self.assertEqual(hits("api" + "_key=" + '"' + "x" * 8 + '"'), ["assignment"])
+        self.assertEqual(hits("secret = 'short'"), [])  # under 8 characters
+        self.assertEqual(hits("secret = " + '"' + "abcdefgh" + "'"), [])  # the quotes must match
+        self.assertEqual(hits("secret = " + '"' + "$" + "abcdefgh" + '"'), [])  # a variable reference
+        self.assertEqual(hits("Token: " + "abcdefgh"), [])  # unquoted, and not a dotenv line
+        self.assertEqual(hits("API_" + "KEY=" + "x" * 8), ["assignment"])  # a dotenv line
+        self.assertEqual(hits("  export MY_" + "SECRET=" + "x" * 8 + "  "), ["assignment"])
+        self.assertEqual(hits("API_" + "KEY=" + "x" * 7), [])
+        self.assertEqual(hits("API_" + "KEY=" + "x" * 8 + " # note"), ["assignment"])  # a trailing comment is fine
+        self.assertEqual(hits("api" + "_key=" + "x" * 8), [])  # a dotenv NAME is upper case
+        self.assertEqual(hits("DB_PASSWORD=${DB_PASSWORD}"), [])
+        self.assertEqual(hits("OTHER=" + "x" * 20), [])
+        self.assertEqual(hits("pass" + "word=" + '"' + "hunter2" * 2 + '"'), ["assignment"])
+
+    def test_pgp_private_key_blocks_and_aws_temporary_keys_are_keys(self):
+        def hits(text: str):
+            return [rule for rule, line in hook.credential_hits(text.encode("utf-8"))]
+
+        self.assertEqual(hits("-----BEGIN " + "PGP PRIVATE KEY BLOCK" + "-----"), ["private-key"])
+        self.assertEqual(hits("-----BEGIN " + "EC PRIVATE KEY" + "-----"), ["private-key"])
+        self.assertEqual(hits("-----BEGIN " + "PGP PUBLIC KEY BLOCK" + "-----"), [])
+        self.assertEqual(hits("AS" + "IA" + "B" * 16), ["aws-key"])
+        self.assertEqual(hits("AK" + "IA" + "B" * 16), ["aws-key"])
+        self.assertEqual(hits("AS" + "IA" + "B" * 15), [])
+
+    def test_assignment_shapes_that_are_secrets(self):
+        shapes = {
+            "a JSON key": '"' + WORD + '": "' + VALUE + '"',
+            "a PHP array": "'" + WORD + "' => '" + VALUE + "'",
+            "a compound name": "db_" + WORD + ' = "' + VALUE + '"',
+            "a compound constant": "SECRET" + "_KEY" + ' = "' + VALUE + '"',
+            "a JSON compound key": '"client_' + "secret" + '": "' + VALUE + '"',
+            "a JSON token key": '"access_' + "token" + '": "' + VALUE + '"',
+            "a quoted dotenv value": "DB_" + "PASSWORD" + '="' + VALUE + '"',
+            "an exported single-quoted value": "export API_" + "TOKEN" + "='" + VALUE + "'",
+            "a dotenv value with a comment": "API_" + "TOKEN=" + VALUE + " # prod",
+            "a compose list item": "      - DB_" + "PASSWORD=" + VALUE,
+            "a Dockerfile ENV": "ENV API_" + "TOKEN=" + VALUE,
+            "a YAML mapping": "POSTGRES_" + "PASSWORD: " + VALUE,
+            "a plain quoted literal": WORD + '="' + VALUE + '"',
+            "a dotenv value": "API_" + "TOKEN=" + VALUE,
+        }
+        for label, line in shapes.items():
+            with self.subTest(shape=label):
+                self.assertEqual([r for r, _n in hook.credential_hits(line.encode("utf-8"))], ["assignment"])
+
+    def test_assignment_shapes_that_are_code_or_placeholders(self):
+        lines = [
+            'token = os.environ["TOKEN"]',
+            "api_key=$API_KEY",
+            "password=<your password>",
+            "password: ${PASSWORD}",
+            'token = response.json()["token"]',
+            'token = env.secret("X")',
+            "tokens = _tokens(command)",
+            'DEFAULT_TOKEN_HEADER = "Authorization"',
+            'TOKEN_URL = "https://example.invalid/token"',
+            'secret_name = "projects/x/secrets/y"',
+            'token_type = "bearer"',
+            "POSTGRES_" + "PASSWORD: ${POSTGRES_PASSWORD}",
+            "POSTGRES_" + 'PASSWORD: "${POSTGRES_PASSWORD}"',
+            "DB_" + "PASSWORD=" + '"${DB_PASSWORD}"',
+            "- DB_" + "PASSWORD=" + "$DB_PASSWORD",
+        ]
+        for line in lines:
+            with self.subTest(line=line):
+                self.assertEqual(hook.credential_hits(line.encode("utf-8")), [])
+
+    def test_a_long_line_is_scanned_in_bounded_time(self):
+        import time
+
+        for unit in ("a-", "abcdefgh", "password", "_ ", "PASSWORD_"):
+            with self.subTest(unit=unit):
+                started = time.monotonic()
+                hook.credential_hits((unit * (20000 // len(unit))).encode("ascii"))
+                # about 0.05 s with the 64-character bound on a name; seconds without it (time grows as the square)
+                self.assertLess(time.monotonic() - started, 2.0)
+
+    def test_in_process_git_calls_use_the_isolated_environment(self):
+        self.assertEqual(os.environ["HOME"], self.env["HOME"])
+        self.assertEqual(os.environ["GIT_CONFIG_GLOBAL"], self.env["GIT_CONFIG_GLOBAL"])
+
+    def test_binary_content_has_no_hits(self):
+        self.assertEqual(hook.credential_hits(b"\x00" + PLANTED["github-token"].encode("ascii")), [])
+
+    def test_every_file_the_template_commits_passes_its_own_scan(self):
+        # The guard will scan every file the template commits, itself included: the tracked files, and
+        # any new file git would add (ignored scratch such as local/ and .superpowers/ is not one).
+        listed = subprocess.run(
+            ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+            cwd=str(TEMPLATE_ROOT), env=self.env, capture_output=True,
+        )
+        if listed.returncode != 0:
+            self.skipTest("the template is not a git checkout here")
+        names = [n for n in listed.stdout.decode("utf-8", errors="surrogateescape").split("\0") if n]
+        self.assertGreater(len(names), 20)
+        offenders = []
+        for name in names:
+            path = TEMPLATE_ROOT / name
+            if path.is_file():
+                hits = hook.credential_hits(path.read_bytes())
+                if hits:
+                    offenders.append(f"{name}:{hits[0][1]} ({hits[0][0]})")
+        self.assertEqual(offenders, [])
+
+
+class StagedChecksTest(HookCase):
+    def test_staged_checks(self):
+        with self.subTest(check="a BROKEN skill"):
+            root = self.brain_repo()
+            self.stage(root, ".claude/skills/lab-bad/SKILL.md", "---\nname: lab-bad\ndescription:\n---\nBody.\n")
+            r = self.pre_commit(root)
+            self.assertEqual(r.returncode, 1)
+            self.assertRegex(r.stdout, r"BLOCK  lint: lab-bad: .*description")
+
+        with self.subTest(check="a stale Where block"):
+            root = self.synced_skill_brain()
+            self.git(root, "add", "-f", ".claude", "docs")
+            self.passes(root)  # control: a freshly synced skill and map are clean
+            path = root / ".claude" / "skills" / "lab-a" / "SKILL.md"
+            text = path.read_text(encoding="utf-8")
+            at = text.index("<!-- where:begin")
+            at = text.index("\n", at) + 1
+            path.write_text(text[:at] + "Words that sync did not write.\n" + text[at:], encoding="utf-8")
+            self.git(root, "add", "-f", ".claude")
+            r = self.pre_commit(root)
+            self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertIn("BLOCK  routing-sync: .claude/skills/lab-a/SKILL.md", r.stdout)
+
+        with self.subTest(check="a map edit and a new skill leave blocks stale"):
+            root = self.synced_skill_brain()
+            self.git(root, "add", "-f", ".claude", "docs")
+            (root / "docs" / "ROUTING.md").write_text(
+                MAP.replace("IN(a request):::entry --> lab-a:::work",
+                            "IN(a request):::entry --> lab-b:::work\nlab-b --> lab-a:::work"), encoding="utf-8")
+            self.make_skill(root, "lab-b", "Does X. Use when Y.", SKILL_BODY)
+            self.git(root, "add", "-f", ".claude", "docs")
+            r = self.pre_commit(root)
+            self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertIn("BLOCK  routing-sync:", r.stdout)
+
+        with self.subTest(check="a bad rules.json"):
+            root = self.synced_skill_brain()
+            self.git(root, "add", "-f", ".claude", "docs")
+            self.stage(root, ".claude/skills/lab-a/rules.json", "{not json")
+            r = self.pre_commit(root)
+            self.assertEqual(r.returncode, 1)
+            self.assertRegex(r.stdout, r"BLOCK  lint: lab-a: rules\.json")
+
+        with self.subTest(check="a practice error"):
+            root = self.brain_repo()
+            self.stage(root, "docs/practices/bad-entry.md", "no frontmatter at all\n")
+            r = self.pre_commit(root)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("BLOCK  practices-lint: docs/practices/bad-entry.md:", r.stdout)
+
+    def test_a_broken_check_module_blocks_only_commits_that_need_it(self):
+        for module, trigger in (("lint", ".claude/skills/lab-a/SKILL.md"), ("routing_sync", "docs/ROUTING.md"),
+                                ("practices", "docs/practices/sample-fact.md")):
+            with self.subTest(module=module):
+                root = self.brain_repo()
+                (root / "_meta" / "brainlib" / f"{module}.py").write_text("raise RuntimeError('broken')\n", encoding="utf-8")
+                self.stage(root, "docs/notes.md", "fine\n")
+                self.passes(root)  # nothing staged needs the broken module
+                self.stage(root, trigger, SKILL_BODY if trigger.endswith("SKILL.md") else MAP)
+                r = self.pre_commit(root)
+                self.assertEqual(r.returncode, 1, r.stdout)
+                self.assertIn("the check could not run: RuntimeError", r.stdout)
+                self.assertNotIn("Traceback", r.stderr)
+
+    def test_clean_staged_skill_and_map_pass(self):
+        root = self.synced_skill_brain()
+        self.git(root, "add", "-f", ".claude", "docs")
+        r = self.passes(root)
+        self.assertIn("ok     pre-commit:", r.stdout)
+
+    def test_skill_checks_run_only_when_skills_are_staged(self):
+        root = self.brain_repo()
+        self.make_skill(root, "lab-bad", "", "Body.")  # broken, but not staged
+        self.stage(root, "docs/notes.md", "fine\n")
+        self.passes(root)
+
+    def test_a_deleted_skill_still_triggers_the_checks(self):
+        root = self.synced_skill_brain()
+        self.git(root, "add", "-f", ".claude", "docs")
+        self.git(root, "commit", "-q", "-m", "base")
+        self.make_skill(root, "lab-b", "Does X. Use when Y.", SKILL_BODY)  # unmapped, so the map is now wrong
+        shutil.rmtree(str(root / ".claude" / "skills" / "lab-a"))
+        self.git(root, "rm", "-q", "-r", "--cached", ".claude/skills/lab-a")
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1, r.stdout)
+        self.assertIn("BLOCK  lint:", r.stdout)  # the map still draws lab-a
+
+    def test_practice_index_must_be_staged_and_current(self):
+        root = self.brain_repo()
+        self.stage(root, "docs/practices/sample-fact.md", ENTRY)
+        self.assertEqual([f for f in practices.lint(root, config.load(root), date.today()) if f.severity == BLOCK], [])
+        self.blocked(root, "practices-index", "docs/practices/INDEX.md")  # entry staged, no index at all
+
+        r = self.run_brain(root, "practices", "index")  # regenerated in the working tree, not staged
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertTrue((root / "docs" / "practices" / "INDEX.md").is_file())
+        self.blocked(root, "practices-index", "docs/practices/INDEX.md")
+
+        self.git(root, "add", "-f", "docs/practices/INDEX.md")
+        self.passes(root)
+
+        self.stage(root, "docs/practices/sample-fact.md", ENTRY.replace("A short fact.", "A different short fact."))
+        self.blocked(root, "practices-index", "docs/practices/INDEX.md")  # entry changed, staged index is old
+
+    def test_practice_index_with_no_entries_needs_no_file(self):
+        root = self.brain_repo()
+        self.stage(root, "docs/practices/README.md", "# Practices\n")
+        self.passes(root)
+
+    def test_deleting_the_last_entry_makes_the_staged_index_stale(self):
+        root = self.brain_repo()
+        self.stage(root, "docs/practices/sample-fact.md", ENTRY)
+        self.run_brain(root, "practices", "index")
+        self.git(root, "add", "-f", "docs/practices/INDEX.md")
+        self.git(root, "commit", "-q", "-m", "base")
+        self.git(root, "rm", "-q", "docs/practices/sample-fact.md")
+        self.blocked(root, "practices-index", "docs/practices/INDEX.md")
+
+
+class InstallTest(HookCase):
+    def hook_path(self, root: Path) -> Path:
+        return root / ".git" / "hooks" / "pre-commit"
+
+    def test_install_and_refusals(self):
+        root = self.brain_repo()
+        r = self.run_brain(root, "hook", "install")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        installed = self.hook_path(root)
+        self.assertEqual(installed.read_text(encoding="utf-8"), SHIM_TEXT)
+        self.assertEqual(installed.stat().st_mode & 0o777, 0o755)
+        self.assertEqual(hook.SHIM_MARKER, "# brain-template pre-commit shim")
+        self.assertIn(str(installed), r.stdout)
+
+        again = self.run_brain(root, "hook", "install")
+        self.assertEqual(again.returncode, 0, "installing over our own shim is allowed")
+        self.assertEqual(installed.read_text(encoding="utf-8"), SHIM_TEXT)
+
+        with self.subTest(refusal="a foreign hook"):
+            other = self.brain_repo()
+            foreign = "#!/bin/sh\necho mine\n"
+            self.hook_path(other).parent.mkdir(parents=True, exist_ok=True)
+            self.hook_path(other).write_text(foreign, encoding="utf-8")
+            r = self.run_brain(other, "hook", "install")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("not the brain template's", r.stderr)
+            self.assertEqual(self.hook_path(other).read_text(encoding="utf-8"), foreign)
+
+        with self.subTest(refusal="core.hooksPath"):
+            other = self.brain_repo()
+            self.git(other, "config", "core.hooksPath", "elsewhere")
+            r = self.run_brain(other, "hook", "install")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("core.hooksPath", r.stderr)
+            self.assertFalse(self.hook_path(other).exists())
+
+        with self.subTest(refusal="not a repository"):
+            r = self.run_brain(self.fake_brain(), "hook", "install")
+            self.assertEqual(r.returncode, 1)
+            self.assertIn("not a git repository", r.stderr)
+
+    def test_install_replaces_only_an_exact_copy_of_the_shim(self):
+        for label, text in (
+            ("the shim with an addition", SHIM_TEXT + "echo extra\n"),
+            ("an older shim", SHIM_TEXT.replace("exec ", "# older\nexec ")),
+            ("a foreign hook that mentions the marker", "#!/bin/sh\n# see brain-template pre-commit shim\necho mine\n"),
+        ):
+            with self.subTest(hook=label):
+                root = self.brain_repo()
+                self.hook_path(root).parent.mkdir(parents=True, exist_ok=True)
+                self.hook_path(root).write_text(text, encoding="utf-8")
+                r = self.run_brain(root, "hook", "install")
+                self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
+                self.assertIn("not the brain template's", r.stderr)
+                self.assertEqual(self.hook_path(root).read_text(encoding="utf-8"), text)
+                # the advice must work: with the hook moved aside, install succeeds
+                self.hook_path(root).rename(self.hook_path(root).with_name("pre-commit.mine"))
+                again = self.run_brain(root, "hook", "install")
+                self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+                self.assertEqual(self.hook_path(root).read_text(encoding="utf-8"), SHIM_TEXT)
+
+    def test_the_refusal_advice_does_not_lead_to_the_same_refusal(self):
+        root = self.brain_repo()
+        self.hook_path(root).parent.mkdir(parents=True, exist_ok=True)
+        self.hook_path(root).write_text("#!/bin/sh\necho mine\n", encoding="utf-8")
+        advice = self.run_brain(root, "hook", "install").stderr
+        self.assertIn("move it aside", advice)
+        self.assertIn("_meta/brain hook pre-commit", advice)  # the alternative: keep the hook, call the guard from it
+        self.assertNotIn("add `_meta/brain hook pre-commit` to it", advice)  # that left the marker out: same refusal
+
+    def test_install_raises_hook_error(self):
+        root = self.brain_repo()
+        self.git(root, "config", "core.hooksPath", "elsewhere")
+        with self.assertRaises(hook.HookError):
+            hook.install(root)
+
+    def test_install_returns_the_hook_path(self):
+        root = self.brain_repo()
+        self.assertEqual(Path(hook.install(root)), self.hook_path(root))
+
+    def test_install_from_worktree_uses_common_dir(self):
+        main = self.brain_repo()
+        self.git(main, "add", "-f", "_meta", "brain.json", ".gitignore")
+        self.git(main, "commit", "-q", "-m", "base")
+        wt = main.parent / "linked worktree"
+        self.git(main, "worktree", "add", "-q", "-b", "linked", str(wt))
+        r = self.run_brain(wt, "hook", "install")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(self.hook_path(main).read_text(encoding="utf-8"), SHIM_TEXT)
+        self.assertTrue((wt / ".git").is_file())  # a worktree has no hooks directory of its own
+
+        # the shim runs from the worktree, where git sets GIT_DIR and a worktree index
+        self.stage(wt, "docs/leak.md", "ref " + PLANTED["github-token"] + "\n")
+        refused = self.commit_attempt(wt)
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("github-token", refused.stdout + refused.stderr)
+
+    def test_shim_works_in_path_with_space(self):
+        root = self.brain_repo()
+        self.assertIn(" ", str(root.parent))
+        r = self.run_brain(root, "hook", "install")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+        self.stage(root, "docs/leak.md", "ref " + PLANTED["github-token"] + "\n")
+        refused = self.commit_attempt(root, "leak")
+        self.assertNotEqual(refused.returncode, 0)
+        combined = refused.stdout + refused.stderr
+        self.assertIn(f"BLOCK  {GITHUB}: docs/leak.md:1", combined)
+        self.assertNotIn(PLANTED["github-token"], combined)
+        self.assertEqual(self.git(root, "rev-list", "--all", "--count").strip(), "0")
+
+        self.git(root, "rm", "-q", "-f", "--cached", "docs/leak.md")
+        self.stage(root, "docs/clean.md", "Nothing secret here.\n")
+        accepted = self.commit_attempt(root, "clean")
+        self.assertEqual(accepted.returncode, 0, accepted.stdout + accepted.stderr)
+        self.assertEqual(self.git(root, "rev-list", "--all", "--count").strip(), "1")
+
+    def test_commit_dash_a_is_checked_too(self):
+        root = self.brain_repo()
+        self.stage(root, "docs/notes.md", "clean\n")
+        self.run_brain(root, "hook", "install")
+        self.assertEqual(self.commit_attempt(root, "base").returncode, 0)
+        (root / "docs" / "notes.md").write_text("ref " + PLANTED["github-token"] + "\n", encoding="utf-8")
+        refused = subprocess.run(
+            ["git", "commit", "-q", "-a", "-m", "leak"], cwd=str(root), env=self.env,
+            capture_output=True, text=True, stdin=subprocess.DEVNULL,
+        )
+        self.assertNotEqual(refused.returncode, 0)
+        self.assertIn("github-token", refused.stdout + refused.stderr)
+
+
+class SelfTestTest(HookCase):
+    def test_self_test_passes(self):
+        r = self.run_brain(self.fake_brain(), "hook", "self-test")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(r.stdout.strip(), f"self-test: {len(hook.RULES)} rules, all blocked")
+        self.assertRegex(r.stdout, r"^self-test: \d+ rules, all blocked$")
+
+    def test_self_test_returns_no_failures(self):
+        self.assertEqual(hook.self_test(), [])
+
+    def test_self_test_leaves_nothing_behind(self):
+        before = set(os.listdir(self.env["TMPDIR"]))
+        r = self.run_brain(self.fake_brain(), "hook", "self-test")  # TMPDIR is the isolated os-tmp
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertEqual(set(os.listdir(self.env["TMPDIR"])), before)
+
+    def test_self_test_ignores_the_callers_git_location_variables(self):
+        env = dict(self.env, GIT_DIR=str(self.tmp / "nowhere"), GIT_INDEX_FILE=str(self.tmp / "nowhere" / "index"))
+        r = subprocess.run(
+            ["python3", str(TEMPLATE_ROOT / "_meta" / "brain"), "hook", "self-test"],
+            cwd=str(self.tmp), env=env, capture_output=True, text=True,
+        )
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertRegex(r.stdout, r"^self-test: \d+ rules, all blocked$")
+
+
+class UsageTest(HookCase):
+    def test_hook_needs_a_subcommand(self):
+        r = self.run_brain(self.fake_brain(), "hook")
+        self.assertEqual(r.returncode, 2)
+
+    def test_hook_is_registered(self):
+        from brainlib import cli
+
+        self.assertEqual(cli.COMMANDS["hook"][0], "hook")
+        self.assertEqual(list(cli.COMMANDS), sorted(cli.COMMANDS))
+
+
+if __name__ == "__main__":
+    unittest.main()

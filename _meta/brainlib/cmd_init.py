@@ -2,7 +2,8 @@
 
 This is the one command that deletes files (the template-only paths) and replaces a repository's history, so every
 refusal runs before anything changes: not a template copy, a template checkout (`local/`), a linked worktree, a
-dirty tree, commits or a stash that exist only here, a hook the guard could not be installed beside. The last
+dirty tree, commits or a stash the origin does not have, a hook the guard could not be installed beside, a link
+among the paths it removes or writes (it never follows one). The last
 refusal is a rehearsal: the whole conversion, first commit and pre-commit guard included, is done in a temporary
 copy of the folder, and only a rehearsal that went through lets the real one start. After that:
 
@@ -11,6 +12,8 @@ copy of the folder, and only a rehearsal that went through lets the real one sta
    made with "Use this template" keeps its own history; a folder with no repository gets one.
 2. The template-only paths are removed, then the skeleton, `brain.json`, the managed blocks and settings, the
    manifest and the practices index are written, the pre-commit guard installed and the first commit made.
+   `brain.json` tracks only a location that is the same on every machine (a URL, else the template's canonical
+   source); a template folder on this machine goes to the ignored `brain.local.json`, as in `new`.
 """
 from __future__ import annotations
 
@@ -93,12 +96,42 @@ def _normal(location: str) -> str:
     return text[:-len(".git")] if text.endswith(".git") else text
 
 
+_URL = re.compile(r"^(?P<scheme>[A-Za-z][A-Za-z0-9+.-]*)://(?P<authority>[^/]*)/?(?P<path>.*)$")
+_SCP_LIKE = re.compile(r"^(?:[^@/:\s]+@)?(?P<host>[^@/:\s]+):(?!//)(?P<path>.*)$")
+
+
+def _remote_key(location: str) -> Optional[Tuple[str, str]]:
+    """(host, path) of a remote's URL, the same for every way of spelling it: https, ssh, git or scp-style
+    (`git@host:owner/repo`), with or without a user, a port, a trailing `.git` or `/`, in any case. None for a local
+    path, a `file://` URL, or anything with no host or no path."""
+    text = location.strip()
+    found = _URL.match(text)
+    if found:
+        if found.group("scheme").lower() == "file":
+            return None
+        host = found.group("authority").rpartition("@")[2]
+        host = re.sub(r":\d*$", "", host)
+        path = found.group("path")
+    else:
+        found = _SCP_LIKE.match(text)
+        if not found or os.path.isabs(text):
+            return None
+        host, path = found.group("host"), found.group("path")
+    path = _normal(path.strip("/")).strip("/")
+    return (host.lower(), path.lower()) if host and path else None
+
+
 def _same_location(root: Path, a: str, b: str) -> bool:
+    """Whether two remotes are one place: the same text, the same folder on this machine, or the same host and path
+    spelled differently (`https://host/o/r.git`, `git@host:o/r`). A clone of the template that is not recognised
+    keeps the template's history and its `origin`, and a push could then land on the template."""
     if _normal(a) == _normal(b):
         return True
     local_a, local_b = _local_path(root, a), _local_path(root, b)
-    return local_a is not None and local_b is not None and os.path.realpath(str(local_a)) == os.path.realpath(
-        str(local_b))
+    if local_a is not None and local_b is not None:
+        return os.path.realpath(str(local_a)) == os.path.realpath(str(local_b))
+    key = _remote_key(a)
+    return key is not None and key == _remote_key(b)
 
 
 def _is_template_folder(folder: Path) -> bool:
@@ -170,12 +203,13 @@ def _repo_problem(root: Path) -> Optional[str]:
 
 
 def _clone_problem(root: Path) -> Optional[str]:
-    """Why the history of a plain clone may not be replaced, or None: a commit or a stash that exists only here is
-    refused (the moved repository would hold the only copy), and so is a history folder already in the way."""
-    unpushed = str(gitutil.git(root, "rev-list", "--count", "HEAD", "--branches", "--not", "--remotes")).strip()
+    """Why the history of a plain clone may not be replaced, or None: a commit or a stash that is not on the origin
+    is refused (the moved repository would hold the only copy), and so is a history folder already in the way."""
+    unpushed = str(gitutil.git(root, "rev-list", "--count", "HEAD", "--branches", "--not",
+                               "--remotes=origin")).strip()  # "on that remote": the origin, not any other
     if unpushed.isdigit() and int(unpushed) > 0:
-        return (f"{unpushed} commit{'s' if unpushed != '1' else ''} exist only in this clone (on no remote); push "
-                "them first, so no history is lost when init starts a new one")
+        return (f"{unpushed} commit{'s' if unpushed != '1' else ''} exist only in this clone (the origin does not "
+                "have them); push them to the origin first, so no history is lost when init starts a new one")
     if str(gitutil.git(root, "stash", "list")).strip():
         return "git stash holds changes; apply or drop them first, so nothing is left behind in the old history"
     folder = root / ".brain"
@@ -186,19 +220,25 @@ def _clone_problem(root: Path) -> Optional[str]:
     return None
 
 
+def _hooks_path_message(configured: str) -> str:
+    return (f"core.hooksPath is set ({configured}), so git would never run the brain's pre-commit guard; "
+            "unset it, or call `_meta/brain hook pre-commit` from the hook that path holds, then run init again")
+
+
 def _hooks_path_problem(root: Path, mode: str) -> Optional[str]:
     """Git runs the guard from `<repo>/.git/hooks`, which it ignores while `core.hooksPath` is set. A repo that is
     kept answers for its own config; one that is started fresh inherits only the global and system settings, which
-    a scratch folder shows."""
+    a scratch folder shows.
+
+    A setting that depends on where the repository is (`includeIf "gitdir:..."`) can differ in the scratch folder,
+    and in the temporary copy the rehearsal uses. `_start_history` asks again in the fresh repository itself and
+    undoes the move if the answer differs."""
     if mode == KEEP:
         configured = str(gitutil.git(root, "config", "--get", "core.hooksPath", check=False)).strip()
     else:
         with tempfile.TemporaryDirectory(prefix="brain-init-") as scratch:
             configured = str(gitutil.git(scratch, "config", "--get", "core.hooksPath", check=False)).strip()
-    if configured:
-        return (f"core.hooksPath is set ({configured}), so git would never run the brain's pre-commit guard; "
-                "unset it, or call `_meta/brain hook pre-commit` from the hook that path holds, then run init again")
-    return None
+    return _hooks_path_message(configured) if configured else None
 
 
 def _foreign_hook_problem(root: Path) -> Optional[str]:
@@ -228,15 +268,37 @@ def _template_only_present(root: Path) -> List[str]:
     return found
 
 
-def _link_problem(root: Path, present: List[str]) -> Optional[str]:
-    """A template-only path is removed with `rmtree` or `unlink`; one whose parent folder is a link leading outside
-    the root would reach files that are not this copy's."""
+def _link_problem(root: Path, rels: List[str]) -> Optional[str]:
+    """`rels` are the paths init removes or writes. One that is, or has among its folders, a link would be acted on
+    where the link leads, which may be outside the copy (and a rehearsal copy that kept the link would act in the
+    real folder). init does not follow links."""
+    for rel in rels:
+        walked = root
+        for part in rel.split("/"):
+            walked = walked / part
+            if os.path.islink(str(walked)):
+                shown = os.path.relpath(str(walked), str(root)).replace(os.sep, "/")
+                return (f"{shown} is a link, and init removes or writes {rel}; it does not follow links, since that "
+                        "could change files elsewhere. Replace the link with the file or folder it points to, then "
+                        "run init again")
+    return None
+
+
+def _links_back_problem(root: Path) -> Optional[str]:
+    """A link by absolute path to a place inside this folder would, in the rehearsal copy, still lead into the real
+    folder. A relative link keeps leading into the copy."""
     base = os.path.realpath(str(root))
-    for rel in present:
-        parent = os.path.realpath(os.path.dirname(str(root / rel)))
-        if parent != base and not parent.startswith(base + os.sep):
-            return (f"{rel} is reached through a link that leads outside this folder; init removes only files "
-                    "inside the copy. Replace the link with the folder it points to, then run init again")
+    for dirpath, dirnames, filenames in os.walk(str(root)):
+        if Path(dirpath) == root:
+            dirnames[:] = [name for name in dirnames if name not in (".git", ".brain")]
+        for name in dirnames + filenames:
+            full = os.path.join(dirpath, name)
+            if os.path.islink(full) and os.path.isabs(os.readlink(full)):
+                real = os.path.realpath(full)
+                if real == base or real.startswith(base + os.sep):
+                    shown = os.path.relpath(full, str(root)).replace(os.sep, "/")
+                    return (f"{shown} is a link by absolute path to a place inside this folder; the rehearsal copy "
+                            "would still lead into it. Make the link relative, or remove it, then run init again")
     return None
 
 
@@ -259,7 +321,7 @@ def _preflight(root: Path, cfg: config.Config, args) -> Tuple[Optional[str], str
     problem = problem or _hooks_path_problem(root, mode)
     if mode == KEEP:
         problem = problem or _foreign_hook_problem(root)
-    return problem or _link_problem(root, _template_only_present(root)), mode
+    return problem, mode
 
 
 # -- the plan ----------------------------------------------------------------------------------------
@@ -270,6 +332,7 @@ class _Plan(NamedTuple):
     filled: install.Files  # the skeleton with the name, prefix and description filled in
     raw: dict  # the new brain.json
     version: str  # `<VERSION>+<sha>` of the copy's HEAD before its history moves
+    local_source: Optional[str]  # this machine's folder of the template, for brain.local.json (untracked)
 
 
 def _plan(args, root: Path, cfg: config.Config, mode: str) -> _Plan:
@@ -284,16 +347,28 @@ def _plan(args, root: Path, cfg: config.Config, mode: str) -> _Plan:
     name, description = args.name.strip(), args.description.strip()
     values = {"name": name, "prefix": args.prefix, "description": description}
     filled = {rel: (install.fill(data, values), bits) for rel, (data, bits) in starter.items()}
-    source = _origin(root) if mode == MOVE else cfg.template_source
+    # The tracked brain.json holds a location that is the same on every machine: the origin when it is a URL, else
+    # the template's canonical source (null until published). A folder on this machine goes to brain.local.json,
+    # which git ignores, as `new` and `adopt` do (spec §4).
+    source, local_source = cfg.template_source, None
+    origin = _origin(root) if mode == MOVE else None
+    if origin is not None:
+        folder = _local_path(root, origin)
+        if folder is None:
+            source = origin
+        else:
+            local_source = os.path.realpath(str(folder))
     raw = install.new_brain_json(name, args.prefix, description, source, version, args.python, args.packages,
                                  bool(args.private))
-    return _Plan(shipped, filled, raw, version)
+    return _Plan(shipped, filled, raw, version, local_source)
 
 
 def _paths_written(plan: _Plan, private: bool) -> List[str]:
     extra = ["brain.json", manifest.MANIFEST_PATH, "docs/practices/INDEX.md"]
     if private:
         extra.append(config.PRIVATE_FILE)
+    if plan.local_source:
+        extra.append(config.LOCAL_JSON)
     return sorted(set(plan.filled) | set(extra))
 
 
@@ -328,12 +403,29 @@ def _remove(root: Path, rel: str) -> None:
         os.unlink(str(target))
 
 
+class _Undone(Exception):
+    """The conversion stopped at its first step and put everything back; the message says why."""
+
+
 def _start_history(root: Path, mode: str) -> None:
+    """Move the plain clone's `.git` aside and/or start the repository, then ask the fresh repository (the only
+    place `includeIf "gitdir:..."` settings show) whether git will run hooks in it. If not, undo the step: the fresh
+    repository was made a moment ago and holds nothing, and the old one goes back."""
+    made_brain_dir = False
     if mode == MOVE:
+        made_brain_dir = not os.path.lexists(str(root / ".brain"))
         (root / ".brain").mkdir(exist_ok=True)
         os.rename(str(root / ".git"), str(root / HISTORY_DIR))  # a move on one filesystem: nothing is copied or lost
     if mode in (MOVE, CREATE):
         install.git_init(root)
+        configured = str(gitutil.git(root, "config", "--get", "core.hooksPath", check=False)).strip()
+        if configured:
+            shutil.rmtree(str(root / ".git"))
+            if mode == MOVE:
+                os.rename(str(root / HISTORY_DIR), str(root / ".git"))
+                if made_brain_dir:
+                    os.rmdir(str(root / ".brain"))
+            raise _Undone(f"{_hooks_path_message(configured)}. Nothing was changed")
 
 
 def _convert(target: Path, mode: str, plan: _Plan, present: List[str], args) -> List[str]:
@@ -343,6 +435,8 @@ def _convert(target: Path, mode: str, plan: _Plan, present: List[str], args) -> 
         _remove(target, rel)
     install.write_tree(target, plan.filled, overwrite=False)
     config.write_raw(target, plan.raw)
+    if plan.local_source:
+        install.write_local(target, plan.local_source)
     warnings = install.apply_managed(target)
     if args.private:
         install.write_private(target, args.private)
@@ -383,7 +477,7 @@ def _rehearse(root: Path, mode: str, plan: _Plan, present: List[str], args, mess
             install.first_commit(copy, message)
         except gitutil.GitError as exc:
             return f"the first commit would fail:\n{_git_detail(exc)}"
-    except _EXPECTED as exc:
+    except (_Undone, *_EXPECTED) as exc:
         return str(exc)
     finally:
         shutil.rmtree(str(scratch), ignore_errors=True)
@@ -392,10 +486,15 @@ def _rehearse(root: Path, mode: str, plan: _Plan, present: List[str], args, mess
 
 def _stopped(root: Path, mode: str, message: str) -> int:
     """Stop after the copy has been changed (a failure the rehearsal did not foresee): what was done stays, so the
-    person can read it and finish by hand."""
+    person can read it and finish by hand. The old history is named only if it was moved."""
     print(f"init: {message}", file=sys.stderr)
-    where = (f"the template's history is in {root / HISTORY_DIR} (read it with `git --git-dir={HISTORY_DIR} log`); "
-             if mode == MOVE else "")
+    where = ""
+    if mode == MOVE:
+        if os.path.isdir(str(root / HISTORY_DIR)):
+            where = (f"the template's history is in {root / HISTORY_DIR} (read it with "
+                     f"`git --git-dir={HISTORY_DIR} log`); ")
+        else:
+            where = "the template's .git was not moved; "
     print(f"init: {where}what was done is still in {root}; fix the cause and finish by hand (commit everything "
           "with the message above)", file=sys.stderr)
     return 1
@@ -412,6 +511,10 @@ def run(args) -> int:
             return _refuse(problem)
         plan = _plan(args, root, cfg, mode)
         present = _template_only_present(root)
+        written = _paths_written(plan, bool(args.private))
+        problem = _link_problem(root, present + written) or _links_back_problem(root)
+        if problem:
+            return _refuse(problem)
         message = f"meta(brain): initialise from template v{plan.version}"
         problem = _rehearse(root, mode, plan, present, args, message)
     except _EXPECTED as exc:
@@ -419,12 +522,13 @@ def run(args) -> int:
     if problem:
         return _refuse(f"rehearsed in a temporary copy, the conversion would fail, so nothing was changed:\n{problem}")
 
-    written = _paths_written(plan, bool(args.private))
     if args.dry_run:
         return _dry_run(root, plan, mode, present, written, message)
 
     try:
         warnings = _convert(root, mode, plan, present, args)
+    except _Undone as exc:
+        return _refuse(str(exc))
     except _EXPECTED as exc:
         return _stopped(root, mode, f"stopped before the first commit: {exc}")
     emit([Finding(WARN, "init", w) for w in warnings])
@@ -440,6 +544,9 @@ def run(args) -> int:
     if mode == MOVE:
         print(f"the template's history is in {root / HISTORY_DIR} (read it with `git --git-dir={HISTORY_DIR} log`); "
               "delete it when you no longer want it")
+        branch = str(gitutil.git(root, "symbolic-ref", "--short", "HEAD", check=False)).strip() or "main"
+        print("the brain has no remote yet (the template's origin stayed with the old history): add yours with "
+              f"`git remote add origin <url>`, then `git push -u origin {branch}`")
     elif mode == KEEP:
         print("this repository's own history is kept; the first commit is on top of it")
     print(f"open a session in {root}")

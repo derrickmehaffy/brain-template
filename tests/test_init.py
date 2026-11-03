@@ -15,6 +15,8 @@ from tests.helpers import TEMPLATE_ROOT, TempDirCase  # first: puts <template>/_
 from brainlib import cmd_init, config, hook, managed, manifest
 
 CANONICAL = "https://example.invalid/brain-template.git"
+CANONICAL_GH = "https://github.com/example/brain-template.git"
+STUB_SKILL = "brain-stubby"
 STAND_IN = "template-only stand-in"
 HISTORY = ".brain/template-history.git"
 
@@ -38,6 +40,10 @@ class InitCase(TempDirCase):
                 (copy / rel).parent.mkdir(parents=True, exist_ok=True)
                 (copy / rel).write_text(STAND_IN + "\n" if rel != ".claude/settings.json" else "{}\n",
                                         encoding="utf-8")
+        self.make_skill(copy, STUB_SKILL, "A stand-in shipped skill for tests. Use when a test needs one. Does NOT "
+                        "replace brain-sync.", "Does nothing.\n\n## Done when\n\n- nothing is left to do")
+        synced = self.run_brain(copy, "routing", "sync")  # the guard refuses a skill whose reserved outputs are stale
+        self.assertEqual(synced.returncode, 0, synced.stdout + synced.stderr)
         if source is not None:
             raw = self.read_json(copy / "brain.json")
             raw["template"]["source"] = source
@@ -120,7 +126,8 @@ class InitCase(TempDirCase):
         self.assertFalse((root / "tests").exists())
         self.assertFalse((root / "docs" / "superpowers").exists())
         self.assertEqual(sorted(p.name for p in (root / ".claude" / "skills").glob("template-*")), [])
-        self.assertTrue(list((root / ".claude" / "skills").glob("brain-*")))
+        self.assertTrue((root / ".claude" / "skills" / STUB_SKILL / "SKILL.md").is_file())  # a shipped skill stays
+        self.assertIn(f".claude/skills/{STUB_SKILL}/SKILL.md", manifest.read(root))
         for rel in ("_meta/brain", "_meta/VERSION", "_meta/skeleton/CLAUDE.md", "docs/README.md", "docs/ROUTING.md",
                     "docs/practices/INDEX.md", "scripts/tests/__init__.py", ".env.example"):
             self.assertTrue((root / rel).is_file(), rel)
@@ -169,8 +176,13 @@ class ConvertTest(InitCase):
         r = self.done(clone)
         raw = self.assert_a_brain(clone, version)
         self.assertRegex(raw["template"]["version"], r"^0\.1\.0\+[0-9a-f]{7,}$")
-        self.assertEqual(raw["template"]["source"], str(template))  # the origin the clone was made from
-        self.assertFalse((clone / "brain.local.json").exists())
+        # the origin is a folder on this machine, so it goes to brain.local.json (ignored), not into the tracked
+        # brain.json; the template is not published, so brain.json records no source
+        self.assertIsNone(raw["template"]["source"])
+        self.assertNotIn(str(self.tmp), (clone / "brain.json").read_text(encoding="utf-8"))
+        self.assertEqual(self.read_json(clone / "brain.local.json"), {"template": {"source": str(template)}})
+        self.assertEqual(config.effective_source(config.load(clone)), str(template))
+        self.assertNotIn("brain.local.json", self.git(clone, "ls-files"))
 
         # a fresh history: one commit, the pinned message; the template's own commits are not in it
         self.assertEqual(self.commits(clone), [f"meta(brain): initialise from template v{version}"])
@@ -188,6 +200,8 @@ class ConvertTest(InitCase):
         self.assertIn(f"first commit {self.git(clone, 'rev-parse', '--short', 'HEAD').strip()}: "
                       f"meta(brain): initialise from template v{version}", out)
         self.assertTrue(any("template-history.git" in line for line in out), r.stdout)
+        # the brain has no remote: say so, and how to give it one
+        self.assertTrue(any("no remote" in line and "git remote add origin" in line for line in out), r.stdout)
         self.assertEqual(out[-1], f"open a session in {clone}")
 
     def test_use_this_template_keeps_history(self):
@@ -195,7 +209,8 @@ class ConvertTest(InitCase):
         first = self.git(used, "rev-parse", "HEAD").strip()
         version = f"{self.version_of(used)}+{self.git(used, 'rev-parse', '--short', 'HEAD').strip()}"
 
-        self.done(used)
+        r = self.done(used)
+        self.assertNotIn("no remote", r.stdout)  # its own remote is kept
         raw = self.assert_a_brain(used, version)
         self.assertIsNone(raw["template"]["source"])  # the template is not published, so there is nothing to record
         self.assertFalse((used / HISTORY).exists())
@@ -214,9 +229,28 @@ class ConvertTest(InitCase):
         _template, clone = self.plain_clone(source=CANONICAL)
         self.git(clone, "remote", "set-url", "origin", CANONICAL)
         self.done(clone)
-        self.assertEqual(self.read_json(clone / "brain.json")["template"]["source"], CANONICAL)
+        self.assertEqual(self.read_json(clone / "brain.json")["template"]["source"], CANONICAL)  # a URL stays tracked
+        self.assertFalse((clone / "brain.local.json").exists())
         self.assertTrue((clone / HISTORY).is_dir())
         self.assertEqual(len(self.commits(clone)), 1)
+
+    def test_a_local_origin_in_any_spelling_goes_to_brain_local_json(self):
+        template = self.template_copy(source=CANONICAL)
+        spellings = {
+            "path": lambda clone: str(template),
+            "file url": lambda clone: template.as_uri(),
+            "relative path": lambda clone: os.path.relpath(str(template), str(clone)),
+        }
+        for label, spelling in spellings.items():
+            with self.subTest(label):
+                clone = self._new_dir("clone")
+                self.git(self.tmp, "clone", "-q", str(template), str(clone))
+                self.git(clone, "remote", "set-url", "origin", spelling(clone))
+                self.done(clone)
+                # the tracked value is the template's canonical source; this machine's folder is not tracked
+                self.assertEqual(self.read_json(clone / "brain.json")["template"]["source"], CANONICAL)
+                self.assertNotIn(str(self.tmp), (clone / "brain.json").read_text(encoding="utf-8"))
+                self.assertEqual(self.read_json(clone / "brain.local.json"), {"template": {"source": str(template)}})
 
     def test_no_repo_creates_one(self):
         folder = self.bare_folder()
@@ -314,7 +348,9 @@ class DryRunTest(InitCase):
 
     def test_dry_run_says_what_happens_to_the_history(self):
         _template, clone = self.plain_clone()
-        self.assertIn(f"move .git to {HISTORY}", self.init(clone, "--dry-run").stdout)
+        plain = self.init(clone, "--dry-run").stdout
+        self.assertIn(f"move .git to {HISTORY}", plain)
+        self.assertIn("  write brain.local.json", plain.splitlines())  # the origin is a folder on this machine
         self.assertIn("keep the history", self.init(self.used_template(), "--dry-run").stdout)
         self.assertIn("run git init", self.init(self.bare_folder(), "--dry-run").stdout)
 
@@ -394,6 +430,25 @@ class RehearsalTest(InitCase):
         self.assertTrue((clone / HISTORY / "HEAD").is_file())
         self.assertTrue((clone / "brain.json").is_file())
         self.assertEqual(self.git(clone, "rev-list", "--all").strip(), "")  # a repository with no commit yet
+
+
+    def test_a_failure_before_the_move_does_not_claim_the_history_was_moved(self):
+        _template, clone = self.plain_clone()
+        parser = argparse.ArgumentParser()
+        cmd_init.add_arguments(parser)
+        args = parser.parse_args(["--name", "homelab", "--prefix", "lab"])
+        err = io.StringIO()
+        with mock.patch.object(cmd_init.paths, "harness_root", return_value=clone), \
+                mock.patch.object(cmd_init, "_rehearse", return_value=None), \
+                mock.patch.object(cmd_init.os, "rename", side_effect=OSError(18, "Invalid cross-device link")), \
+                contextlib.redirect_stderr(err), contextlib.redirect_stdout(io.StringIO()):
+            code = cmd_init.run(args)
+        self.assertEqual(code, 1, err.getvalue())
+        self.assertIn("stopped before the first commit", err.getvalue())
+        self.assertNotIn("template-history.git", err.getvalue())
+        self.assertNotIn("history is in", err.getvalue())
+        self.assertTrue((clone / ".git").is_dir())  # the repository was never moved
+        self.assertFalse((clone / HISTORY).exists())
 
 
 class RefusalTest(InitCase):
@@ -493,8 +548,8 @@ class RefusalTest(InitCase):
             ("untracked file", untracked, "uncommitted"),
             ("staged file", staged, "uncommitted"),
             ("dirty tree, history kept", dirty_kept_history, "uncommitted"),
-            ("unpushed commit on a plain clone", unpushed, "no remote"),
-            ("unpushed commit on another branch", unpushed_branch, "no remote"),
+            ("unpushed commit on a plain clone", unpushed, "origin does not"),
+            ("unpushed commit on another branch", unpushed_branch, "origin does not"),
             ("stash on a plain clone", stashed, "stash"),
             ("history folder already there", history_in_the_way, "template-history.git"),
             ("role not template", brain_folder, "copy of the template"),
@@ -524,6 +579,17 @@ class RefusalTest(InitCase):
         self.assertTrue((clone / "tests").is_dir())
         self.assertEqual(self.git(clone, "rev-parse", "HEAD"), head)
 
+    def test_a_commit_known_only_to_another_remote_is_not_on_the_origin(self):
+        # "every commit is on that remote": the origin, not any remote-tracking branch at all
+        _t, clone = self.plain_clone()
+        (clone / "_meta" / "CHANGELOG.md").write_text("# Changelog\n\n- mine\n", encoding="utf-8")
+        self.git(clone, "add", "-A")
+        self.git(clone, "commit", "-q", "-m", "a local commit")
+        self.git(clone, "remote", "add", "other", "https://example.invalid/me/other.git")
+        self.git(clone, "update-ref", "refs/remotes/other/main", "HEAD")
+        self.refused(clone, message="origin does not")
+        self.assertTrue((clone / "tests").is_dir())
+
     def test_unpushed_commits_are_fine_when_no_history_is_replaced(self):
         # "Use this template": the person's history is kept, so nothing can be lost, pushed or not.
         used = self.used_template()
@@ -542,16 +608,77 @@ class RefusalTest(InitCase):
         self.refused(clone, "--private", "# comment", message="--private")
         self.refused(clone, "--private", "  ", message="--private")
 
-    def test_refuses_a_template_only_path_behind_a_link(self):
-        # `.claude` leads outside the folder: removing `.claude/skills/template-*` would delete there.
+    def test_refuses_a_link_among_the_paths_init_removes_or_writes(self):
+        # A link on the way to something init removes or writes could send that to another place, and a rehearsal
+        # copy that keeps the link would do it in the real folder, even on a dry run.
+        def link_inside(name, absolute):
+            def arrange(folder):
+                shutil.move(str(folder / name), str(folder / f"keep-{name.lstrip('.')}"))
+                target = folder / f"keep-{name.lstrip('.')}"
+                (folder / name).symlink_to(target if absolute else target.name)
+            return arrange
+
+        def link_outside(folder):
+            outside = self._new_dir("outside")
+            shutil.move(str(folder / ".claude"), str(outside / ".claude"))
+            (folder / ".claude").symlink_to(outside / ".claude")
+            return outside
+
+        def link_to_a_file(folder):
+            (folder / "CLAUDE.md").unlink()
+            (folder / "CLAUDE.md").symlink_to("README.md")
+
+        def link_above_a_new_file(folder):
+            (folder / "keep-scripts").mkdir()
+            (folder / "scripts").symlink_to("keep-scripts")  # scripts/README.md is written
+
+        cases = [
+            ("absolute link into the folder", link_inside(".claude", True), ".claude"),
+            ("relative link into the folder", link_inside(".claude", False), ".claude"),
+            ("link outside the folder", link_outside, ".claude"),
+            ("docs is a link", link_inside("docs", True), "docs"),
+            ("CLAUDE.md is a link", link_to_a_file, "CLAUDE.md"),
+            ("scripts is a link", link_above_a_new_file, "scripts"),
+        ]
+        for label, arrange, name in cases:
+            for flags in ([], ["--dry-run"]):
+                with self.subTest(label, flags=flags):
+                    folder = self.bare_folder()
+                    outside = arrange(folder)  # a folder outside the one being converted, when there is one
+                    before = self.snapshot(outside) if outside is not None else None
+                    stderr = self.refused(folder, *flags, message=name)
+                    self.assertIn("link", stderr)
+                    if outside is not None:
+                        self.assertEqual(self.snapshot(outside), before)
+
+    def test_refuses_an_absolute_link_that_points_back_into_the_folder(self):
+        # Not on a removed or written path, but a rehearsal copy that keeps it would point into the real folder.
+        for flags in ([], ["--dry-run"]):
+            with self.subTest(flags=flags):
+                folder = self.bare_folder()
+                (folder / "alias").symlink_to(folder / "_meta")
+                self.refused(folder, *flags, message="alias")
+
+    def test_a_relative_link_inside_the_folder_is_fine(self):
         folder = self.bare_folder()
-        outside = self.tmp / "outside"
-        outside.mkdir()
-        shutil.move(str(folder / ".claude"), str(outside / ".claude"))
-        (folder / ".claude").symlink_to(outside / ".claude")
-        before = self.snapshot(outside)
-        self.refused(folder, message=".claude")
-        self.assertEqual(self.snapshot(outside), before)
+        (folder / "alias").symlink_to("_meta")
+        self.done(folder)
+        self.assertTrue((folder / "alias").is_symlink())
+        self.assertEqual(self.git(folder, "status", "--porcelain"), "")
+
+    def test_a_hooks_path_only_the_real_location_sees_is_rolled_back(self):
+        # `includeIf "gitdir:..."` matches the repository at its real place: not the scratch folder the up-front
+        # check asks from, nor the rehearsal copy. The fresh repository shows it, and the move is undone.
+        for label, make in (("plain clone", lambda: self.plain_clone()[1]), ("no repo", self.bare_folder)):
+            with self.subTest(label):
+                root = make()
+                extra = self._new_dir("config") / "hooks.gitconfig"
+                extra.write_text("[core]\n\thooksPath = elsewhere\n", encoding="utf-8")
+                self.git(root, "config", "--file", self.env["GIT_CONFIG_GLOBAL"],
+                         f"includeIf.gitdir:{root}/.git.path", str(extra))
+                self.refused(root, message="core.hooksPath")
+                self.assertFalse((root / ".brain").exists())
+                self.assertEqual((root / ".git").is_dir(), label == "plain clone")  # the old repository is back
 
     def test_missing_arguments_are_a_usage_error(self):
         _t, clone = self.plain_clone()
@@ -593,6 +720,46 @@ class IsPlainCloneTest(InitCase):
             with self.subTest(url=url):
                 self.git(used, "remote", "set-url", "origin", url)
                 self.assertTrue(cmd_init.is_plain_clone(used, cfg))
+
+    def test_origin_equals_the_canonical_source_in_any_spelling(self):
+        # The same repository as https, ssh or scp-style, with a user, a port, another case, a trailing .git or /
+        spellings = [
+            "https://github.com/example/brain-template.git",
+            "https://github.com/example/brain-template",
+            "https://github.com/example/brain-template/",
+            "https://someone@github.com/example/brain-template.git",
+            "https://github.com:443/example/brain-template.git",
+            "HTTPS://GitHub.com/Example/Brain-Template.git",
+            "git@github.com:example/brain-template.git",
+            "git@github.com:example/brain-template",
+            "github.com:example/brain-template.git",
+            "ssh://git@github.com/example/brain-template.git",
+            "ssh://git@github.com:22/example/brain-template.git",
+            "git://github.com/example/brain-template.git",
+        ]
+        for canonical in (CANONICAL_GH, "git@github.com:example/brain-template.git"):
+            used = self.used_template(source=canonical)
+            cfg = config.load(used)
+            for url in spellings:
+                with self.subTest(canonical=canonical, origin=url):
+                    self.git(used, "remote", "set-url", "origin", url)
+                    self.assertTrue(cmd_init.is_plain_clone(used, cfg))
+
+    def test_origin_that_names_another_repository_is_not_the_canonical_source(self):
+        used = self.used_template(source=CANONICAL_GH)
+        cfg = config.load(used)
+        for url in ("https://github.com/example/other-template.git",
+                    "https://github.com/other/brain-template.git",
+                    "https://gitlab.com/example/brain-template.git",
+                    "git@github.com:other/brain-template.git",
+                    "https://github.com/example/brain-template.git.old",
+                    "https://github.com/example",
+                    "https://github.com/",
+                    "git@github.com:",
+                    "https://github.com/example/brain-template-fork"):
+            with self.subTest(origin=url):
+                self.git(used, "remote", "set-url", "origin", url)
+                self.assertFalse(cmd_init.is_plain_clone(used, cfg))
 
     def test_origin_that_is_not_the_template(self):
         used = self.used_template()

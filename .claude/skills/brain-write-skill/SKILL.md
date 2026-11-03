@@ -1,6 +1,6 @@
 ---
 name: brain-write-skill
-description: "Create, change, split or rename one of this brain's own skills so it fits the brain's conventions: placed in the routing map first, named <prefix>-<verb>-<object>, a description that says what it does NOT do, must-obey rules inline, a router when an entry point fans out, and a gate on output that must not be improvised. Use when work keeps being reinvented or judged wrong, when a skill grew too big, when renaming one, or when the skill gate refuses a write to a skill file. Does NOT write scripts, which is brain-write-script; does NOT record a fact, which is brain-write-practice; and does NOT change a brain-* skill, which is brain-upstream."
+description: "Create, change, split or rename one of this brain's own skills, or an agent a skill dispatches, so it fits the brain's conventions: placed in the routing map first, named <prefix>-<verb>-<object>, a description that says what it does NOT do, must-obey rules inline, a router when an entry point fans out, and a gate on output that must not be improvised. Use when work keeps being reinvented or judged wrong, when a skill grew too big, when renaming one, or when the skill gate refuses a write to a skill or agent file. Does NOT write scripts, which is brain-write-script; does NOT record a fact, which is brain-write-practice; and does NOT change a brain-* skill, which is brain-upstream."
 ---
 
 # Write a skill for this brain
@@ -14,6 +14,8 @@ advice covers none of that, so follow this sequence even when another skill-writ
 **Runs after:** `brain-retro`
 
 **Hand to next:** `brain-sync` · `brain-write-script`
+
+**Reserved output:** writing `.claude/agents/<prefix>-*.md` needs this skill to have run.
 
 **Reserved output:** writing `.claude/skills/<prefix>-*/**` needs this skill to have run.
 
@@ -40,7 +42,9 @@ If the gate refused a write to a skill file, this sequence is the answer, not a 
 1. **Does it earn a skill?** Only work that will happen again and is not obvious to do well: a
    sequence someone would reinvent, or judgement someone would get wrong. A fact is a practice
    (`brain-write-practice`), a query or helper is a script (`brain-write-script`), and something done
-   once is neither. Say so and stop: every skill costs every session its description.
+   once is neither. Work already under way counts as covered: a skill on an unmerged branch, or an
+   open suggestion in `docs/UPSTREAM.md`. Say so and stop: every skill costs every session its
+   description.
 2. **Place it in the tree before writing it.** Read `references/routing.md`. Run
    `_meta/brain routing show` and settle, with the person where it is not obvious: where the work
    enters (an existing entry node, or a new one in the words a person would say), what runs before
@@ -77,6 +81,29 @@ If the gate refused a write to a skill file, this sequence is the answer, not a 
 9. **Hand on.** A script it needs goes to `brain-write-script`; never write one inline here. Then
    commit through `brain-sync`.
 
+## Agents
+
+An agent (`.claude/agents/<prefix>-<role>.md`) is a helper a skill dispatches with the Agent tool:
+its own context for a large read, a cheaper model, or a narrower set of tools. Write one only when a
+skill's step needs that; otherwise the step stays in the skill. It is never an entry point, so it is
+not drawn in the map: the skill that dispatches it names it, and `lint` reports one no skill names.
+
+```markdown
+---
+name: <prefix>-<role>
+description: "What it does and when a skill hands it work; what it does NOT do."
+tools: Read, Grep, Glob
+model: sonnet
+---
+```
+
+List its tools, read-only unless its job is to write (without `tools` it gets every tool, MCP ones
+included), and give the reason in its body for any write tool or Bash. Name the cheapest model that
+does the job. The body says what it is given and what it returns: a report, never the files it read,
+so the dispatching skill makes any fix. A checker gives each claim a verdict: verified (with its
+source), unverified (with the risk of trusting it) or falsified; with no source to reach, a claim is
+unverified, never verified. Then run step 7.
+
 ## Splitting and renaming
 
 Split a skill that passed about 150 lines, or that has two entry points, by where its parts sit in
@@ -105,4 +132,5 @@ all of (router rules, map ids, `brain.json` gates). Then run step 7.
   `_meta/brain route <router> --check` passes.
 - If its output must not be improvised: a `brain.json` `gates` rule covers the path it writes.
 - It was tried on a real case, or the person said why not.
+- An agent lists its tools and a model, and the skill that dispatches it names it.
 - It is handed to `brain-sync` to commit.

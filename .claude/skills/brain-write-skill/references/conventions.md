@@ -104,6 +104,17 @@ A call line, for a skill that checks a config change before it is applied:
 is applied; if `lab-router` did not route it here, record its fields first.
 ```
 
+## Two patterns worth copying
+
+- **A bounded fix loop.** A skill that checks and then fixes applies only the findings with one
+  unambiguous correction, offers the judgement calls to the person as suggestions, checks again
+  once, and stops after a set number of rounds (one, unless the skill says why more). It changes
+  content this run did not write only after the person saw the diff.
+- **Guards no flag lifts.** A skill that can run without asking (an "auto" argument, a batch) lists
+  under `## Do not` what it still never does: overwrite what exists, touch a protected path, merge,
+  send. Running unattended removes the questions; it never widens what gets written. A batch over a
+  scope the person did not list shows the list first and leaves out stale items.
+
 ## What lint reports
 
 `_meta/brain lint` prints one line per finding, `SEVERITY subject: message`, then
@@ -116,7 +127,9 @@ is applied; if `lab-router` did not route it here, record its fields first.
 | BROKEN | a router's `rules.json` | not valid JSON, or not `{"rules": [...]}`; a rule without `when`, `skill` or `why`; a condition that is not a list of strings; a rule, `also`, `default` or case that names a missing skill; a case that routes somewhere other than its `expect` |
 | BROKEN | gate rules (gates.md) | a `brain.json` `gates` entry that is malformed or names a missing skill; a `gates_off` entry without `path` or `why`; an unreadable `_meta/gates.json` |
 | GAP | a convention not followed yet; reported, never blocking | no "Does NOT" clause naming a sibling; no `## Done when`; a body over 150 lines; a name without the brain's prefix; a skill neither drawn nor under `## Not drawn`; a drawn skill no entry node reaches; no call line, or one still reading `TODO` |
-| ORPHAN | dead weight | a file under `references/` that `SKILL.md` never cites (citing a folder covers what is in it) |
+| BROKEN | an agent (`.claude/agents/<prefix>-*.md`) | frontmatter `name` not the file's name; no `description` |
+| GAP | an agent | no `tools` (it gets every tool); no `model` |
+| ORPHAN | dead weight | a file under `references/` that `SKILL.md` never cites (citing a folder covers what is in it); an agent no skill names |
 
 A GAP left after your change gets one sentence to the person: what it is and why it stays. Adopted
 skills often carry GAPs that nobody asked you to fix; name them, do not fix them unasked.

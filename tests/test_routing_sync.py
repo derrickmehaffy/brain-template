@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import shutil
 import unittest
 from pathlib import Path
@@ -498,10 +499,104 @@ class OwnershipTest(SyncCase):
                           names=("template-a", "brain-x"), role="template", prefix="template")
         changed = self.sync(root)
         self.assertEqual(set(changed), {DOCS, META, self.rel("template-a"), self.rel("brain-x")})
+        # brain-x ships, so its block is drawn from the meta map alone: template-a never reaches a brain
         self.assertEqual(self.block_of(root, "brain-x"),
-                         block("**Runs after:** `template-a`", "**Hand to next:** nothing — a person takes it from here."))
+                         block("**Runs after:** nothing — an entry point into the tree.",
+                               "**Hand to next:** nothing — a person takes it from here."))
+        self.assertEqual(self.block_of(root, "template-a"),
+                         block("**Runs after:** nothing — an entry point into the tree.",
+                               "**Hand to next:** `brain-x`"))
         self.assertIn("classDef work", (root / "_meta" / "ROUTING-META.md").read_text(encoding="utf-8"))
         self.assertEqual(self.sync(root), [])
+
+
+class ShippedViewTest(SyncCase):
+    """In the template, a `brain-*` skill's block is written as every brain will read it: a brain never
+    rewrites it, so nothing the template alone has (its prefix, its own skills, its `brain.json`) may show."""
+
+    SHIPPED_GATES = json.dumps({"rules": [
+        {"path": ".claude/skills/{prefix}-*/**", "skills": ["brain-x", "template-a"], "why": "w"},
+        {"path": ".claude/skills/brain-*/**", "skills": ["brain-x", "template-a"], "only_in": "template",
+         "why": "w"},
+        {"path": "docs/BRAIN-ONLY.md", "skills": ["brain-x", "template-a"], "only_in": "brain",
+         "spend_on_revision": True, "why": "w"},
+        {"path": "docs/LOG.md", "skills": ["brain-x"], "spend_on_revision": True, "why": "w"},
+        {"path": "docs/BAD.md", "skills": [], "why": "malformed: skipped, as the gate skips it"},
+    ], "exempt": []}) + "\n"
+    OWN = {"gates": [{"path": "own/**", "skills": ["brain-x", "template-a"], "why": "w"}],
+           "gates_off": [{"path": "docs/LOG.md", "why": "the template keeps no log"}]}
+
+    def template(self, docs=None, meta=None, names=("brain-x", "template-a")) -> Path:
+        root = self.brain(docs=docs, meta=meta, names=names, role="template", prefix="template", extra=self.OWN)
+        (root / "_meta" / "gates.json").write_text(self.SHIPPED_GATES, encoding="utf-8")
+        return root
+
+    def test_a_shipped_skill_reserves_what_it_reserves_in_a_brain(self):
+        root = self.template()
+        self.sync(root)
+        self.assertEqual(self.block_of(root, "brain-x"), block(
+            "**Not in the routing map:** nobody has placed it yet.",
+            "**Reserved output:** writing `.claude/skills/<prefix>-*/**` needs this skill to have run.",
+            "**Reserved output:** writing `docs/BRAIN-ONLY.md` needs this skill to have run; each revision "
+            "needs a fresh run.",
+            "**Reserved output:** writing `docs/LOG.md` needs this skill to have run; each revision needs a "
+            "fresh run."))  # not the template's prefix, its only_in rule, its own gates or its gates_off
+
+    def test_a_template_skill_keeps_the_template_rules(self):
+        root = self.template()
+        self.sync(root)
+        self.assertEqual(self.block_of(root, "template-a"), block(
+            "**Not in the routing map:** nobody has placed it yet.",
+            "**Reserved output:** writing `.claude/skills/brain-*/**` needs this skill to have run.",
+            "**Reserved output:** writing `.claude/skills/template-*/**` needs this skill to have run.",
+            "**Reserved output:** writing `own/**` needs this skill to have run."))
+
+    def test_a_brain_still_expands_its_own_prefix(self):
+        root = self.brain(names=("lab-a",), extra={"gates": [{"path": "own/**", "skills": ["lab-a"], "why": "w"}]})
+        (root / "_meta" / "gates.json").write_text(self.SHIPPED_GATES.replace("template-a", "lab-a"),
+                                                   encoding="utf-8")
+        self.sync(root)
+        self.assertEqual(self.block_of(root, "lab-a"), block(
+            "**Not in the routing map:** nobody has placed it yet.",
+            "**Reserved output:** writing `.claude/skills/lab-*/**` needs this skill to have run.",
+            "**Reserved output:** writing `docs/BRAIN-ONLY.md` needs this skill to have run; each revision "
+            "needs a fresh run.",
+            "**Reserved output:** writing `own/**` needs this skill to have run."))
+
+    def test_a_shipped_skill_is_placed_by_the_meta_map_alone(self):
+        meta = fenced("flowchart LR", "IN(x):::entry --> brain-x:::work", "brain-x --> brain-y:::gate")
+        docs = fenced("flowchart LR", "T(t):::entry --> template-a:::work", "template-a -.-> brain-x",
+                      "brain-y --> template-b:::work",
+                      "brain-x --> brain-z:::work") + "\n## Not drawn\n\n| Skill | Why |\n|---|---|\n"
+        root = self.template(docs=docs, meta=meta, names=("brain-x", "brain-y", "brain-z", "template-a",
+                                                          "template-b"))
+        self.sync(root)
+        self.assertEqual(self.block_of(root, "brain-x"), block(
+            "**Runs after:** nothing — an entry point into the tree.", "**Hand to next:** `brain-y`",
+            "**Reserved output:** writing `.claude/skills/<prefix>-*/**` needs this skill to have run.",
+            "**Reserved output:** writing `docs/BRAIN-ONLY.md` needs this skill to have run; each revision "
+            "needs a fresh run.",
+            "**Reserved output:** writing `docs/LOG.md` needs this skill to have run; each revision needs a "
+            "fresh run."))
+        self.assertEqual(self.block_of(root, "brain-y"), block(
+            "**Runs after:** `brain-x`", "**Hand to next:** nothing — a person takes it from here.", GATE_NOTICE))
+        # drawn only in the template's own map, which no brain has
+        self.assertEqual(self.block_of(root, "brain-z"), block("**Not in the routing map:** nobody has placed it yet."))
+        self.assertEqual(self.block_of(root, "template-a"), block(
+            "**Runs after:** nothing — an entry point into the tree.", "**Hand to next:** `brain-x`",
+            "**Reserved output:** writing `.claude/skills/brain-*/**` needs this skill to have run.",
+            "**Reserved output:** writing `.claude/skills/template-*/**` needs this skill to have run.",
+            "**Reserved output:** writing `own/**` needs this skill to have run."))
+        self.assertIn("**Runs after:** `brain-y`", self.block_of(root, "template-b"))
+        self.assertEqual(self.sync(root, check=True), [])
+
+    def test_a_shipped_skill_not_drawn_in_the_meta_map_gives_that_reason(self):
+        meta = fenced("flowchart LR", "IN(x):::entry --> brain-y:::work") + \
+            "\n## Not drawn\n\n| Skill | Why |\n|---|---|\n| `brain-x` | called by hand only |\n"
+        root = self.template(meta=meta, names=("brain-x", "brain-y"))
+        self.sync(root)
+        self.assertTrue(self.block_of(root, "brain-x").startswith(
+            BEGIN + "\n**Not in the routing map:** called by hand only\n"))
 
 
 class ClassStylesTest(SyncCase):

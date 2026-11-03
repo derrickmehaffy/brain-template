@@ -33,7 +33,7 @@ _GIT_LOCATION_VARS = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_
                       "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_NAMESPACE")
 # A URL source: a scheme git can fetch, or the `user@host:path` form. Anything else (`ext::...`, an option) is a path.
 _URL = re.compile(r"^(?:(?:https?|ssh|git|file)://.+|[A-Za-z0-9._][A-Za-z0-9._-]*@[A-Za-z0-9._-]+:.+)$")
-_CREDENTIALS = re.compile(r"(?<=//)[^/@\s]+@")  # `user:token@` in a URL
+_CREDENTIALS = re.compile(r"(?<=//)[^/\s]*@")  # `user:token@` in a URL, to the last `@`: a password may hold one
 _MANAGED_FILES = ("CLAUDE.md", ".gitignore", install.SETTINGS)
 _MANAGED_WHAT = {"CLAUDE.md": "managed block", ".gitignore": "managed block",
                  install.SETTINGS: "gate hooks and .env deny entries"}

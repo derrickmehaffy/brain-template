@@ -34,7 +34,7 @@ LISTED = 8  # names shown in one line before "and N more"
 GUARD_CALL = re.compile(r"_meta/brain[\"']?\s+hook\s+pre-commit")
 _URL = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
 _SCP = re.compile(r"^[A-Za-z0-9._][A-Za-z0-9._-]*@[A-Za-z0-9._-]+:")
-_USERINFO = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*://)[^/@]*@")
+_USERINFO = re.compile(r"^([A-Za-z][A-Za-z0-9+.-]*://)[^/\s]*@")  # to the last `@`: a password may hold one
 
 
 # -- small helpers --------------------------------------------------------------------------------------
@@ -179,9 +179,22 @@ def _never_prompt(root: Path) -> Iterator[None]:
                 os.environ[key] = value
 
 
-def _moved_on(recorded: str, shown: str, latest: str) -> Finding:
-    return _warn("source", f"the template has moved on: this brain was set up from {recorded}, and {shown} is at "
-                           f"{latest}; run update (brain-setup walks through it)")
+def _moved_on(recorded: str, shown: str, latest: str, way: str) -> Finding:
+    """`way` is "behind", "ahead of" or "differs from": only a brain behind its source is told to update."""
+    advice = "; run update (brain-setup walks through it)" if way == "behind" else ""
+    return _warn("source", f"this brain {'is ' if way != 'differs from' else ''}{way} {shown}: it was set up from "
+                           f"{recorded}, and {shown} is at {latest}{advice}")
+
+
+def _is_ancestor(repo: Path, older: str, newer: str) -> bool:
+    """Whether commit `older` is `newer` or one of its ancestors in `repo`; False when either is unknown there."""
+    if not re.fullmatch(r"[0-9a-f]{4,64}", older) or not re.fullmatch(r"[0-9a-f]{4,64}", newer):
+        return False
+    try:
+        gitutil.git(repo, "merge-base", "--is-ancestor", older, newer)
+    except gitutil.GitError:
+        return False
+    return True
 
 
 def _path_source(path: Path, recorded: str, shown: str) -> Finding:
@@ -199,7 +212,9 @@ def _path_source(path: Path, recorded: str, shown: str) -> Finding:
         same = not latest or latest == version
     if same:
         return _ok("source", f"up to date with {shown} ({branch} at {head})")
-    return _moved_on(recorded, shown, f"{latest}+{head}" if latest else head)
+    way = ("behind" if _is_ancestor(path, sha, head) else "ahead of" if _is_ancestor(path, head, sha)
+           else "differs from")
+    return _moved_on(recorded, shown, f"{latest}+{head}" if latest else head, way)
 
 
 def _url_source(root: Path, source: str, recorded: str, shown: str) -> Finding:
@@ -217,11 +232,15 @@ def _url_source(root: Path, source: str, recorded: str, shown: str) -> Finding:
         return _ok("source", f"skipped: {shown} did not name a latest commit")
     if head.startswith(sha) or sha.startswith(head):
         return _ok("source", f"up to date with {shown} (at {head[:max(7, len(sha))]})")
-    return _moved_on(recorded, shown, head[:max(7, len(sha))])
+    # the source's history is not on this machine, so which of the two is newer cannot be told
+    return _moved_on(recorded, shown, head[:max(7, len(sha))], "differs from")
 
 
 def _source(root: Path, cfg: Config, quick: bool) -> List[Finding]:
     if cfg.role == "template":
+        if cfg.template_source is None and gitutil.is_repo(root) and str(gitutil.git(root, "remote")).strip():
+            return [_warn("source", "this template has a remote but brain.json template.source is null; set it to "
+                                    "the published URL before publishing, so init in a clone starts a fresh history")]
         return []
     try:
         source = config.effective_source(cfg)

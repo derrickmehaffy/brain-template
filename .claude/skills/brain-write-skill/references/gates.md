@@ -13,10 +13,13 @@ instead. `.claude/settings.json` wires it (setup does this; `doctor` warns when 
 - before every Write, Edit and Bash call, `_meta/brain gate check` works out which files the call
   writes, and refuses one that a rule reserves for a skill that has not run in this session.
 
+If the person started the skill by typing `/<skill>`, invoke it once with the Skill tool so the gate
+can see the run.
+
 The refusal names the skill to invoke and the rule's `why`:
 
 ```text
-skill gate: writing infra/hosts/nas.yml needs lab-change-config to run first in this session. Host config is applied to live machines; every revision goes back through lab-change-config's review. Invoke the skill; a one-time waiver needs the person's express say-so: _meta/brain gate waive lab-change-config "<reason, and who said so>"
+skill gate: writing infra/hosts/nas.yml needs lab-change-config to run first in this session. Host config is applied to live machines; every revision goes back through lab-change-config's review. Invoke the skill. If the person started the skill by typing /<skill>, invoke it once with the Skill tool so the gate can see the run. A one-time waiver needs the person's express say-so: _meta/brain gate waive lab-change-config "<reason, and who said so>"
 ```
 
 ## When to gate
@@ -157,8 +160,7 @@ last refusal. Use it when a refusal is a surprise: the skill most often ran in a
   - any other program that writes a file is not recognised (for example `dd of=`, `rsync`,
     `curl -o`, `patch`, `truncate`, `touch`, `install`, `xargs`, `find -exec`, `git checkout --`,
     `sh -c`): only the writers named above are;
-  - `cd X && ...`: the gate does not follow the `cd`, so a relative target is read against the
-    folder the session started in;
+  - after a `cd`, a relative target in the rest of that command is not checked (an absolute one is);
   - `exec 3<> file`, which opens the file for writing on a descriptor;
   - a backtick substitution inside double quotes;
   - case-insensitive filesystems: a rule's path matches case-sensitively, so `Docs/Practices/x.md`

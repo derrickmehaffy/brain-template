@@ -31,8 +31,7 @@ Make it a file when any one of these holds; otherwise run it inline and carry on
 - it touches data that matters (a live config, save files, a release, someone else's data);
 - it took minutes to work out.
 
-Look first: search `./scripts/` and `docs/CAPABILITIES.md` for the system. Changing the script that
-exists beats writing a second one beside it.
+Look first in `./scripts/` and `docs/CAPABILITIES.md`: changing a script beats writing a second one.
 
 ## 2. Probe before writing logic
 
@@ -47,15 +46,14 @@ would need a write, do not try it; record it as not tried, and why.
 - `./scripts/<system>/`: one folder per system it touches, named as a Python identifier
   (`hypervisor`, `mod_loader`, `files`) that no imported module already has, with an `__init__.py`.
 - `./scripts/common/`: code that two or more systems share, starting with the `.env` loader.
-- A skill's own `scripts/` folder only when that skill is the sole caller. That folder is the
-  skill's, so the gate also wants `brain-write-skill` for it.
+- A skill's own `scripts/` folder only when that skill is the sole caller (the gate then also
+  wants `brain-write-skill`).
 - Name it for what it does (`list_vms.py`), and start the name `apply_`, `write_` or `delete_`
   exactly when it changes something, so the name alone says whether running it is safe.
 
 ## 4. Write it
 
-Read `references/conventions.md` and copy its docstring template, root-finding snippet, `.env`
-loader and read-only guard rather than writing your own from memory.
+Read `references/conventions.md`; copy its docstring, root finding, `.env` loader and read-only guard.
 
 - The docstring opens `WHY THIS EXISTS:` with the question it answers or the fact it encodes: that
   line is how the next session decides to reuse the script instead of writing another.
@@ -72,6 +70,7 @@ loader and read-only guard rather than writing your own from memory.
 - A private endpoint (hostname, internal address) is configuration: take it from the environment too.
 - A new secret name: `_meta/brain env-sync --add KEY`, then ask the person to fill in its value in
   `.env`. `_meta/brain env-sync --list` shows which are set; never read, write or print a value.
+- Run another program with an argument list, never a shell string: a path with a space breaks it.
 - Follow `brain.json` `scripts.packages`: `stdlib-only` means the standard library and nothing
   else; `allowed` means a third-party package that earns its place, named in the docstring.
 
@@ -89,13 +88,15 @@ it only reads. Run them from the brain root under the interpreter `brain.json` `
 ## 6. Record and hand on
 
 Add or update the system's row in `docs/CAPABILITIES.md`, in the format `references/conventions.md`
-gives: what it can do, what it cannot, today's date, and how you checked; never a secret or a
-hostname. Then hand to `brain-sync`, which runs the checks and commits.
+gives: what it can do, what it cannot, the day the probe ran (today if you probed; never move the
+date without a check), and how you checked; never a secret or a hostname. Then hand to
+`brain-sync`, which runs the checks and commits.
 
 ## In the template
 
-When `brain.json` `role` is `template`, `_meta/` is this repo's own code: a harness change accepted
-through `template-intake` is written here, tested in `tests/`, and follows the template's `CLAUDE.md`.
+When `brain.json` `role` is `template`, a harness change in `_meta/` that `template-intake` accepted
+is written here, following the template's `CLAUDE.md`, with tests in `tests/`. Steps 3 and 6 and their
+Done-when lines do not apply; the template's test suite passes.
 
 ## Done when
 
@@ -104,6 +105,6 @@ through `template-intake` is written here, tested in `tests/`, and follows the t
 - Its docstring opens `WHY THIS EXISTS:`, and it names no absolute or home path.
 - Tests for its logic and refusal paths, including one asserting it only reads when it is
   read-only, pass under `scripts.python`.
-- `docs/CAPABILITIES.md` has the system's row dated today, with what it cannot do.
+- `docs/CAPABILITIES.md` has the system's row, dated the day the probe ran, with what it cannot do.
 - No secret is in the script, its arguments or any output; new names went in through `env-sync --add`.
 - Handed to `brain-sync`.

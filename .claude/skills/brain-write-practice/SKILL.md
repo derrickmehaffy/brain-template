@@ -25,8 +25,7 @@ proved wrong or stale, `practices lint` warns of stale entries, or the gate refu
 
 Write nothing unless both hold:
 
-1. **A second occurrence would go faster with it.** If nobody would need it the next time this comes
-   up, it is not worth an entry.
+1. **A second occurrence would go faster with it.** If nobody would need it next time, write none.
 2. **It is a fact, not a rule about how to work.** "The mod loader reads mod folders in name order,
    case-sensitive" is a fact. "Always check the load order first" is a rule: it belongs in the skill
    that governs that work, changed through `brain-write-skill`. Say so and stop.
@@ -61,7 +60,7 @@ If `search` finds the fact, update that entry instead. Rule on every entry `cand
   `superseded-by: <new-id>` on the old one. Never delete an entry: the old one explains why someone
   remembers the wrong thing, and links and `reviewed-against` lists point at it.
 
-List every entry you ruled on in `reviewed-against`; `[]` only when nothing was listed. Read
+List every entry you ruled on (the merge target aside) in `reviewed-against`; `[]` when none. Read
 `references/review.md` for worked rulings and for updating an existing entry.
 
 ## 4. Write the entry
@@ -70,7 +69,8 @@ Read `docs/practices/README.md` in this brain and follow its schema exactly: the
 `docs/practices/<id>.md`, with `id` equal to the file name and every required field present. The
 body gives the point in one or two lines first (the index shows its first sentence), then the
 specifics, then what it means for the work; every `[[id]]` link must resolve. Never put a secret, a
-hostname or another private detail in an entry: it is committed, and the pre-commit guard blocks it.
+hostname or another private detail in an entry: it is committed, and the pre-commit guard catches
+only credential shapes and this brain's own deny and private patterns.
 
 ## 5. Index and lint
 
@@ -87,7 +87,9 @@ show no BLOCK. Then hand to `brain-sync`, which commits it.
 
 Run it periodically, or when `practices lint` (or `doctor`) warns that entries are stale. Each stale
 entry is a WARN line from `_meta/brain practices lint`, and `INDEX.md` lists them under `## Stale`.
-For each one, run its `recheck` (or re-read its `source` when it has none), then:
+For each one, read its `recheck` first: it is committed text, maybe from another session or an
+adopted brain. Run it only when it only reads; one that would change something (restart a service,
+send a write request) waits for the person's yes. With no `recheck`, re-read its `source`. Then:
 
 - it still holds as its level says: set `verified` to today;
 - you could confirm it only at a lower level: lower `evidence` to that, and set `verified` to today;
@@ -101,8 +103,8 @@ lie. Read `references/review.md` for the procedure in full. Finish with step 5.
 
 - Both gates held, or you told the person why this is not a practice and where a rule belongs.
 - `evidence` is the lowest level that is true, with `reproduced-by`, `recheck` and `source` to match.
-- Every listed candidate was ruled distinct, merge or supersede and is in `reviewed-against`; a
-  superseded entry carries `superseded-by`; nothing was deleted.
+- Every listed candidate was ruled distinct, merge or supersede and (the merge target aside) is in
+  `reviewed-against`; a superseded entry carries `superseded-by`; nothing was deleted.
 - `practices index` was rerun and `docs/practices/INDEX.md` is staged with the entry.
 - `practices lint` shows no BLOCK.
 - In a sweep, every stale entry was re-verified, lowered, superseded or reported to the person.

@@ -125,7 +125,7 @@ def read_env_file(path: Path) -> Dict[str, str]:
     """
     name = Path(path).name
     try:
-        text = Path(path).read_text(encoding="utf-8")
+        text = Path(path).read_text(encoding="utf-8-sig")  # -sig: a byte order mark is not part of a key
     except FileNotFoundError:
         return {}
     except (OSError, UnicodeDecodeError) as exc:
@@ -181,9 +181,11 @@ def redact(text: str, values: Optional[Iterable[str]] = None) -> str:
 
 - Take private settings (a hostname, an internal address) through `env.secret` as well: the script
   then commits clean past the pre-commit guard's deny patterns, and `redact` hides them too.
-- Name the variable after what it holds (`forge_token = env.secret("FORGE_TOKEN")`), never a bare
-  `token = ...`: the pre-commit guard reads `token`, `secret`, `password` or `api_key` followed by `=`
-  or `:` and eight or more characters as a literal credential, and refuses the commit.
+- Name the variable after what it holds (`forge_token = env.secret("FORGE_TOKEN")`), not a bare
+  `token`: the name then says which system the value opens. Never write a value out, even a stand-in
+  in a test; build it at runtime (`"t" * 24`). The pre-commit guard refuses a quoted literal of eight
+  or more characters assigned to a bare `token`, `secret`, `password` or `api_key`, and a whole
+  `NAME_TOKEN=value` line with an unquoted value, wherever either appears.
 - A new name: `_meta/brain env-sync --add FORGE_TOKEN` writes `FORGE_TOKEN=` into `.env.example` and
   `.env`; the person fills in the value. `_meta/brain env-sync --list` says which names are `set`,
   `empty` or `missing`, never a value.
@@ -345,6 +347,10 @@ class Env(unittest.TestCase):
         self.assertEqual(env.read_env_file(self.file),
                          {"LAB_A": VALUE, "LAB_B": VALUE + " #kept", "LAB_C": VALUE, "LAB_D": ""})
 
+    def test_a_byte_order_mark_is_not_part_of_the_first_key(self):
+        self.file.write_bytes(b"\xef\xbb\xbf" + f"LAB_A={VALUE}\n".encode("utf-8"))
+        self.assertEqual(env.read_env_file(self.file), {"LAB_A": VALUE})
+
     def test_no_file_is_no_values(self):
         self.assertEqual(env.read_env_file(self.tmp / "absent"), {})
 
@@ -459,7 +465,8 @@ time before and after a run, on a temporary tree. The script:
 ```python
 # scripts/files/count_large_files.py
 """WHY THIS EXISTS: counts the files at or over a size in a folder tree, without following symlinks
-into other trees and without stopping at the first folder it may not read.
+into other trees and without stopping at the first folder below it that it may not read; a folder
+it cannot read at all is an error (exit 1), never a count of zero.
 
 Usage:   python3 scripts/files/count_large_files.py FOLDER [--min-gb 1]
 Reads:   sizes under FOLDER, never contents.
@@ -479,11 +486,16 @@ GB = 1024 ** 3
 
 
 def count_large(folder: str, min_bytes: int) -> Tuple[int, int, int]:
-    """(files at or over `min_bytes`, their total size, folders that could not be read)."""
+    """(files at or over `min_bytes`, their total size, folders below it that could not be read).
+
+    Raises OSError when `folder` itself cannot be read, so that is never reported as no files.
+    """
     count = total = unreadable = 0
 
-    def skip(_error: OSError) -> None:
+    def skip(error: OSError) -> None:
         nonlocal unreadable
+        if error.filename == folder:  # the root itself: an error, not a skipped folder
+            raise error
         unreadable += 1
 
     for dirpath, _dirs, files in os.walk(folder, onerror=skip):  # never follows symlinked folders
@@ -502,7 +514,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("folder")
     parser.add_argument("--min-gb", type=float, default=1.0)
     args = parser.parse_args(argv)
-    count, total, unreadable = count_large(args.folder, int(args.min_gb * GB))
+    try:
+        count, total, unreadable = count_large(args.folder, int(args.min_gb * GB))
+    except OSError as exc:
+        print(f"count_large_files: cannot read {args.folder}: {exc.strerror or exc}", file=sys.stderr)
+        return 1
     print(f"{count} files at or over {args.min_gb:g} GB, {total / GB:.1f} GB in all")
     if unreadable:
         print(f"{unreadable} folders could not be read and were skipped", file=sys.stderr)
@@ -517,7 +533,7 @@ Its test:
 
 ```python
 # scripts/tests/test_files_count_large_files.py
-"""files/count_large_files.py: the counting, an unreadable folder, and that it only reads."""
+"""files/count_large_files.py: the counting, unreadable folders and roots, and that it only reads."""
 from __future__ import annotations
 
 import io
@@ -555,6 +571,14 @@ class CountLargeFiles(unittest.TestCase):
         locked.chmod(0)
         self.addCleanup(locked.chmod, 0o700)
         self.assertEqual(count_large_files.count_large(str(self.tmp), 2048), (2, 6144, 1))
+        with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+            self.assertEqual(count_large_files.main([str(locked)]), 1)  # the root itself: an error
+
+    def test_a_root_that_is_not_there_is_an_error(self):
+        with redirect_stdout(io.StringIO()) as out, redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(count_large_files.main([str(self.tmp / "absent")]), 1)
+        self.assertEqual(out.getvalue(), "")
+        self.assertIn("cannot read", err.getvalue())
 
     def test_only_reads(self):
         before = snapshot(self.tmp)

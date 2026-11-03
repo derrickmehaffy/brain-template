@@ -10,9 +10,11 @@ from . import paths
 # name -> (module under brainlib, one-line help). Each module exposes
 # add_arguments(parser) and run(args) -> int; it is imported only when its command is chosen.
 COMMANDS: dict[str, tuple[str, str]] = {
+    "env-sync": ("envsync", "add the key names .env.example lists to .env; never prints a value"),
     "gate": ("gate", "the skill gate: record, check, waive, status"),
     "lint": ("lint", "check skills and the routing map"),
     "practices": ("practices", "check, index and search the practices store"),
+    "rename-skill": ("rename", "rename a skill everywhere it is named (a dry run unless --apply)"),
     "route": ("route", "apply a router's rules file and name one skill"),
     "routing": ("routing", "routing map tools"),
 }

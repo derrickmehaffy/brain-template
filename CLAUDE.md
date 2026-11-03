@@ -25,5 +25,7 @@ This folder is the template, not a brain: `brain.json` has `role: template` and 
 - **Brains get changes through `update`,** which reads the latest commit and not the working tree.
   A change brains should receive gets a `_meta/CHANGELOG.md` entry; one that answers an upstream
   suggestion cites its id (`- landed: <id> — <summary>` or `- declined: <id> — <reason>`).
+- **Before publishing the template,** set `template.source` in `brain.json` to the published URL, so
+  `init` in a clone of it starts a fresh history and never keeps the template as `origin`.
 - **Commit through `brain-sync`.** Subjects are `meta(<area>)`, `skill(<name>)`, `docs(<area>)` or
   `test(<area>)`. Never push unless asked.

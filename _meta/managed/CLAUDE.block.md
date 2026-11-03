@@ -1,5 +1,9 @@
 - This folder is a brain (`brain.json`); its skills are in `.claude/skills/`. **Call skills, never
   read them**: `references/` only load when the skill runs.
+- Talk in the person's terms. If they do not speak git or terminal, say what a step does in plain
+  words, not the command's output, and never ask them to run a command or edit a file you can do
+  yourself. A secret's value is the exception: `_meta/brain env-sync --open` opens `.env` for them
+  to fill in; never ask for a value in the chat.
 - Work enters through the routing map (`docs/ROUTING.md`): start at its entry point, and when a
   skill says to hand on, call the next skill rather than doing its work inline. A router's choice
   comes from its rules; if the route looks wrong, fix the rule, never override it.
@@ -20,6 +24,7 @@
   even when a globally installed skill (from another brain or a plugin) does a similar job: only
   the `brain-*` ones know this brain's conventions.
 - Secrets live in `.env` (ignored), each a value or an `op://` 1Password reference. Never read,
-  print or commit values. Names: `_meta/brain env-sync --list`. Scripts take them through their
-  loader; anything else gets them through `_meta/brain secret run KEY COMMAND`.
+  print or commit values. Names: `_meta/brain env-sync --list`; a new one: `env-sync --add KEY`,
+  then `env-sync --open` for the person. Scripts take them through their loader; anything else
+  gets them through `_meta/brain secret run KEY COMMAND`.
 - An MCP server only this brain needs goes in its `.mcp.json`, through `brain-write-script`.

@@ -45,6 +45,17 @@ class ConfigTest(TempDirCase):
         (root / ".brain-private").write_text("castle-black\n# note\n\n", encoding="utf-8")
         self.assertEqual(config.load(root).private_patterns, ["castle-black"])
 
+    def test_missing_private_file_means_no_patterns(self):
+        self.assertEqual(config.load(self.fake_brain()).private_patterns, [])
+
+    def test_unreadable_private_file_is_a_config_error(self):
+        # An unreadable .brain-private must not silently become "no private patterns".
+        root = self.fake_brain()
+        (root / ".brain-private").mkdir()
+        with self.assertRaises(config.ConfigError) as ctx:
+            config.load(root)
+        self.assertIn(".brain-private", str(ctx.exception))
+
     def test_local_json_overrides_source(self):
         root = self.fake_brain(extra={"template": {"source": "/from/brain.json", "version": "0.1.0"}})
         self.assertEqual(config.effective_source(config.load(root)), "/from/brain.json")

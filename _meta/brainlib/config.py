@@ -133,11 +133,18 @@ def _choice(value: str, options: tuple, where: str) -> str:
 
 
 def _private_patterns(root: Path) -> List[str]:
-    """One pattern per line of `.brain-private`; blank lines and `#` comments are skipped."""
+    """One pattern per line of `.brain-private`; blank lines and `#` comments are skipped.
+
+    A missing file means no patterns; one that exists but cannot be read is an error,
+    so a weaker privacy guard never goes unnoticed.
+    """
+    path = root / PRIVATE_FILE
     try:
-        text = (root / PRIVATE_FILE).read_text(encoding="utf-8", errors="replace")
-    except OSError:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
         return []
+    except OSError as exc:
+        raise ConfigError(f"cannot read {path}: {exc}")
     lines = (line.strip() for line in text.splitlines())
     return [line for line in lines if line and not line.startswith("#")]
 

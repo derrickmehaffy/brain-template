@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tests.helpers import TempDirCase  # first: puts <template>/_meta on sys.path
+from tests.helpers import VERSION, TempDirCase  # first: puts <template>/_meta on sys.path
 from brainlib import config, hook, install, managed, manifest
 
 
@@ -361,7 +361,7 @@ class TemplateSourceTest(NewCase):
         self.assertFalse((dest / "_meta" / "stray.txt").exists())
         self.assertFalse((dest / "docs" / "STRAY.md").exists())
         self.assertNotIn("9.9.9", self.read_json(dest / "brain.json")["template"]["version"])
-        self.assertTrue(self.read_json(dest / "brain.json")["template"]["version"].startswith("0.1.0+"))
+        self.assertTrue(self.read_json(dest / "brain.json")["template"]["version"].startswith(VERSION + "+"))
 
     def test_the_template_checkout_is_left_as_it_was(self):
         template = self.copy_template()

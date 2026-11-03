@@ -8,11 +8,12 @@ import stat
 import unittest
 from pathlib import Path
 
-from tests.helpers import TempDirCase  # first: puts <template>/_meta on sys.path
+from tests.helpers import VERSION, TempDirCase  # first: puts <template>/_meta on sys.path
 from brainlib import config, install, managed, manifest
 
 # A brain-owned file the update must leave alone, and the paths that are not part of the owned set.
 NOT_OWNED = {"_meta/MANIFEST.sha256", "brain.json", "CLAUDE.md", ".gitignore", ".claude/settings.json"}
+NEXT = ".".join(VERSION.split(".")[:2] + [str(int(VERSION.split(".")[2]) + 1)])  # the version after this one
 
 
 class UpdateCase(TempDirCase):
@@ -124,7 +125,7 @@ class ChangesTest(UpdateCase):
         for pattern in (rf"^\s*changed\s+_meta/brainlib/paths\.py$", rf"^\s*added\s+_meta/extra\.txt$",
                         rf"^\s*removed\s+_meta/old-tool\.txt$", rf"^\s*changed\s+brain\.json"):
             self.assertRegex(r.stdout, re.compile(pattern, re.M))
-        self.assertIn("0.1.0", r.stdout)
+        self.assertIn(VERSION, r.stdout)
         self.assertIn(f"0.1.1+{sha}", r.stdout)
         self.assertIn("nothing is committed", r.stdout)
 
@@ -610,27 +611,27 @@ class ReportTest(UpdateCase):
     )
     CHANGELOG = (
         "# Changelog\n\n"
-        "## 0.1.1 — 2026-11-05\n\n"
+        f"## {NEXT} — 2026-11-05\n\n"
         "- landed: 2026-11-03-lands — the gate now checks Bash writes\n"
         "- declined: 2026-11-03-declined — fits only one brain\n"
         "- landed: 2026-11-03-taken-in — already flipped in the brain\n"
         "- landed: 2026-11-09-someone-elses — another brain's suggestion\n\n"
-        "## 0.1.0 — 2026-11-02\n\n- First version.\n"
+        f"## {VERSION} — 2026-11-02\n\n- First version.\n"
     )
 
     def test_reports_changelog_and_answered_ids(self):
         template, brain = self.pair()
         (brain / "docs" / "UPSTREAM.md").write_text(self.UPSTREAM, encoding="utf-8")
         self.put(template, "_meta/CHANGELOG.md", self.CHANGELOG)
-        self.put(template, "_meta/VERSION", "0.1.1\n")
+        self.put(template, "_meta/VERSION", f"{NEXT}\n")
         self.commit(template)
 
         r = self.updated(brain)
         out = r.stdout
-        self.assertIn("## 0.1.1", out)
+        self.assertIn(f"## {NEXT}", out)
         self.assertIn("- landed: 2026-11-03-lands — the gate now checks Bash writes", out)
-        self.assertNotIn("First version.", out)  # 0.1.0 is not newer than the installed version
-        self.assertRegex(out, re.compile(r"^answered  2026-11-03-lands  landed 0\.1\.1$", re.M))
+        self.assertNotIn("First version.", out)  # VERSION is not newer than the installed version
+        self.assertRegex(out, re.compile(rf"^answered  2026-11-03-lands  landed {re.escape(NEXT)}$", re.M))
         self.assertRegex(out, re.compile(r"^answered  2026-11-03-declined  declined: fits only one brain$", re.M))
         self.assertNotIn("2026-11-03-unanswered", out)
         self.assertNotRegex(out, r"answered  2026-11-03-taken-in")  # not open any more
@@ -641,12 +642,12 @@ class ReportTest(UpdateCase):
         template, brain = self.pair()
         (brain / "docs" / "UPSTREAM.md").write_text(self.UPSTREAM, encoding="utf-8")
         self.put(template, "_meta/CHANGELOG.md", self.CHANGELOG)
-        self.put(template, "_meta/VERSION", "0.1.1\n")
+        self.put(template, "_meta/VERSION", f"{NEXT}\n")
         self.commit(template)
         self.updated(brain)
         r = self.run_brain(brain, "upstream", "list")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
-        self.assertIn(f"{brain}  2026-11-03-lands  open  answer: landed 0.1.1", r.stdout)
+        self.assertIn(f"{brain}  2026-11-03-lands  open  answer: landed {NEXT}", r.stdout)
 
     def test_semver_order_in_the_report(self):
         template, brain = self.pair()

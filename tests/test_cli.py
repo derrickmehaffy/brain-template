@@ -6,7 +6,7 @@ import subprocess
 import sys
 import unittest
 
-from tests.helpers import TEMPLATE_ROOT, TempDirCase
+from tests.helpers import TEMPLATE_ROOT, VERSION, TempDirCase
 
 META = TEMPLATE_ROOT / "_meta"
 
@@ -18,7 +18,7 @@ def harness_files():
 class CliTest(TempDirCase):
     def test_version(self):
         r = self.run_brain(TEMPLATE_ROOT, "--version")
-        self.assertEqual((r.returncode, r.stdout.strip()), (0, "brain 0.1.0"))
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, f"brain {VERSION}"))
 
     def test_unknown_command_is_usage_error(self):
         r = self.run_brain(TEMPLATE_ROOT, "nope")
@@ -41,7 +41,7 @@ class CliTest(TempDirCase):
         link.symlink_to(META / "brain")
         r = subprocess.run([sys.executable, str(link), "--version"], cwd=str(self.tmp), env=self.env,
                            capture_output=True, text=True)
-        self.assertEqual((r.returncode, r.stdout.strip()), (0, "brain 0.1.0"))
+        self.assertEqual((r.returncode, r.stdout.strip()), (0, f"brain {VERSION}"))
 
     def test_run_does_not_write_bytecode(self):
         # Without PYTHONDONTWRITEBYTECODE, only the entry point itself keeps the brain free of __pycache__.

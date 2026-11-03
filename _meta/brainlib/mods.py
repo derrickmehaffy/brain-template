@@ -67,10 +67,22 @@ def link_target(name: str) -> str:
 
 
 def mod_folders(root: Path) -> List[Path]:
-    """Every real folder in `mods/`, by name; a link or a dotted name is not a mod."""
+    """Every real folder in `mods/` that is a mod, by name: one named `<prefix>-…` or holding `.claude-plugin/`.
+    A link or a dotted name is not a mod, and neither is any other folder, so a folder that held other work in
+    `mods/` before the brain (an adopted game mod, say) is left alone."""
     base = mods_dir(root)
     try:
-        return sorted(p for p in base.iterdir() if p.is_dir() and not p.is_symlink() and not p.name.startswith("."))
+        prefix = str(config.read_raw(root).get("prefix") or "")
+    except config.ConfigError:
+        prefix = ""
+
+    def is_mod(p: Path) -> bool:
+        if not p.is_dir() or p.is_symlink() or p.name.startswith("."):
+            return False
+        return bool(prefix and p.name.startswith(prefix + "-")) or p.joinpath(MANIFEST[0]).is_dir()
+
+    try:
+        return sorted(p for p in base.iterdir() if is_mod(p))
     except OSError:
         return []
 

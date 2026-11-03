@@ -76,6 +76,17 @@ class ModsTest(ModsCase):
         broken = {f.subject for f in mods.lint_mods(self.root, self.cfg, []) if f.severity == BROKEN}
         self.assertEqual(broken, {"lab-health", "lab-gone"})
 
+    def test_a_folder_that_is_not_a_mod_is_left_alone(self):
+        mod = self.new()
+        other = self.root / "mods" / "GameMod"  # other work that was in mods/ before the brain
+        (other / "content").mkdir(parents=True)
+        plugin = self.root / "mods" / "health-check"  # unprefixed, but a plugin: still a mod
+        (plugin / ".claude-plugin").mkdir(parents=True)
+        self.assertEqual(mods.mod_folders(self.root), [plugin, mod])
+        subjects = {f.subject for f in mods.lint_mods(self.root, self.cfg, [])}
+        self.assertNotIn("GameMod", subjects)
+        self.assertIn("health-check", subjects)
+
     def test_the_kits_starter_and_gallery_are_well_formed_mods(self):
         for folder in (MODKIT / "gallery", MODKIT / "starter"):
             manifest = json.loads((folder / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))

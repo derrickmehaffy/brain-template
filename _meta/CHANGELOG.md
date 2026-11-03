@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.2 — 2026-11-03
+
+- A folder in `mods/` is one of the brain's mods only when it is named `<prefix>-…` or holds `.claude-plugin/`. Other work that was already in `mods/` when a folder was adopted (game mods, each in its own repository, say) is no longer linted as a broken mod, so it no longer blocks the first commit; leave it out with a line below the managed block in `.gitignore`.
+
 ## 0.4.1 — 2026-11-03
 
 - `mods sync`, `mods new` and `mods link` refuse to act when a folder on the way (`mods/`, a mod's folder, its `hooks/`, `.claude/skills/`) is a link, so a mod copied from elsewhere cannot make them delete or write outside the brain. A `hooks/kit` that is itself a link is still replaced: only the link is removed.

@@ -24,7 +24,7 @@ from datetime import date
 from pathlib import Path
 from typing import Callable, Dict, Iterator, List, Optional, Tuple
 
-from . import config, envsync, gitutil, globs, hook, lint, manifest, paths, practices
+from . import config, envsync, gitutil, globs, hook, inbox, lint, manifest, paths, practices
 from .config import Config
 from .report import BLOCK, BROKEN, GAP, OK, WARN, Finding, emit, exit_code
 from .skills import skills_dir
@@ -460,6 +460,31 @@ def _nested(root: Path, cfg: Config, quick: bool) -> List[Finding]:
                 else "none")]
 
 
+def _inbox(root: Path) -> List[Finding]:
+    """Hand-offs from other brains still open: a WARN, so the session-start check tells the person."""
+    waiting = inbox.open_entries(root)
+    if not waiting:
+        return [_ok("inbox", "no open hand-offs from other brains")]
+    shown = "; ".join(entry.heading for entry in waiting[:3]) + ("; ..." if len(waiting) > 3 else "")
+    return [_warn("inbox", f"{len(waiting)} open hand-off{'s' if len(waiting) != 1 else ''} from other brains in "
+                           f"{inbox.INBOX.as_posix()} ({shown}): offer to start on them")]
+
+
+def _brains(root: Path, cfg: Config) -> List[Finding]:
+    """The brains a hub lists in brain.json `brains`: each must still be a brain where it is listed."""
+    listed = cfg.raw.get("brains")
+    if listed is None:
+        return []
+    if not isinstance(listed, list) or not all(isinstance(item, str) and item.strip() for item in listed):
+        return [_block("brains", "brain.json brains must be a list of folder names")]
+    missing = [item for item in listed
+               if not ((root / os.path.expanduser(item)).resolve() / "brain.json").is_file()]
+    if missing:
+        return [_warn("brains", f"{_names(missing)} listed in brain.json brains but no brain is there: fix the "
+                                "folder, or take it off the list")]
+    return [_ok("brains", f"{len(listed)} other brain{'s' if len(listed) != 1 else ''} listed, each found")]
+
+
 def _docs(root: Path, cfg: Config) -> List[Finding]:
     docs = root / "docs"
     try:
@@ -536,6 +561,8 @@ def checks(root, cfg: Config, quick: bool) -> List[Finding]:
         ("git", lambda: _brain_repo(root, cfg)),
         ("nested repos", lambda: _nested(root, cfg, quick)),
         ("docs", lambda: _docs(root, cfg)),
+        ("inbox", lambda: _inbox(root)),
+        ("brains", lambda: _brains(root, cfg)),
         ("files", lambda: _large_files(root, cfg)),
         ("privacy", lambda: _privacy(root, cfg)),
     ]

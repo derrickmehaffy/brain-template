@@ -11,12 +11,14 @@ from . import paths
 # add_arguments(parser) and run(args) -> int; it is imported only when its command is chosen.
 COMMANDS: dict[str, tuple[str, str]] = {
     "adopt": ("cmd_adopt", "turn an existing folder into a brain, touching none of its files (--dry-run to look)"),
+    "brains": ("brains", "the other brains this one knows: list, add, and hand work over to one (handoff)"),
     "doctor": ("doctor", "read-only health check of this brain (--quick skips tests, nested repos, the network)"),
     "env-sync": ("envsync", "add the key names .env.example lists to .env; never prints a value"),
     "gate": ("gate", "the skill gate: record, check, waive, status"),
     "hook": ("hook", "the pre-commit privacy guard: pre-commit, install, self-test"),
     "init": ("cmd_init", "turn a copy of the template into a brain (a dry run with --dry-run)"),
     "lint": ("lint", "check skills and the routing map"),
+    "mods": ("mods", "the brain's mods: list, new, sync, link, check, ready"),
     "new": ("cmd_new", "make a brain from this template checkout (a dry run with --dry-run)"),
     "practices": ("practices", "check, index and search the practices store"),
     "rename-skill": ("rename", "rename a skill everywhere it is named (a dry run unless --apply)"),

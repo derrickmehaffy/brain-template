@@ -13,3 +13,4 @@ The standing files:
 - `RETRO-LOG.md`: failures on real work, and the change that fixed each
 - `UNCLASSIFIED-LOG.md`: work no skill fit, which is where new skills come from
 - `UPSTREAM.md`: changes proposed to template-owned files, and their answers
+- `INBOX.md`: work another brain handed over to this one, and whether it is done

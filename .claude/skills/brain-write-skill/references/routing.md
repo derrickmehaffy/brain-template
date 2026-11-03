@@ -73,7 +73,10 @@ Each skill's block is computed from the graph contracted through every node that
 - `lab-router --> KIND{…} --> three skills` gives `lab-router` three hand-ons.
 - Every capitalised node is walked through, a `human` or `state` node included: in
   `lab-a --> APPROVE(the person approves):::human --> lab-b`, `lab-a` hands to `lab-b`.
-- A skill never hands to itself; an edge back to its caller is a retry and drops out.
+- A skill never hands to itself: a loop back to the same skill through a decision
+  (`lab-a --> OK{passes?}:::decision -->|no| lab-a`) is a retry and drops out. A direct edge from
+  another skill back to its caller (`lab-b -->|fails| lab-a`) is a hand-on, and `lab-b`'s block will
+  say "Hand to next: `lab-a`", so draw it only when `lab-b` really hands the work back.
 - A skill with nothing after it reads "Hand to next: nothing — a person takes it from here."
 - Every skill must be reachable from an `entry` node, or `lint` reports a GAP.
 

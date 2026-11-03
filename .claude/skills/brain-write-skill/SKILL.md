@@ -51,9 +51,9 @@ If the gate refused a write to a skill file, this sequence is the answer, not a 
    written overlaps its neighbours, and nothing hands to it.
 3. **Name it** `<prefix>-<verb>-<object>`: the prefix from `brain.json`, a verb from the families the
    brain already has (`ls .claude/skills`). Read `references/conventions.md` for steps 3 to 5.
-4. **Description**, on one line: what it does; when to use it, in the words a person would actually
-   say; and what it does NOT do, naming the sibling ("which is <name>"). Routers and other skills
-   read descriptions to decide, and `lint` checks that every name resolves.
+4. **Description**, on one line in double quotes (unquoted, YAML refuses `: ` and cuts at ` #`): what
+   it does; when to use it, in a person's words; what it does NOT do, naming the sibling ("which is
+   <name>"). Routers and other skills read descriptions to decide; `lint` checks the names resolve.
 5. **Body**, about 100 lines:
    - the sequence and the judgement inline, with the reason for any step that is not obvious: the
      reason is what survives a case the author never saw;
@@ -91,8 +91,8 @@ all of (router rules, map ids, `brain.json` gates). Then run step 7.
 - Rename a skill by hand: references left behind break routing silently.
 - Leave a skill out of the map without a `## Not drawn` row saying why.
 - Leave a must-obey rule only in `references/`.
-- Arm a gate waiver yourself. `_meta/brain gate waive` runs only on the person's express say-so,
-  this time, with their reason; a refusal means invoke the skill it names.
+- Arm a gate waiver, or add a `gates_off` or `gate_exempt` entry, yourself: each needs the person's
+  express say-so, this time, with their reason. A refusal means invoke the skill it names.
 - Edit between the `where:` markers (`routing sync` writes that block), or change a `brain-*` skill
   or `_meta/` in a brain (record it through `brain-upstream`).
 

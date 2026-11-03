@@ -90,6 +90,13 @@ A rule that matches prints the refusal as JSON (`"permissionDecision": "deny"`);
 covers prints nothing. Try one path the rule must cover and one it must not, since a `*` that was
 meant to be `**` fails silently.
 
+The probe is a real check, so it has side effects:
+
+- Run it only when `_meta/brain gate status` shows no armed waiver. A probe the gate would refuse
+  spends the waiver, and logs a `used` line, exactly as a real write would.
+- A refused probe is recorded as the last refusal of session `probe`, which `gate status` then shows
+  as the latest session. Read a particular session with `_meta/brain gate status --session <id>`.
+
 ## Shipped rules, gates_off, gate_exempt
 
 The template ships rules on the meta skills' own files, in `_meta/gates.json`:

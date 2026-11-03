@@ -50,10 +50,13 @@ class ShippedSkillsTest(TempDirCase):
         return found
 
     def add_stubs(self, root: Path, planned: List[str], real: Dict[str, skills.Skill]) -> Path:
-        """A stand-in SKILL.md under `root` for each of `planned` that is not written yet."""
+        """A stand-in SKILL.md under `root` for each of `planned` that is not written yet. Fails unless every
+        real skill reached `root`, since the checks keep only findings about those."""
         for name in planned:
             if name not in real:
                 self.make_skill(root, name, "Stand-in for a planned skill that is not written yet.", "")
+        copied = {s.name for s in skills.list_skills(root)}
+        self.assertLessEqual(set(real), copied, f"real skills missing from the copy: {sorted(set(real) - copied)}")
         return root
 
     def copy_with_stubs(self, real: Dict[str, skills.Skill]) -> Path:
@@ -121,9 +124,10 @@ class ShippedSkillsTest(TempDirCase):
         cfg = config.load(root)
         problems: List = []
         stale = routing_sync.sync(root, cfg, check=True, problems=problems)
+        # Any problem means sync refused (the whole run, for a map problem) and confirmed nothing; stubs make none.
+        self.assertEqual(problems, [], "\n" + self.listed(problems))
         real_files = {f".claude/skills/{name}/SKILL.md" for name in real}
         self.assertEqual(sorted(set(stale) & real_files), [], "run _meta/brain routing sync and commit the blocks")
-        self.assertEqual([f for f in problems if f.subject in real_files], [], "\n" + self.listed(problems))
         call_gaps = [f for f in routing.lint_routing(root, cfg, skills.list_skills(root))
                      if f.subject in real and routing.CALL in f.message]
         self.assertEqual(call_gaps, [], "\n" + self.listed(call_gaps))

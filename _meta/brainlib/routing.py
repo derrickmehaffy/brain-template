@@ -490,7 +490,11 @@ def _run_sync(args) -> int:
         print(f"routing: {exc}", file=sys.stderr)
         return 1
     refused: List[Finding] = []
-    changed = routing_sync.sync(root, cfg, args.check, refused)
+    returned = routing_sync.sync(root, cfg, args.check, refused)
+    # with --check the result also names the files that could not be confirmed current; those are reported
+    # once, as the BROKEN findings in `refused`, not again as out of date
+    not_current = set(routing_sync.refused_paths(refused))
+    changed = [rel for rel in returned if rel not in not_current]
     if args.check:
         findings = [Finding(BLOCK, rel, "is out of date; run '_meta/brain routing sync'") for rel in changed]
     else:

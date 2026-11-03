@@ -22,6 +22,8 @@ HEADING = "## Where this sits"
 CALL = routing.CALL  # the line lint looks for; one string, so sync and lint cannot disagree about it
 TODO = "**Call it directly when:** TODO — say when someone should call this directly, and which earlier steps still apply."
 
+_SUMMARY = "routing sync"  # the subject of a finding that is about the run, not about a file
+
 GATE_NOTICE = ("**A gate on its path:** it runs every time, in any order with the other gates, including when it "
                "comes back clean. Record its result either way.")
 NO_PREDECESSOR = "nothing — an entry point into the tree."
@@ -281,30 +283,42 @@ def _update(root: Path, rel: str, transform: Callable[[str], str], check: bool,
     return True
 
 
-def sync(root: Path, cfg: Config, check: bool, problems: Optional[List[Finding]] = None) -> List[str]:
-    """Write the `## Where this sits` block of every skill this brain owns, and the `classDef` lines of the
-    maps (`docs/ROUTING.md`, and `_meta/ROUTING-META.md` in the template). Returns the relative paths that
-    changed, or with `check` the ones that are out of date, writing nothing.
+class SyncRefused(Exception):
+    """`sync` could not look at, or could not write, something, and the caller gave no `problems` list to
+    collect that in. `findings` are the BROKEN findings (the same ones the command prints), `changed` the paths
+    that were written before the refusal (empty when the map or the gate rules were refused, which writes nothing)."""
 
-    A map that has problems (unreadable, an unclosed comment, a line outside the dialect) or unreadable gate
-    rules would make every block wrong, so then nothing is written. Each refusal, and each file left alone,
-    is appended to `problems` as a BROKEN finding when a list is given.
-    """
-    root = Path(root)
-    refused: List[Finding] = problems if problems is not None else []
+    def __init__(self, findings: List[Finding], changed: List[str]) -> None:
+        self.findings = list(findings)
+        self.changed = list(changed)
+        super().__init__("routing sync refused: " + "; ".join(f"{f.subject}: {f.message}" for f in self.findings))
+
+
+def refused_paths(findings: Iterable[Finding]) -> List[str]:
+    """The files `findings` name, once each in order: a subject loses its `:line`, and the summary finding
+    (which names no file) is left out."""
+    found: List[str] = []
+    for finding in findings:
+        path = re.sub(r":\d+$", "", finding.subject)
+        if finding.subject != _SUMMARY and path not in found:
+            found.append(path)
+    return found
+
+
+def _sync(root: Path, cfg: Config, check: bool) -> Tuple[List[str], List[Finding]]:
+    """(the paths changed or, with `check`, stale; the refusals)."""
     graph = routing.load_graph(root)
     if graph.problems:
-        refused.extend(graph.problems)
-        refused.append(Finding(BROKEN, "routing sync", "the routing map has problems, so nothing was changed; "
-                                                       "fix them (see lint) and run it again"))
-        return []
+        summary = Finding(BROKEN, _SUMMARY, "the routing map has problems, so nothing was changed; fix them "
+                                            "(see lint) and run it again")
+        return [], graph.problems + [summary]
     try:
         rules, _exempt = gate.load_rules(root, cfg)
     except ValueError as why:
-        refused.append(Finding(BROKEN, "routing sync", f"{why}; nothing was changed"))
-        return []
+        return [], [Finding(BROKEN, f"_meta/{gate.GATES_FILE}", f"{why}; nothing was changed")]
     up, down = routing.contract(graph)
     changed: List[str] = []
+    refused: List[Finding] = []
     maps = ["docs/ROUTING.md"] + (["_meta/ROUTING-META.md"] if cfg.role == "template" else [])
     for rel in maps:
         if _update(root, rel, style_map, check, refused):
@@ -317,4 +331,33 @@ def sync(root: Path, cfg: Config, check: bool, problems: Optional[List[Finding]]
         rel = skill.path.relative_to(root).as_posix()
         if _update(root, rel, lambda text, block=block: apply_block(text, block), check, refused):
             changed.append(rel)
+    return changed, refused
+
+
+def sync(root: Path, cfg: Config, check: bool, problems: Optional[List[Finding]] = None) -> List[str]:
+    """Write the `## Where this sits` block of every skill this brain owns, and the `classDef` lines of the
+    maps (`docs/ROUTING.md`, and `_meta/ROUTING-META.md` in the template).
+
+    A map that has problems (unreadable, an unclosed comment, a line outside the dialect) or unreadable gate
+    rules would make every block wrong, so then nothing is written. A skill that is not UTF-8, cannot be
+    read or written, has a begin marker with no end marker, or has a code fence that is never closed is left
+    as it is and the rest are still done. Each of these is a BROKEN refusal.
+
+    A refusal cannot be missed:
+    - `check` (writes nothing): the result is every path that is out of date **and** every file that could not
+      be confirmed current (the map or the gate rules for a whole-run refusal, the skill for a file one), so an
+      empty result means everything was looked at and is current. Any caller may read just that.
+    - not `check`, `problems` given: the result is the paths written, and each refusal is appended to
+      `problems`; the caller chose to read them there.
+    - not `check`, no `problems`: SyncRefused is raised after the rest is done, carrying the findings and the
+      paths written.
+    `problems` is also filled when `check` is set.
+    """
+    changed, refused = _sync(Path(root), cfg, check)
+    if problems is not None:
+        problems.extend(refused)
+    if check:
+        return changed + [path for path in refused_paths(refused) if path not in changed]
+    if refused and problems is None:
+        raise SyncRefused(refused, changed)
     return changed

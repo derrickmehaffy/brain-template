@@ -6,7 +6,7 @@ from pathlib import Path
 
 from tests.helpers import TempDirCase  # first: puts <template>/_meta on sys.path
 from brainlib import config, routing, routing_sync, skills
-from brainlib.report import BROKEN
+from brainlib.report import BROKEN, Finding
 
 FENCE = "`" * 3
 CALL = "**Call it directly when:**"
@@ -675,6 +675,144 @@ class RefusalTest(SyncCase):
         self.assertNotIn(self.rel("lab-a"), changed)
         self.assertIn(self.rel("lab-b"), changed)
         self.assertEqual([f.subject for f in problems], [self.rel("lab-a")])
+
+
+class RefusalIsLoudTest(SyncCase):
+    """A caller reading only what `sync` returns, or passing no `problems` list, must not mistake a run that
+    could not look for one that found nothing to do (pre-commit, doctor and the skills call it as a function)."""
+
+    NAMES = ("lab-router", "lab-a", "lab-b", "lab-c")
+    BROKEN_MAPS = {
+        "unclosed comment": MAP + "<!-- never closed\n",
+        "unsupported line": MAP.replace("lab-a --> lab-c:::work", "lab-a ==> lab-c:::work"),
+        "unknown class": MAP.replace(":::gate", ":::mystery"),
+    }
+
+    def damaged(self):
+        """A brain whose lab-a has a begin marker and no end marker; the other skills are plainly stale."""
+        body = f"Intro.\n\n{BEGIN}\nhand-written, no end marker\n\n{CALL} x.\n"
+        return self.brain(docs=MAP, bodies={"lab-a": body}, names=("lab-router", "lab-b", "lab-c"))
+
+    def test_check_on_a_broken_map_names_the_map_and_writes_nothing(self):
+        for label, docs in self.BROKEN_MAPS.items():
+            with self.subTest(label):
+                root = self.brain(docs=docs, names=self.NAMES)
+                before = self.snapshot(root)
+                self.assertEqual(self.sync(root, check=True), [DOCS])  # not [], which would read "all current"
+                self.assertEqual(self.snapshot(root), before)
+
+    def test_check_on_a_map_that_cannot_be_read_names_it(self):
+        root = self.brain(names=("lab-a",))
+        (root / "docs" / "ROUTING.md").mkdir(parents=True)
+        self.assertEqual(self.sync(root, check=True), [DOCS])
+
+    def test_check_on_unreadable_gate_rules_names_the_rules_file(self):
+        root = self.brain(docs=MAP, names=self.NAMES)
+        (root / "_meta" / "gates.json").write_text("{not json", encoding="utf-8")
+        problems: list = []
+        self.assertEqual(self.sync(root, check=True, problems=problems), ["_meta/gates.json"])
+        self.assertEqual([(f.severity, f.subject) for f in problems], [(BROKEN, "_meta/gates.json")])
+
+    def test_check_counts_a_skill_it_could_not_read_as_not_current(self):
+        root = self.damaged()
+        before = self.snapshot(root)
+        got = self.sync(root, check=True)
+        self.assertIn(self.rel("lab-a"), got)  # could not be confirmed current
+        self.assertIn(self.rel("lab-b"), got)  # and a plainly stale one is still listed
+        self.assertEqual(len(got), len(set(got)))
+        self.assertEqual(self.snapshot(root), before)
+
+        root = self.brain(docs=MAP, names=("lab-router", "lab-b", "lab-c"))
+        path = root / ".claude" / "skills" / "lab-a" / "SKILL.md"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"---\nname: lab-a\ndescription: Does X. Use when Y.\n---\nLatin-1: caf\xe9.\n")
+        self.assertIn(self.rel("lab-a"), self.sync(root, check=True))
+
+    def test_check_with_a_problems_list_returns_the_same_paths_and_fills_the_list(self):
+        root = self.damaged()
+        problems: list = []
+        self.assertEqual(self.sync(root, check=True, problems=problems), self.sync(root, check=True))
+        self.assertEqual([f.subject for f in problems], [self.rel("lab-a")])
+
+    def test_a_clean_check_is_still_empty(self):
+        root = self.brain(docs=MAP, names=self.NAMES)
+        self.sync(root)
+        self.assertEqual(self.sync(root, check=True), [])
+
+    def test_sync_without_a_problems_list_raises_when_the_map_is_refused(self):
+        for label, docs in self.BROKEN_MAPS.items():
+            with self.subTest(label):
+                root = self.brain(docs=docs, names=self.NAMES)
+                before = self.snapshot(root)
+                with self.assertRaises(routing_sync.SyncRefused) as caught:
+                    self.sync(root)
+                self.assertEqual(caught.exception.changed, [])
+                self.assertTrue(caught.exception.findings)
+                self.assertTrue(all(f.severity == BROKEN for f in caught.exception.findings))
+                self.assertIn(DOCS, str(caught.exception))
+                self.assertEqual(self.snapshot(root), before)
+
+    def test_sync_without_a_problems_list_raises_after_writing_the_rest_when_a_file_is_refused(self):
+        root = self.damaged()
+        damaged = (root / ".claude" / "skills" / "lab-a" / "SKILL.md").read_bytes()
+        with self.assertRaises(routing_sync.SyncRefused) as caught:
+            self.sync(root)
+        self.assertEqual([(f.severity, f.subject) for f in caught.exception.findings], [(BROKEN, self.rel("lab-a"))])
+        self.assertIn(self.rel("lab-b"), caught.exception.changed)  # what was written is still told
+        self.assertIn(BEGIN, self.skill_text(root, "lab-b"))
+        self.assertEqual((root / ".claude" / "skills" / "lab-a" / "SKILL.md").read_bytes(), damaged)
+        self.assertEqual(self.sync(root, problems=[]), [])  # the rest is now current: a second run is quiet
+
+    def test_sync_with_a_problems_list_does_not_raise_and_returns_only_what_was_written(self):
+        root = self.damaged()
+        problems: list = []
+        changed = self.sync(root, problems=problems)
+        self.assertNotIn(self.rel("lab-a"), changed)
+        self.assertIn(self.rel("lab-b"), changed)
+        self.assertEqual([f.subject for f in problems], [self.rel("lab-a")])
+
+    def test_a_run_with_nothing_refused_never_raises(self):
+        root = self.brain(docs=MAP, names=self.NAMES)
+        self.assertTrue(self.sync(root))
+        self.assertEqual(self.sync(root), [])
+
+    def test_the_exception_message_names_each_refusal_and_never_a_file_body(self):
+        root = self.damaged()
+        with self.assertRaises(routing_sync.SyncRefused) as caught:
+            self.sync(root)
+        message = str(caught.exception)
+        self.assertIn(self.rel("lab-a"), message)
+        self.assertNotIn("hand-written", message)
+
+    def test_refused_paths_drop_the_line_number_and_the_summary(self):
+        findings = [Finding(BROKEN, "docs/ROUTING.md:12", "x"), Finding(BROKEN, "docs/ROUTING.md:30", "y"),
+                    Finding(BROKEN, "_meta/ROUTING-META.md", "z"), Finding(BROKEN, "routing sync", "summary")]
+        self.assertEqual(routing_sync.refused_paths(findings), ["docs/ROUTING.md", "_meta/ROUTING-META.md"])
+
+    def test_check_command_reports_a_refused_file_once_as_broken_not_as_out_of_date(self):
+        root = self.damaged()
+        r = self.run_brain(root, "routing", "sync", "--check")
+        self.assertEqual(r.returncode, 1, r.stdout)
+        lines = r.stdout.splitlines()
+        self.assertTrue(any(l.startswith("BROKEN") and f" {self.rel('lab-a')}:" in l for l in lines), r.stdout)
+        self.assertFalse(any(l.startswith("BLOCK") and self.rel("lab-a") in l for l in lines), r.stdout)
+        self.assertTrue(any(l.startswith("BLOCK") and self.rel("lab-b") in l for l in lines), r.stdout)
+        self.assertIn("problem", lines[-1])
+
+    def test_check_command_on_a_broken_map_lists_no_phantom_out_of_date_file(self):
+        root = self.brain(docs=self.BROKEN_MAPS["unsupported line"], names=self.NAMES)
+        r = self.run_brain(root, "routing", "sync", "--check")
+        self.assertEqual(r.returncode, 1)
+        self.assertFalse([l for l in r.stdout.splitlines() if l.startswith("BLOCK")], r.stdout)
+        self.assertNotIn("out of date", r.stdout)
+        self.assertNotIn("up to date", r.stdout)
+
+    def test_sync_command_still_exits_1_and_prints_the_refusal(self):
+        root = self.damaged()
+        r = self.run_brain(root, "routing", "sync")
+        self.assertEqual((r.returncode, r.stderr), (1, ""))
+        self.assertIn(f"BROKEN {self.rel('lab-a')}:", r.stdout)
+        self.assertIn(f"ok     {self.rel('lab-b')}:", r.stdout)
 
 
 class FilesTest(SyncCase):

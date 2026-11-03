@@ -3,6 +3,18 @@
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)"
+    ],
+    "allow": [
+      "Bash(_meta/brain doctor:*)",
+      "Bash(_meta/brain lint:*)",
+      "Bash(_meta/brain routing show:*)",
+      "Bash(_meta/brain gate status:*)",
+      "Bash(_meta/brain practices search:*)",
+      "Bash(_meta/brain practices lint:*)",
+      "Bash(_meta/brain upstream list:*)",
+      "Bash(_meta/brain usage:*)",
+      "Bash(_meta/brain env-sync --list:*)",
+      "Bash(_meta/brain route:*)"
     ]
   },
   "hooks": {

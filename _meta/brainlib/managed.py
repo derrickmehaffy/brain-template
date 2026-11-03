@@ -19,6 +19,11 @@ _KINDS = {
 }
 
 DENY = ["Read(./.env)", "Read(./.env.*)"]
+# Commands that only read, allowed so a person is not asked to approve a health check. Never `gate waive`, `update`
+# or anything else that writes: those keep their prompt.
+ALLOW = [f"Bash(_meta/brain {command}:*)" for command in (
+    "doctor", "lint", "routing show", "gate status", "practices search", "practices lint", "upstream list", "usage",
+    "env-sync --list", "route")]
 HOOK_CMD = '"$CLAUDE_PROJECT_DIR/_meta/brain" gate {}'  # quoted: the project folder may contain a space
 START_CMD = '"$CLAUDE_PROJECT_DIR/_meta/brain" doctor --brief'
 PRE_MATCHER = "Write|Edit|MultiEdit|NotebookEdit|Bash"
@@ -127,8 +132,8 @@ def _group(matcher: str, command: str) -> Dict[str, Any]:
 
 
 def merge_settings(existing: Dict[str, Any]) -> Dict[str, Any]:
-    """`existing` (the parsed `.claude/settings.json`) with the `.env` deny entries and the template hooks set:
-    deny entries added once, every older template hook dropped, `PreToolUse` -> `gate check`,
+    """`existing` (the parsed `.claude/settings.json`) with the `.env` deny entries, the read-only allow entries and
+    the template hooks set: deny and allow entries added once, every older template hook dropped, `PreToolUse` -> `gate check`,
     `PostToolUse` -> `gate record` and `SessionStart` -> `doctor --brief` added. Everything else is kept.
     Pure: `existing` is not modified."""
     _expect(existing, dict, "the file")
@@ -139,6 +144,9 @@ def merge_settings(existing: Dict[str, Any]) -> Dict[str, Any]:
     deny = permissions.setdefault("deny", [])
     _expect(deny, list, "'permissions.deny'")
     deny.extend(entry for entry in DENY if entry not in deny)
+    allow = permissions.setdefault("allow", [])
+    _expect(allow, list, "'permissions.allow'")
+    allow.extend(entry for entry in ALLOW if entry not in allow)
 
     hooks = result.setdefault("hooks", {})
     _expect(hooks, dict, "'hooks'")

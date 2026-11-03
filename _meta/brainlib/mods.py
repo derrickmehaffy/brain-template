@@ -127,6 +127,17 @@ def _is_ours(path: Path, name: str) -> bool:
 # -- sync, link, new ----------------------------------------------------------------
 
 
+def _link_on_the_way(root: Path, path: Path) -> Optional[str]:
+    """The first folder or file from the brain's root down to `path` that is a link, as a `/` path, or None.
+    Writing or deleting through one would act wherever it leads, which may be outside the brain."""
+    current = Path(root)
+    for part in Path(path).relative_to(root).parts:
+        current = current / part
+        if current.is_symlink():
+            return current.relative_to(root).as_posix()
+    return None
+
+
 def sync(root: Path, check: bool = False, dry_run: bool = False) -> Tuple[List[str], int]:
     """Copy the kit into every mod that has `hooks/kit/`. (lines, exit status)."""
     kit = kit_dir(root)
@@ -143,8 +154,14 @@ def sync(root: Path, check: bool = False, dry_run: bool = False) -> Tuple[List[s
             lines.append(f"differs {folder.name}" + ("" if check else " (would copy)"))
             status = 1 if check else status
         else:
-            # Copy beside it, then swap, so a session reloading the mod never finds half a kit.
+            # Copy beside it, then swap, so a session reloading the mod never finds half a kit. `hooks/kit` itself
+            # may be a link (only the link is removed); nothing above it, nor the swap folder, may be one.
             tmp = dest.parent / ".kit.sync"
+            linked = _link_on_the_way(root, dest.parent) or _link_on_the_way(root, tmp)
+            if linked:
+                lines.append(f"BROKEN  {folder.name}: {linked} is a link; sync writes only inside the brain")
+                status = 1
+                continue
             shutil.rmtree(str(tmp), ignore_errors=True)
             shutil.copytree(str(kit), str(tmp))
             if dest.is_symlink() or dest.is_file():
@@ -172,6 +189,10 @@ def link(root: Path, names: List[str], dry_run: bool = False) -> Tuple[List[str]
             lines.append(f"ok      {name}: linked")
         elif path.exists() or path.is_symlink():
             lines.append(f"BROKEN  {name}: {'/'.join(LINKS)}/{name} exists and is not this mod's link; left alone")
+            status = 1
+        elif _link_on_the_way(root, path.parent):
+            lines.append(f"BROKEN  {name}: {_link_on_the_way(root, path.parent)} is a link; mods are linked only "
+                         "inside the brain")
             status = 1
         elif dry_run:
             lines.append(f"would   link {'/'.join(LINKS)}/{name} -> {link_target(name)}")
@@ -211,6 +232,9 @@ def new(root: Path, cfg: Config, name: str, dry_run: bool = False) -> Tuple[List
     if not starter.is_dir() or not kit.is_dir():
         return [f"mods new: the starter or the kit is missing under _meta/modkit/; run _meta/brain update"], 2
     dest = mods_dir(root) / name
+    linked = _link_on_the_way(root, mods_dir(root))
+    if linked:
+        return [f"BROKEN  {linked} is a link; mods new writes only inside the brain"], 1
     files = _files(starter)
     lines = [f"{'would write' if dry_run else 'wrote'} mods/{name}/ from the starter ({len(files)} files) "
              f"and its kit copy, and link {'/'.join(LINKS)}/{name}"]

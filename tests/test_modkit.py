@@ -58,6 +58,17 @@ class ModsTest(ModsCase):
         self.assertEqual(mods.sync(self.root), (["copied  lab-health"], 0))
         self.assertEqual(mods.sync(self.root, check=True), (["ok      lab-health"], 0))
 
+        # a mod whose hooks/ is a link to somewhere else is refused, and that place is left untouched
+        outside = self.tmp / "outside"
+        shutil.copytree(str(mod / "hooks"), str(outside))
+        (outside / "kit" / "tokens.ts").write_text("// not the brain's\n", encoding="utf-8")
+        shutil.rmtree(str(mod / "hooks"))
+        os.symlink(str(outside), str(mod / "hooks"))
+        lines, status = mods.sync(self.root)
+        self.assertEqual(status, 1)
+        self.assertIn("mods/lab-health/hooks is a link", lines[0])
+        self.assertEqual((outside / "kit" / "tokens.ts").read_text(encoding="utf-8"), "// not the brain's\n")
+
     def test_lint_reports_a_broken_mod_and_a_dangling_link(self):
         mod = self.new()
         (mod / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": "something-else"}), encoding="utf-8")

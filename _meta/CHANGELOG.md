@@ -7,7 +7,7 @@
 - `new`, `init` and `adopt` refuse up front, in plain words, when git has no name and email; every new history starts on `main`; a quoted `~` in the folder is expanded; a refused prefix comes with a suggestion.
 - `adopt` lists the top-level folders and files the brain will not save, and says that a tracked `.env`'s values are already in the folder's history.
 - `env-sync --open` opens `.env` in the person's text editor to fill in; `env-sync --add` says where the file is.
-- `doctor`: "no online backup", in plain words, which `brain.json` `"backup": "local"` silences; `--brief` in a copy never set up shows only the setup line. The launcher says plainly when Python is older than 3.9.
+- `doctor`: "no online backup", in plain words, which `brain.json` `"backup": "local"` silences; `--brief` in a copy never set up shows only the setup line. The launcher says plainly when Python is older than 3.9, and that Windows needs WSL.
 - Settings: the read-only `_meta/brain` commands (`doctor`, `lint`, `routing show`, `gate status`, `practices search` and `lint`, `upstream list`, `usage`, `env-sync --list`, `route`) are pre-approved; nothing that writes is.
 - The managed `CLAUDE.md` block: talk in the person's terms and never ask them to run a command Claude can; a secret's value goes in through `env-sync --open`, never the chat. The skeleton `README.md` lists things to say.
 - Skill gate: without `$XDG_RUNTIME_DIR` (on macOS, say), session state lives in a `brain-gate-<uid>` folder of the user's own (0700) in the temp folder, not one every account shares, and both that folder and the brain's inside it are checked before use.

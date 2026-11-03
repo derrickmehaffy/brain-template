@@ -4,6 +4,9 @@
 import os
 import sys
 
+if sys.platform == "win32":
+    sys.exit("brain: on Windows a brain runs inside WSL (Windows Subsystem for Linux): open the brain's folder "
+             "from WSL and start Claude Code there.")
 if sys.version_info < (3, 9):
     sys.exit("brain: this needs Python 3.9 or newer, and this computer's python3 is {}. Install a newer "
              "Python 3 (python.org), then try again.".format(sys.version.split()[0]))

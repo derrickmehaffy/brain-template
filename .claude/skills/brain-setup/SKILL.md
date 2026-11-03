@@ -58,7 +58,9 @@ own skills next to the `brain-*` ones; open rows in `docs/RETRO-LOG.md`; `docs/U
 (a kind seen twice is a skill waiting to be written); open suggestions from `_meta/brain upstream list`.
 
 **Run `_meta/brain doctor`** (`--quick` skips the script tests, nested repos and the network). Fix
-every BLOCK; offer a fix for each WARN and make it on a yes. Then run it again.
+every BLOCK; offer a fix for each WARN and make it on a yes. Then run it again. Every session also
+starts with `doctor --brief`, a hook that prints only WARN and BLOCK lines: when it printed any, say
+them to the person and offer the fixes below.
 
 | Doctor line | Fix |
 | --- | --- |
@@ -70,7 +72,7 @@ every BLOCK; offer a fix for each WARN and make it on a yes. Then run it again.
 | Template version behind its source (WARN) | The update below |
 | Pre-commit hook missing (BLOCK) | `_meta/brain hook install` |
 | `core.hooksPath` bypasses the hook (BLOCK) | `git config --show-origin --get core.hooksPath`; unset it in this repo on a yes; if it is set globally, the person decides |
-| Settings lack the `.env` deny or a gate hook (WARN) | The update below rewrites those entries and leaves the file's others alone |
+| Settings lack the `.env` deny, a gate hook or the session-start check (WARN) | The update below rewrites those entries and leaves the file's others alone |
 | Gate rules, or a router's `rules.json`, invalid or naming a missing skill | `brain-write-skill`; `_meta/brain route <router>/rules.json --check` shows the failing case |
 | `.env` not mode 600, or keys in `.env.example` missing from `.env` (WARN) | `chmod 600 .env`; `_meta/brain env-sync` adds the missing keys empty for the person to fill. Never read or print a value |
 | `lint` BROKEN (BLOCK) or GAPs (WARN) | `_meta/brain lint` lists them: the brain's own skills → `brain-write-skill`; a `brain-*` skill → `brain-upstream` |

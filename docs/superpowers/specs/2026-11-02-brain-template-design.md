@@ -874,3 +874,18 @@ Rulings made while building, which the text above now reflects:
 - The changelog lives at `_meta/CHANGELOG.md`, and the template's own prefix is `template`.
 - The template's tests are a smoke set (`tests/test_smoke.py`, `tests/test_origin.py`), and the skill
   scenarios were dropped; §9 lists what the suite was planned to cover, not what it now runs.
+
+Added in 0.2.0, after the first build (README and `_meta/CHANGELOG.md` say how each works):
+
+- `secret run KEY[,KEY] COMMAND`: secrets from the environment or `.env`, an `op://` value read from
+  1Password, into one command's environment; the scripts' loader reads `op://` values the same way.
+- `.mcp.json` in the skeleton and the allowlist; an MCP server is written through
+  `brain-write-script`, which the gate requires for `.mcp.json`.
+- The gate's `record` hook also appends to `.brain/skill-usage.log`; `usage` counts it, for
+  `brain-retro`.
+- A `SessionStart` hook runs `doctor --brief`: the WARN and BLOCK lines only, always exit 0.
+- `docs/GLOSSARY.md` in the skeleton, loaded by the managed `CLAUDE.md` block, written through
+  `brain-write-practice`.
+- Agents in `.claude/agents/<prefix>-*.md`, written through `brain-write-skill` (gated), and checked
+  by `lint`: name, description, tools, model, and a skill that names them.
+- `docs/guides/` (template-only): making a brain, and prompt examples.

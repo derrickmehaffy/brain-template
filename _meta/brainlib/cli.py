@@ -13,6 +13,7 @@ COMMANDS: dict[str, tuple[str, str]] = {
     "lint": ("lint", "check skills and the routing map"),
     "practices": ("practices", "check, index and search the practices store"),
     "route": ("route", "apply a router's rules file and name one skill"),
+    "routing": ("routing", "routing map tools"),
 }
 
 

@@ -378,8 +378,10 @@ class ExtraChecksTest(LintBase):
             seen.append((root_arg, cfg.prefix, [s.name for s in found]))
             return [Finding(GAP, "map", "extra check ran")]
 
-        lint.EXTRA_CHECKS.append(extra)
-        self.addCleanup(lint.EXTRA_CHECKS.remove, extra)
+        # Alone in the list, so the checks other modules register (routing, route, gate) add nothing here.
+        registered = list(lint.EXTRA_CHECKS)
+        self.addCleanup(lint.EXTRA_CHECKS.__setitem__, slice(None), registered)
+        lint.EXTRA_CHECKS[:] = [extra]
         cfg = config.load(root)
         self.assertEqual(lint.lint_skills(root, cfg), [])
         self.assertEqual(seen, [])

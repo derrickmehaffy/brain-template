@@ -20,6 +20,9 @@ BODY_LINE_LIMIT = 150  # lines after the frontmatter, past which a skill wants s
 # never in `lint_skills`, so this module's own checks can be counted exactly.
 EXTRA_CHECKS: list[Callable[[Path, Config, List[Skill]], List[Finding]]] = []
 from . import route  # noqa: E402
+from . import routing  # noqa: E402
+
+EXTRA_CHECKS.append(routing.lint_routing)
 EXTRA_CHECKS.append(route.lint_rules)
 
 # `references/x.md` or `scripts/a/b.py` that does not continue a longer path (`docs/references/x`).

@@ -1,6 +1,6 @@
 # Brain template: design
 
-**Status:** draft for approval, 2026-11-02.
+**Status:** approved, 2026-11-02.
 
 ## 1. Intent
 

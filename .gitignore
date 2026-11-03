@@ -1,0 +1,12 @@
+/*
+!/.gitignore
+!/brain.json
+!/CLAUDE.md
+!/README.md
+!/.claude/
+!/_meta/
+!/tests/
+!/docs/
+__pycache__/
+*.pyc
+/.claude/settings.local.json

@@ -1,0 +1,25 @@
+{
+  "name": "brain-template",
+  "prefix": "template",
+  "role": "template",
+  "description": "The template every brain is made from",
+  "template": {
+    "source": null,
+    "version": null
+  },
+  "scripts": {
+    "python": "python3",
+    "packages": "stdlib-only"
+  },
+  "privacy": {
+    "deny_patterns": [],
+    "max_file_kb": 1024,
+    "large_file_allow": []
+  },
+  "practices": {
+    "stale_after_days": 180
+  },
+  "gates": [],
+  "gates_off": [],
+  "gate_exempt": []
+}

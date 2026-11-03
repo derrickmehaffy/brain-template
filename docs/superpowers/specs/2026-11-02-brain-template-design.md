@@ -229,7 +229,7 @@ Brain Template/
     gates.json                 shipped gate rules on the meta skills' files (§7.9)
     VERSION                    semver of the template
     CHANGELOG.md               one entry per version, citing the upstream suggestions it answers
-  tests/                       harness tests (template-only)
+  tests/                       a smoke set and the origin check (template-only)
   docs/                        the template's own docs and this design (template-only)
   local/                       ignored: notes about the source brains; brains.txt
 ```
@@ -872,3 +872,5 @@ Rulings made while building, which the text above now reflects:
   before the first commit, and exits 0 once it has written (§6).
 - `env-sync` gained `--add KEY` and `--list` (§7 table).
 - The changelog lives at `_meta/CHANGELOG.md`, and the template's own prefix is `template`.
+- The template's tests are a smoke set (`tests/test_smoke.py`, `tests/test_origin.py`), and the skill
+  scenarios were dropped; §9 lists what the suite was planned to cover, not what it now runs.

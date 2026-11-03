@@ -97,8 +97,8 @@ date without a check), and how you checked; never a secret or a hostname. Then h
 ## In the template
 
 When `brain.json` `role` is `template`, a harness change in `_meta/` that `template-intake` accepted
-is written here, following the template's `CLAUDE.md`, with tests in `tests/`. Steps 3 and 6 and their
-Done-when lines do not apply; the template's test suite passes.
+is written here, following the template's `CLAUDE.md`. Steps 3 and 6 and their Done-when lines do
+not apply; the template's tests pass.
 
 ## Done when
 

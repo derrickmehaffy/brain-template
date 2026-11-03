@@ -55,9 +55,7 @@ brains with the same problem get one change and an answer each.
 
 Hand the proposal on as the starting point, not as the change: it was written from one brain's work.
 Write the change for any brain, with no hostname, project, person or path taken from the suggesting
-brain: everything here ships, and the template is public. A harness change comes with a test that
-fails without it; a skill change keeps `tests/test_shipped_skills.py` passing. Run the full suite
-before answering:
+brain: everything here ships, and the template is public. Run the suite before answering:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -t .
@@ -101,7 +99,7 @@ Do not commit here.
   line in `_meta/CHANGELOG.md`, under a new heading whose version matches `_meta/VERSION`, or the
   person chose to leave it open for later.
 - Each answer was the person's decision.
-- Each accepted change was made through `brain-write-skill` or `brain-write-script`, with tests, and
-  the full test suite passes.
+- Each accepted change was made through `brain-write-skill` or `brain-write-script`, and the test
+  suite passes.
 - No file in any brain was written, and no brain's private detail is in the template.
 - The work is handed to `brain-sync`; nothing was committed here.

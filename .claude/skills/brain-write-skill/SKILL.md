@@ -29,7 +29,7 @@ When `brain.json` `role` is `template`, ask the person whether the skill ships t
 (`brain-*`) or stays in the template (`template-*`). Editing a `brain-*` skill is allowed here. A
 `brain-*` skill is drawn in `_meta/ROUTING-META.md`, its gate rules go in `_meta/gates.json`, and it
 is written for any brain: conventions read from `brain.json` and `CLAUDE.md`, no prefix, path or
-person hard-coded. Add each new one to the lists in `tests/test_shipped_skills.py` and run the tests.
+person hard-coded. Run the template's tests after a change.
 
 ## Sequence
 

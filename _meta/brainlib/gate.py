@@ -449,7 +449,8 @@ def _scan(source: _Source, i: int, depth: int = 0) -> Tuple[List[Token], int]:
                     word, flags, in_word, i = list(operator + "()"), ["1"] * 3, True, after
                     continue
             state = cases[-1] if cases else ""
-            if state == "pattern" and operator in ("(", ")"):  # `(a)` or `a)` in a case: a pattern, not a group
+            pattern = state == "pattern" and operator in ("(", ")")
+            if pattern:  # `(a)` or `a)` in a case: a pattern, not a group
                 if operator == ")":
                     cases[-1] = "body"
             elif operator == "`":
@@ -469,7 +470,7 @@ def _scan(source: _Source, i: int, depth: int = 0) -> Tuple[List[Token], int]:
                     return tokens, i + 1
             elif operator in (";;", ";&", ";;&") and state == "body":
                 cases[-1] = "pattern"
-            tokens.append((operator, True, attached))
+            tokens.append((";" if pattern else operator, True, attached))  # a pattern's parens group nothing
             i += len(operator)
         elif char == "#" and not in_word and not param:
             stop = "\n`" if ticks else "\n"
@@ -709,13 +710,49 @@ def _sed_targets(args: List[str]) -> List[str]:
 
 class _Target(NamedTuple):
     """A file a command writes: as written, whether it may be a folder (the destination of `cp`, `mv`,
-    `ln`), the sources that land in it when it is an existing folder, and whether a `cd` came before it in
-    the command (a relative name then means a folder the gate does not know)."""
+    `ln`), the sources that land in it when it is an existing folder, and the folder a relative name is
+    read against: "" for the one the call runs in, the path a literal `cd` before it moved to, or None
+    after a `cd` the gate cannot read (a relative name then means a folder it does not know)."""
 
     word: str
     folder: bool = False
     sources: Tuple[str, ...] = ()
-    after_cd: bool = False
+    at: Optional[str] = ""
+
+
+_CHDIR = {"cd", "pushd", "popd"}
+_CD_OPTIONS = {"-L", "-P", "-e", "-@"}
+
+
+def _after_chdir(words: List[str], here: Optional[str]) -> Optional[str]:
+    """The folder a shell is in after the simple command `words`, given that it was in `here` before ("" is
+    the folder the call runs in, None one the gate does not know). A `cd <path>` (or `pushd`) with a plain
+    literal path, absolute, relative or `~`-prefixed, moves to it, a relative one from `here`; a bare `cd`
+    goes home. A `cd` it cannot read (`cd "$X"`, `cd -`, `cd $(...)`, `cd *`, `popd`) leaves it unknown, and
+    that stays so until a `cd` to an absolute path. Any other command leaves it where it was."""
+    i = 0
+    while i < len(words) and (words[i] in _RESERVED or words[i] in ("builtin", "command")
+                              or _ASSIGNMENT.match(words[i])):
+        i += 1
+    if i >= len(words) or words[i] not in _CHDIR:
+        return here
+    name, args = words[i], list(words[i + 1:])
+    while args and args[0] in _CD_OPTIONS:
+        args.pop(0)
+    if args[:1] == ["--"]:
+        args.pop(0)
+    elif args and args[0].startswith("-"):
+        return None  # `cd -` is the previous folder; an option such as `pushd -n` is not read
+    if name == "popd" or (name == "pushd" and not args) or len(args) > 1:
+        return None
+    path = args[0] if args else "~"  # a bare `cd` goes home
+    if "$" in path or _has_glob(path) or path[:2] in ("~+", "~-"):
+        return None
+    if not path:
+        return here  # `cd ""` stays where it is
+    if path.startswith(("/", "~")):
+        return path
+    return None if here is None else os.path.join(here, path)
 
 
 def _command_targets(words: List[str]) -> List[_Target]:
@@ -758,36 +795,43 @@ def _command_targets(words: List[str]) -> List[_Target]:
 def _bash_targets(command: str) -> Tuple[List[_Target], bool]:
     """What `command` writes, and whether some part of it is nested too deep to read."""
     found: List[_Target] = []
-    seen_cd = [False]  # a `cd` has run earlier in the command, so relative names after it are not read
+    here: List[Optional[str]] = [""]  # where the command is now: see `_after_chdir`
 
     def add(target: _Target) -> None:
         if not target.word or target.word in ("<()", ">()"):  # a process substitution is an argument, not a file
             return
-        target = target._replace(after_cd=seen_cd[0])
+        target = target._replace(at=here[0])
         for position, known in enumerate(found):
-            if known.word == target.word:
+            if known.word == target.word and known.at == target.at:
                 found[position] = _Target(known.word, known.folder or target.folder,
                                           known.sources + tuple(s for s in target.sources if s not in known.sources),
-                                          known.after_cd and target.after_cd)
+                                          known.at)
                 return
         found.append(target)
 
-    def end_command(words: List[str]) -> None:
+    def end_command(words: List[str], alone: bool = True) -> None:
         for target in _command_targets(words):
             add(target)
-        first = next((word for word in words if word not in _RESERVED and not _ASSIGNMENT.match(word)), "")
-        if first == "cd":
-            seen_cd[0] = True
+        if alone:  # in a pipeline or in the background a `cd` moves a subshell, not this one
+            here[0] = _after_chdir(words, here[0])
+
+    def scoped(tokens: List[Token]) -> None:
+        """A `$(...)` or `<(...)` runs in a subshell: a `cd` in it does not carry out."""
+        kept = here[0]
+        collect(tokens)
+        here[0] = kept
 
     def collect(tokens: List[Token]) -> None:
         words: List[str] = []
+        groups: List[Optional[str]] = []  # where each open `( ... )` was entered: a `cd` in it ends with it
+        piped = False  # the command before was piped into this one
         i = 0
         while i < len(tokens):
             text, operator, attached = tokens[i]
             i += 1
             if not operator:
                 for inner in getattr(text, "subs", ()):  # what runs to make this word comes first
-                    collect(inner)
+                    scoped(inner)
                 words.extend(_brace_expand(text))  # before cp and mv pick their operands: `cp a{,.bak}`
                 continue
             if attached and text[0] in "<>" and words and words[-1].isdigit():
@@ -797,7 +841,7 @@ def _bash_targets(command: str) -> Tuple[List[_Target], bool]:
                 if following is not None:
                     i += 1
                     for inner in getattr(following, "subs", ()):
-                        collect(inner)
+                        scoped(inner)
                     if not (text.startswith(">&") and (following.isdigit() or following == "-")):
                         for alternative in _brace_expand(following):  # (`2>&1` copies a descriptor)
                             add(_Target(alternative))
@@ -805,11 +849,16 @@ def _bash_targets(command: str) -> Tuple[List[_Target], bool]:
                 if following is not None:
                     i += 1  # an input redirection or a here-document marker, not a word of the command
                     for inner in getattr(following, "subs", ()):
-                        collect(inner)
+                        scoped(inner)
             else:  # ; && || | & ( ) `: the command ends here
-                end_command(words)
+                end_command(words, not piped and text not in ("|", "|&", "&"))
                 words = []
-        end_command(words)
+                piped = text in ("|", "|&")
+                if text == "(":
+                    groups.append(here[0])
+                elif text == ")" and groups:
+                    here[0] = groups.pop()
+        end_command(words, not piped)
 
     tokens, too_deep = _tokens(command)
     collect(tokens)
@@ -821,7 +870,7 @@ def bash_targets(command: str) -> List[str]:
     argument of `cp`, `mv`, `ln` and `sed -i`, after quotes and `{a,b}` groups are resolved. A quoted `>` is
     text, not a redirection, and a comment hides the rest of its line. A heuristic on purpose: it catches
     the tools one reaches for."""
-    return [str(target.word) for target in _bash_targets(command)[0]]
+    return list(dict.fromkeys(str(target.word) for target in _bash_targets(command)[0]))
 
 
 def _inside(path: str, base: str) -> Optional[str]:
@@ -837,8 +886,9 @@ def targets(payload: Any, root: Path) -> List[Tuple[str, bool]]:
 
     Reads `file_path`, `notebook_path` and the targets of a Bash `command`, resolves them against the
     payload's `cwd`, normalises `..` and symlinks, and drops what lies outside the brain. A relative target
-    that comes after a `cd` in the command is dropped too: the gate does not follow the `cd`. Globs in a
-    command's targets are matched against the folder it runs in (no match leaves the name as written).
+    after a literal `cd <path>` in the command is read against that folder; after a `cd` the gate cannot
+    read (`cd "$X"`, `cd -`) it is dropped. Globs in a command's targets are matched against the folder it
+    runs in (no match leaves the name as written).
     A folder comes back with a trailing `/` (so `cp a scripts/` meets the rule for `scripts/**`), and so
     does a destination of `cp` or `mv` that is not there yet, besides the plain name: it may be a folder
     the command is about to make (`cp -r draft .claude/skills/new`). A destination that is a folder also
@@ -884,21 +934,25 @@ def _targets(payload: Any, root: Path) -> Tuple[List[Tuple[str, bool]], bool]:
                 keep((relative + "/", False))
 
     for target in raw:
-        if target.after_cd and not os.path.isabs(os.path.expanduser(str(target.word))):
-            continue  # after a `cd` a relative name is read against a folder the gate does not follow
+        try:  # a relative name is read against the folder a literal `cd` before it moved to
+            here = base if not target.at else os.path.normpath(os.path.join(base, os.path.expanduser(target.at)))
+        except (ValueError, OSError):
+            continue
+        if target.at is None and not os.path.isabs(os.path.expanduser(str(target.word))):
+            continue  # after a `cd` it cannot read a relative name means a folder the gate does not know
         # One name that cannot be looked at (a lone surrogate, say) is skipped, never allowed to
         # fail the whole call open: every other name of the call is still checked.
         try:
-            names = _expand_glob(target.word, base) or [str(target.word)]
+            names = _expand_glob(target.word, here) or [str(target.word)]
         except (ValueError, OSError):
             names = [str(target.word)]
         arrivals: List[Tuple[str, bool]] = []  # (name a source gets in the folder, may be a folder itself)
         for source in target.sources:
             try:
-                for path in _expand_glob(source, base) or [str(source)]:
+                for path in _expand_glob(source, here) or [str(source)]:
                     name = os.path.basename(path.rstrip("/"))
                     if name and name not in (".", ".."):
-                        arrivals.append((name, not os.path.isfile(os.path.join(base, os.path.expanduser(path)))))
+                        arrivals.append((name, not os.path.isfile(os.path.join(here, os.path.expanduser(path)))))
             except (ValueError, OSError):
                 continue
         for item in names:
@@ -907,7 +961,7 @@ def _targets(payload: Any, root: Path) -> Tuple[List[Tuple[str, bool]], bool]:
                 if not item:
                     continue
                 written_as_folder = item.endswith("/")
-                absolute = os.path.normpath(item if os.path.isabs(item) else os.path.join(base, item))
+                absolute = os.path.normpath(item if os.path.isabs(item) else os.path.join(here, item))
                 candidates = [absolute]
                 real = os.path.realpath(absolute)
                 if real != absolute:

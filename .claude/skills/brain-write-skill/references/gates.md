@@ -160,7 +160,8 @@ last refusal. Use it when a refusal is a surprise: the skill most often ran in a
   - any other program that writes a file is not recognised (for example `dd of=`, `rsync`,
     `curl -o`, `patch`, `truncate`, `touch`, `install`, `xargs`, `find -exec`, `git checkout --`,
     `sh -c`): only the writers named above are;
-  - after a `cd`, a relative target in the rest of that command is not checked (an absolute one is);
+  - after a `cd` the gate cannot read (`cd "$X"`, `cd -`, `cd $(...)`), a relative target in the rest
+    of that command is not checked (an absolute one is); a plain `cd <path>` is followed;
   - `exec 3<> file`, which opens the file for writing on a descriptor;
   - a backtick substitution inside double quotes;
   - case-insensitive filesystems: a rule's path matches case-sensitively, so `Docs/Practices/x.md`

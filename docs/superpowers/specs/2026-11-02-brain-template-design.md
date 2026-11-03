@@ -889,3 +889,10 @@ Added in 0.2.0, after the first build (README and `_meta/CHANGELOG.md` say how e
 - Agents in `.claude/agents/<prefix>-*.md`, written through `brain-write-skill` (gated), and checked
   by `lint`: name, description, tools, model, and a skill that names them.
 - `docs/guides/` (template-only): making a brain, and prompt examples.
+
+Added in 0.3.0, from a walkthrough of every setup route as a person who does not use git or a terminal:
+setup checks the computer and asks only what the person alone knows; `.brain-private` lines are plain
+terms (`re:` for a regular expression, and a line that can only be one is still read as one); setup
+refuses up front without a git identity, starts histories on `main` and expands `~`; `adopt` names
+what it leaves unsaved; `env-sync --open`; `brain.json` `backup: local`; read-only commands are
+pre-approved in the managed settings; `docs/guides/start-here.md`.

@@ -294,7 +294,7 @@ class SkillGateTest(GateCase):
             ("echo x > docs/{OTHER,ROUTING}.md", "docs/ROUTING.md"),
             ("echo x > {docs,notes}/ROUTING.md", "docs/ROUTING.md"),
             ("echo x > docs/{OTHER,{ROUTING,X}}.md", "docs/ROUTING.md"),
-            ("cp a scripts/{x,y}.py", "scripts/x.py"),
+            ("cp a scripts/{x,y}.py", "scripts/y.py"),  # cp a scripts/x.py scripts/y.py: the last word is written
             # A file-descriptor number is not an operand.
             ("cp a docs/ROUTING.md 2>&1", "docs/ROUTING.md"),
             ("mv a docs/ROUTING.md 2>&1 | head", "docs/ROUTING.md"),
@@ -303,6 +303,31 @@ class SkillGateTest(GateCase):
             # ln writes its last operand like cp and mv.
             ("ln -s /tmp/x scripts/y.py", "scripts/y.py"),
             ("ln -sf /tmp/x docs/ROUTING.md", "docs/ROUTING.md"),
+            # Braces are expanded before cp, mv and ln pick their operands.
+            ("cp docs/ROUTING.md{.bak,}", "docs/ROUTING.md"),
+            ("mv docs/ROUTING.md{.new,}", "docs/ROUTING.md"),
+            ("cp scripts/x.py{,.bak}", "scripts/x.py.bak"),
+            # A # inside backticks, $(...) or ${...} is not a comment.
+            ("echo `true #` > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("v=`git describe #tag`; echo $v > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("echo $(true #) > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("echo ${x:- #} > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("echo $((1 + 2)) # it's\ncp a scripts/x.py", "scripts/x.py"),  # balanced, so the comment is a comment
+            # One target that cannot be resolved does not hide the others.
+            ("echo x > $'\\uD800'; echo x > docs/ROUTING.md", "docs/ROUTING.md"),
+            ("cp a $'\\ud800/x' scripts/y.py", "scripts/y.py"),
+            # Reserved words before a command do not hide it.
+            ("if true; then cp a scripts/x.py; fi", "scripts/x.py"),
+            ("while x; do cp a docs/ROUTING.md; done", "docs/ROUTING.md"),
+            ("{ cp a scripts/x.py; }", "scripts/x.py"),
+            ("! cp a scripts/x.py", "scripts/x.py"),
+            ("for f in a; do cp a docs/practices/; done", "docs/practices/"),
+            ("if ! cp a scripts/x.py; then echo no; fi", "scripts/x.py"),
+            ("until cp a scripts/x.py; do sleep 1; done", "scripts/x.py"),
+            ("case x in a) cp a scripts/x.py ;; esac", "scripts/x.py"),
+            ("if x\nthen\n  cp a scripts/x.py\nelse\n  true\nfi", "scripts/x.py"),
+            # A here-document marker inside a comment opens no here-document.
+            ("echo hi # <<EOF\ncp a scripts/x.py\nEOF", "scripts/x.py"),
         ]
         for command, rel in commands:
             with self.subTest(command=command):
@@ -416,7 +441,10 @@ class SkillGateTest(GateCase):
                         "echo hi # > docs/ROUTING.md", "# let's not write to docs/ROUTING.md", "echo hi;# it's\nls",
                         'echo x > "docs/ROUTIN?.md"', "echo x > 'docs/{ROUTING,OTHER}.md'", "echo x > docs/ROUTIN?.md",
                         "ln -s /tmp/x", "ln -s /tmp/x /tmp/y", "cp a /tmp/docs/ROUTING.md 2>&1",
-                        "cat docs/ROUTING.md 2>&1", "cp docs/ROUTING.md /tmp/out 2>&1"):
+                        "cat docs/ROUTING.md 2>&1", "cp docs/ROUTING.md /tmp/out 2>&1",
+                        "if true; then echo hi; fi", "for f in a; do echo $f; done", "{ echo hi; }", "echo done fi then",
+                        "while read x; do echo $x; done < docs/ROUTING.md", "cp docs/ROUTING.md{.bak,} /tmp/",
+                        "echo `true #` | cat", "echo $(true #)", "cat <<EOF\ncp a scripts/x.py\nEOF"):
             with self.subTest(command=command):
                 self.assert_silent(self.bash(root, command))
 
@@ -496,6 +524,15 @@ class SkillGateTest(GateCase):
                      {"tool_input": {"command": ["scripts/x.py"]}}, {"tool_input": {}}):
             with self.subTest(body=body):
                 self.assert_silent(self.hook_raw(root, "check", json.dumps(body)))
+
+    def test_one_unresolvable_target_does_not_fail_the_whole_call_open(self):
+        root = self.fake_brain()
+        # A lone surrogate (here also straight in the payload's text) cannot name a file; the write beside it is still judged.
+        for command in ("echo x > $'\\uD800'; echo x > docs/ROUTING.md", "echo x > \ud800; echo x > docs/ROUTING.md"):
+            with self.subTest(command=command):
+                self.assertIn("writing docs/ROUTING.md needs", self.denied(self.bash(root, command)))
+        self.assert_silent(self.hook(root, "check", "Write", file_path="\ud800"))
+        self.assert_silent(self.bash(root, "echo x > $'\\uD800'"))
 
     def test_record_survives_a_malformed_payload_and_ignores_other_tools(self):
         root = self.fake_brain()
@@ -789,7 +826,8 @@ class GateReservedPathsTest(GateCase):
                 with self.subTest(rel=rel, tool=tool):
                     self.assert_reserved(self.write(root, rel, tool=tool), rel)
             for command in (f"echo x > {rel}", f"echo x >> {rel}", f"cat a | tee -a {rel}", f"cp /tmp/forged {rel}",
-                            f"mv /tmp/forged {rel}", f"sed -i s/a/b/ {rel}", f"echo x > ./.brain/../{rel}"):
+                            f"mv /tmp/forged {rel}", f"sed -i s/a/b/ {rel}", f"echo x > ./.brain/../{rel}",
+                            f"cp /tmp/forged {rel}{{.bak,}}", f"ln -s /tmp/x {rel}{{,}}"):
                 with self.subTest(rel=rel, command=command):
                     self.assert_reserved(self.bash(root, command), rel)
         self.assertFalse((root / ".brain").exists())
@@ -1002,7 +1040,13 @@ class GateFunctionsTest(GateCase):
             ("echo x > 'a{b,c}'", ["a{b,c}"]),
             ('echo x > a\\{b,c}', ["a{b,c}"]),
             ("echo x > ${HOME}/{a,b}", ["${HOME}/a", "${HOME}/b"]),
-            ("cp a {b,c}.md", ["b.md", "c.md"]),
+            ("cp a {b,c}.md", ["c.md"]),  # bash copies a and b.md into c.md: the last word is what is written
+            ("cp docs/ROUTING.md{.bak,}", ["docs/ROUTING.md"]),
+            ("mv docs/ROUTING.md{.new,}", ["docs/ROUTING.md"]),
+            ("cp x{,.bak}", ["x.bak"]),
+            ("tee {a,b}.md", ["a.md", "b.md"]),
+            ("sed -i s/a/b/ {a,b}.md", ["a.md", "b.md"]),
+            ("echo x > {a,b}.md", ["a.md", "b.md"]),
             # file-descriptor numbers
             ("cp a b 2>&1", ["b"]),
             ("cp a b 1>&2", ["b"]),
@@ -1021,7 +1065,25 @@ class GateFunctionsTest(GateCase):
              ["docs/n.md", "docs/practices/p.md"]),  # here-document text is data, not commands
             ("cat <<-EOF > f.md\n\tbody > x\n\tEOF", ["f.md"]),
             ('grep x <<< "a > b" | tee out.log', ["out.log"]),  # a here-string opens no body
-            ('echo "<<EOF"\ncp a scripts/x.py', ["scripts/x.py"]),  # no closing line, so nothing is hidden
+            ('echo "<<EOF"\ncp a scripts/x.py', ["scripts/x.py"]),  # quoted: no here-document
+            ("cat <<EOF\ncp a scripts/x.py", ["scripts/x.py"]),  # no closing line, so nothing is hidden
+            ("echo hi # <<EOF\ncp a scripts/x.py\nEOF", ["scripts/x.py"]),
+            ("cat <<EOF >a.md <<'END' >b.md\nx > no\nEOF\ny > no\nEND\ncp c d.md", ["a.md", "b.md", "d.md"]),
+            ("cat <<-\"EOF\" > f.md\n\t\tbody\n\tEOF\ncp a g.md", ["f.md", "g.md"]),
+            ("echo `true #` > a.md", ["a.md"]),
+            ("v=`git describe #tag`; echo $v > a.md", ["a.md"]),
+            ("echo $(true #) > a.md", ["a.md"]),
+            ("echo ${x:- #} > a.md", ["a.md"]),
+            ("echo $((1 + 2)) # it's\ncp a b.md", ["b.md"]),
+            ("(true # it's\n) > a.md", ["a.md"]),  # in a plain subshell it is a comment
+            # reserved words
+            ("if true; then cp a b.md; fi", ["b.md"]),
+            ("while x; do cp a b.md; done", ["b.md"]),
+            ("{ cp a b.md; }", ["b.md"]),
+            ("! cp a b.md", ["b.md"]),
+            ("for f in a; do cp a b/; done", ["b/"]),
+            ("if x\nthen\n  cp a b.md\nfi", ["b.md"]),
+            ("echo fi done then", []),
             ("echo x > a.md > b.md", ["a.md", "b.md"]),
             ("echo x > a.md; echo y > a.md", ["a.md"]),
             ("ls -la", []),
@@ -1075,6 +1137,10 @@ class GateFunctionsTest(GateCase):
                          [("docs/ROUTING.md", True)])
         self.assertEqual(targets(file_path="docs/ROUT*"), [("docs/ROUT*", False)])  # a tool's path is literal
         self.assertEqual(targets(file_path="docs/new\0.md"), [("docs/new", False)])  # a C string ends at a NUL
+        self.assertEqual(targets(file_path="\ud800"), [])  # cannot name a file: skipped, not an error
+        self.assertEqual(targets(command="echo x > $'\\uD800' > docs/new.md"), [("docs/new.md", False)])
+        self.assertEqual(gate.targets({"cwd": str(root), "tool_input": {"command": "echo x > \udc80\ud800 > docs/a.md"}},
+                                      root), [("docs/a.md", False)])
         self.assertEqual(targets(command="tee docs/new"), [("docs/new", False)])
         self.assertEqual(targets(file_path="/etc/hosts"), [])
         self.assertEqual(targets(file_path=str(root)), [])

@@ -165,34 +165,12 @@ def lint_rules(root: Path, cfg: "Config", skills: "List[Skill]") -> "List[Findin
 # -- what a tool call writes ---------------------------------------------------------------------
 
 _WRAPPERS = {"sudo", "env", "command", "nohup", "time", "exec"}
+# Words that open or close a compound command; a command follows them, so they must not hide it.
+_RESERVED = {"if", "then", "else", "elif", "fi", "while", "until", "do", "done", "esac", "!", "{", "}"}
 _ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
 
 
-# `<<EOF`, `<<-EOF`, `<<'EOF'`: not `<<<` (a here-string), whose word is an argument, not a delimiter.
-_HEREDOC = re.compile(r"(?<!<)<<(-?)[ \t]*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\2")
-
-
-def _without_heredoc_bodies(command: str) -> str:
-    """`command` minus the text of its here-documents, which is data, not commands. A body is only
-    dropped when its closing line is there, so a stray `<<` in a quoted string hides nothing."""
-    lines = command.split("\n")
-    kept: List[str] = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        kept.append(line)
-        i += 1
-        for match in _HEREDOC.finditer(line):
-            strip_tabs, delimiter = bool(match.group(1)), match.group(3)
-            for j in range(i, len(lines)):
-                closing = (lines[j].lstrip("\t") if strip_tabs else lines[j]).rstrip("\r")
-                if closing == delimiter:
-                    i = j + 1
-                    break
-    return "\n".join(kept)
-
-
-_OPERATOR = re.compile(r"&>>|&>|>>|>\||>&|<<<|<<|<&|<>|&&|\|\||\|&|;;|[;|&()<>`]")
+_OPERATOR = re.compile(r"&>>|&>|>>|>\||>&|<<<|<<-|<<|<&|<>|&&|\|\||\|&|;;|[;|&()<>`]")
 _ANSI_ESCAPES = {"a": "\a", "b": "\b", "e": "\x1b", "E": "\x1b", "f": "\f", "n": "\n", "r": "\r", "t": "\t",
                  "v": "\v", "\\": "\\", "'": "'", '"': '"', "?": "?"}
 _ANSI_WIDTH = {"x": 2, "u": 4, "U": 8}
@@ -250,37 +228,76 @@ def _ansi_c(command: str, i: int) -> Tuple[str, int]:
     return "".join(out).split("\0", 1)[0], i + 1
 
 
+def _skip_heredoc(command: str, start: int, delimiter: str, strip_tabs: bool) -> int:
+    """The index after the body of a here-document that starts at `start`; `start` itself when its closing
+    line is missing, so a stray `<<` hides nothing."""
+    n = len(command)
+    position = start
+    while position < n:
+        end = command.find("\n", position)
+        end = n if end < 0 else end
+        line = command[position:end].rstrip("\r")
+        if (line.lstrip("\t") if strip_tabs else line) == delimiter:
+            return min(end + 1, n)
+        position = end + 1
+    return start
+
+
 def _tokens(command: str) -> List[Tuple[str, bool, bool]]:
     """(text, is_operator, attached) for each shell word and operator of `command`.
 
     Quotes and backslashes are resolved, so a quoted `>` is a word and not a redirection; `$'...'` is
-    decoded and `$"..."` is a double-quoted string; a comment (a `#` that starts a word) runs to the end
-    of its line; a newline ends a command; a quote left open runs to the end of the text (the shell would
-    refuse to run it). Words are `_Word`s that remember which letters were quoted. `attached` is true for
-    an operator that touches the word before it (`2>&1`).
+    decoded and `$"..."` is a double-quoted string; a comment (a `#` that starts a word, outside backticks,
+    `$(...)` and `${...}`) runs to the end of its line; the body of a here-document is skipped; a newline
+    ends a command; a quote left open runs to the end of the text (the shell would refuse to run it). Words
+    are `_Word`s that remember which letters were quoted. `attached` is true for an operator that touches
+    the word before it (`2>&1`).
     """
     tokens: List[Tuple[str, bool, bool]] = []
     word: List[str] = []
     flags: List[str] = []
     in_word = False
+    ticks = subst = param = 0  # open backticks (0 or 1), `$(` depth, `${` depth
+    heredoc: Optional[bool] = None  # a `<<` is waiting for its delimiter; True when it is `<<-`
+    waiting: List[Tuple[str, bool]] = []  # here-documents whose bodies start after this line
     i, n = 0, len(command)
+
+    def end_word() -> None:
+        nonlocal word, flags, in_word, heredoc
+        text = _word(word, flags)
+        tokens.append((text, False, False))
+        if heredoc is not None:
+            waiting.append((str(text), heredoc))
+            heredoc = None
+        word, flags, in_word = [], [], False
+
     while i < n:
         char = command[i]
         if char in " \t\r\n();<>|&`":  # a word ends here
             attached = in_word
             if in_word:
-                tokens.append((_word(word, flags), False, False))
-                word, flags, in_word = [], [], False
+                end_word()
             if char == "\n":
                 tokens.append((";", True, False))
                 i += 1
+                for delimiter, strip_tabs in waiting:
+                    i = _skip_heredoc(command, i, delimiter, strip_tabs)
+                waiting = []
             elif char in " \t\r":
                 i += 1
             else:
                 operator = _OPERATOR.match(command, i).group()
                 tokens.append((operator, True, attached))
+                if operator in ("<<", "<<-"):
+                    heredoc = operator == "<<-"
+                elif operator == "`":
+                    ticks ^= 1
+                elif operator == "(" and (subst or command[i - 1:i] == "$"):
+                    subst += 1
+                elif operator == ")" and subst:
+                    subst -= 1
                 i += len(operator)
-        elif char == "#" and not in_word:
+        elif char == "#" and not in_word and not (ticks or subst or param):
             while i < n and command[i] != "\n":  # the newline itself still ends the command
                 i += 1
         elif char == "\\":
@@ -318,12 +335,16 @@ def _tokens(command: str) -> List[Tuple[str, bool, bool]]:
                     i += 1
             i += 1
         else:
+            if char == "{" and command[i - 1:i] == "$":
+                param += 1
+            elif char == "}" and param:
+                param -= 1
             word.append(char)
             flags.append("0")
             in_word = True
             i += 1
     if in_word:
-        tokens.append((_word(word, flags), False, False))
+        end_word()
     return tokens
 
 
@@ -477,7 +498,9 @@ def _command_targets(words: List[str]) -> List[_Target]:
     while i < len(words):
         word = words[i]
         name = word.rsplit("/", 1)[-1]
-        if _ASSIGNMENT.match(word) or name in _WRAPPERS:
+        if word in _RESERVED:
+            pass  # `then cp a b`, `{ cp a b`, `! cp a b`: the command is what follows
+        elif _ASSIGNMENT.match(word) or name in _WRAPPERS:
             wrapped = wrapped or name in _WRAPPERS
         elif not (wrapped and word.startswith("-")):
             break
@@ -508,26 +531,23 @@ def _bash_targets(command: str) -> List[_Target]:
     found: List[_Target] = []
 
     def add(target: _Target) -> None:
-        sources = tuple(source for alternatives in map(_brace_expand, target.sources) for source in alternatives)
-        for alternative in _brace_expand(target.word):
-            if not alternative:
-                continue
-            for position, known in enumerate(found):
-                if known.word == alternative:
-                    found[position] = _Target(alternative, known.folder or target.folder,
-                                              known.sources + tuple(s for s in sources if s not in known.sources))
-                    break
-            else:
-                found.append(_Target(alternative, target.folder, sources))
+        if not target.word:
+            return
+        for position, known in enumerate(found):
+            if known.word == target.word:
+                found[position] = _Target(known.word, known.folder or target.folder,
+                                          known.sources + tuple(s for s in target.sources if s not in known.sources))
+                return
+        found.append(target)
 
     words: List[str] = []
-    tokens = _tokens(_without_heredoc_bodies(command))
+    tokens = _tokens(command)
     i = 0
     while i < len(tokens):
         text, operator, attached = tokens[i]
         i += 1
         if not operator:
-            words.append(text)
+            words.extend(_brace_expand(text))  # before cp and mv pick their operands: `cp a{,.bak}`
             continue
         if attached and text[0] in "<>" and words and words[-1].isdigit():
             words.pop()  # `2>&1`, `2>/dev/null`: the digits name a file descriptor, not an operand
@@ -536,7 +556,8 @@ def _bash_targets(command: str) -> List[_Target]:
             if following is not None:
                 i += 1
                 if not (text.startswith(">&") and (following.isdigit() or following == "-")):
-                    add(_Target(following))  # (`2>&1` copies a descriptor; it writes no file)
+                    for alternative in _brace_expand(following):  # (`2>&1` copies a descriptor; it writes no file)
+                        add(_Target(alternative))
         elif text.startswith("<"):
             if following is not None:
                 i += 1  # an input redirection or a here-document marker, not a word of the command
@@ -609,32 +630,43 @@ def targets(payload: Any, root: Path) -> List[Tuple[str, bool]]:
                 keep((relative + "/", False))
 
     for target in raw:
-        names = _expand_glob(target.word, base) or [str(target.word)]
+        # One name that cannot be looked at (a lone surrogate, say) is skipped, never allowed to
+        # fail the whole call open: every other name of the call is still checked.
+        try:
+            names = _expand_glob(target.word, base) or [str(target.word)]
+        except (ValueError, OSError):
+            names = [str(target.word)]
         arrivals: List[Tuple[str, bool]] = []  # (name a source gets in the folder, may be a folder itself)
         for source in target.sources:
-            for path in _expand_glob(source, base) or [str(source)]:
-                name = os.path.basename(path.rstrip("/"))
-                if name and name not in (".", ".."):
-                    arrivals.append((name, not os.path.isfile(os.path.join(base, os.path.expanduser(path)))))
-        for item in names:
-            item = os.path.expanduser(item.split("\0", 1)[0])
-            if not item:
+            try:
+                for path in _expand_glob(source, base) or [str(source)]:
+                    name = os.path.basename(path.rstrip("/"))
+                    if name and name not in (".", ".."):
+                        arrivals.append((name, not os.path.isfile(os.path.join(base, os.path.expanduser(path)))))
+            except (ValueError, OSError):
                 continue
-            written_as_folder = item.endswith("/")
-            absolute = os.path.normpath(item if os.path.isabs(item) else os.path.join(base, item))
-            candidates = [absolute]
-            real = os.path.realpath(absolute)
-            if real != absolute:
-                candidates.append(real)
-            for candidate in candidates:
-                for top in roots:
-                    relative = _inside(candidate, top)
-                    if relative is None:
-                        continue
-                    keep_names(candidate, relative, written_as_folder, target.folder)
-                    if os.path.isdir(candidate):
-                        for name, may_be_folder in arrivals:
-                            keep_names(os.path.join(candidate, name), f"{relative}/{name}", False, may_be_folder)
+        for item in names:
+            try:
+                item = os.path.expanduser(item.split("\0", 1)[0])
+                if not item:
+                    continue
+                written_as_folder = item.endswith("/")
+                absolute = os.path.normpath(item if os.path.isabs(item) else os.path.join(base, item))
+                candidates = [absolute]
+                real = os.path.realpath(absolute)
+                if real != absolute:
+                    candidates.append(real)
+                for candidate in candidates:
+                    for top in roots:
+                        relative = _inside(candidate, top)
+                        if relative is None:
+                            continue
+                        keep_names(candidate, relative, written_as_folder, target.folder)
+                        if os.path.isdir(candidate):
+                            for name, may_be_folder in arrivals:
+                                keep_names(os.path.join(candidate, name), f"{relative}/{name}", False, may_be_folder)
+            except (ValueError, OSError):
+                continue
     return found
 
 

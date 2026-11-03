@@ -9,6 +9,7 @@ from unittest import mock
 
 from tests.helpers import TempDirCase  # first: puts <template>/_meta on sys.path
 from brainlib import config, rename, routing_sync
+from brainlib.config import ConfigError
 from brainlib.report import BROKEN
 
 FENCE = "`" * 3
@@ -46,7 +47,7 @@ OLD_CLAUDE_MD = "# Map\n\n- `lab-a` does the thing; `lab-ab` is the other one.\n
 def write(root: Path, rel: str, text: str) -> Path:
     path = Path(root) / rel
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(text, encoding="utf-8", newline="")
+    path.write_bytes(text.encode("utf-8"))  # bytes: write_text(newline=) needs Python 3.10, and no newline may change
     return path
 
 
@@ -328,6 +329,27 @@ class ApplyTest(RenameCase):
         self.assertIn("BROKEN .claude/skills/lab-c/SKILL.md", r.stdout)
         self.assertIn("renamed lab-a to lab-d, but routing sync", r.stdout)   # and it says the rename is done
         self.assertTrue((third / ".claude/skills/lab-d/SKILL.md").is_file())
+
+    def test_a_brain_json_that_cannot_be_reloaded_is_reported_and_sync_is_not_run(self):
+        # The rewrite cannot make brain.json invalid, but if it cannot be read back the sync must not run on
+        # the gates read before the rename (it would write the old name into the blocks), and nobody may miss it.
+        root = self.brain()
+        cfg = self.load(root)
+        problems = []
+        with mock.patch.object(rename.config, "load", side_effect=ConfigError("boom")):
+            rename.apply(root, cfg, "lab-a", "lab-d", problems)
+        self.assertTrue((root / ".claude/skills/lab-d/SKILL.md").is_file())     # the rename itself is done
+        self.assertEqual([(f.severity, f.subject) for f in problems], [(BROKEN, "brain.json")])
+        self.assertIn("routing sync was not run", problems[0].message)
+        self.assertNotIn(routing_sync.BEGIN, read(root, ".claude/skills/lab-c/SKILL.md"))   # and it was not
+
+        other = self.brain()
+        cfg = self.load(other)
+        with mock.patch.object(rename.config, "load", side_effect=ConfigError("boom")):
+            with self.assertRaises(routing_sync.SyncRefused) as caught:   # no list given: it cannot be missed
+                rename.apply(other, cfg, "lab-a", "lab-d")
+        self.assertEqual([f.subject for f in caught.exception.findings], ["brain.json"])
+        self.assertTrue((other / ".claude/skills/lab-d/SKILL.md").is_file())
 
 
 class RefusalTest(RenameCase):

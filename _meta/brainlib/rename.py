@@ -28,7 +28,7 @@ from typing import List, NamedTuple, Optional, Tuple
 
 from . import config, paths, routing_sync
 from .config import Config, ConfigError
-from .report import Finding, emit, exit_code
+from .report import BROKEN, Finding, emit, exit_code
 from .skills import SKILL_FILE, SKILLS_DIR, skills_dir
 
 SKILLS_REL = "/".join(SKILLS_DIR)  # .claude/skills
@@ -180,7 +180,8 @@ def _move(root: Path, src: str, dst: str) -> None:
 def apply(root: Path, cfg: Config, old: str, new: str, problems: Optional[List[Finding]] = None) -> None:
     """Rename the skill: move its folder, rewrite what names it, then run `routing sync`.
 
-    `problems` receives what the sync refused to write (a BROKEN finding each); the rename is done either way.
+    `problems` receives what the sync refused to write (a BROKEN finding each), or, when `brain.json` cannot be
+    read back after the rewrite, one finding saying the sync was not run; the rename is done either way.
     Without a `problems` list a refused sync raises `routing_sync.SyncRefused`, after the rename is complete.
     Raises RenameError, before anything is changed, when the rename is refused.
     """
@@ -199,8 +200,13 @@ def apply(root: Path, cfg: Config, old: str, new: str, problems: Optional[List[F
                               f"replace '{old}' with '{new}' by hand in: {left}, then run routing sync")
     try:
         cfg = config.load(root)  # the gates in brain.json may have changed under the old copy
-    except ConfigError:
-        pass
+    except ConfigError as why:
+        # Syncing on the gates read before the rename would write the old name into the blocks, so it is not run.
+        unread = Finding(BROKEN, config.BRAIN_JSON, f"cannot be loaded ({why}), so routing sync was not run")
+        if problems is None:
+            raise routing_sync.SyncRefused([unread], [])
+        problems.append(unread)
+        return
     routing_sync.sync(root, cfg, check=False, problems=problems)
 
 

@@ -124,8 +124,9 @@ class TempDirCase(unittest.TestCase):
 
         Only files git would track (tracked, or untracked and not ignored) are
         copied, so ignored scratch (`local/`, `.superpowers/`, `.brain-private`)
-        never leaks. The copy is a fresh repo on `main` with one commit; `local/`
-        is created empty afterwards when `with_local` is true.
+        never leaks. The copy is a fresh repo on `main` with one commit, then has
+        the pre-commit guard installed (as the real template does); `local/` is
+        created empty afterwards when `with_local` is true.
         """
         dest = self._new_dir("template")
         self._copy_tree(TEMPLATE_ROOT, dest)
@@ -133,8 +134,20 @@ class TempDirCase(unittest.TestCase):
         self.git(dest, "symbolic-ref", "HEAD", "refs/heads/main")
         self.git(dest, "add", "-A")
         self.git(dest, "commit", "-q", "-m", "template copy for tests")
+        installed = self.run_brain(dest, "hook", "install")
+        if installed.returncode != 0:
+            raise AssertionError(f"hook install failed in {dest}: {installed.stdout}{installed.stderr}")
         if with_local:
             (dest / "local").mkdir()
+        return dest
+
+    def make_brain(self, name="homelab", prefix="lab") -> Path:
+        """A brain made by `new` from a fresh template copy, in a folder whose path contains a space."""
+        template = self.copy_template()
+        dest = self._new_dir("made")
+        made = self.run_brain(template, "new", str(dest), "--name", name, "--prefix", prefix)
+        if made.returncode != 0:
+            raise AssertionError(f"new failed ({made.returncode}): {made.stdout}{made.stderr}")
         return dest
 
     def _copy_tree(self, src: Path, dest: Path) -> None:

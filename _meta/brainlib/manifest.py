@@ -57,20 +57,25 @@ def write(root, relpaths: List[str]) -> None:
             scratch.unlink()
 
 
-def read(root) -> Dict[str, str]:
-    """The manifest as {relpath: sha256}. A missing manifest is empty, and a blank or malformed line is
-    skipped (the file it would have named then shows up in `local_edits`). Bytes that are not UTF-8 are
-    replaced, so a corrupt line fails the hash pattern and is skipped instead of raising."""
-    try:
-        text = (Path(root) / MANIFEST_PATH).read_text(encoding="utf-8", errors="replace")
-    except FileNotFoundError:
-        return {}
+def parse(text: str) -> Dict[str, str]:
+    """Manifest text as {relpath: sha256}. A blank or malformed line is skipped (the file it would have named
+    then shows up in `local_edits`)."""
     found: Dict[str, str] = {}
     for line in text.split("\n"):
         digest, separator, relpath = line.rstrip("\r").partition("  ")
         if separator and relpath and _SHA256.fullmatch(digest):
             found[relpath] = digest
     return found
+
+
+def read(root) -> Dict[str, str]:
+    """The manifest file as {relpath: sha256}. A missing manifest is empty. Bytes that are not UTF-8 are
+    replaced, so a corrupt line fails the hash pattern and is skipped instead of raising."""
+    try:
+        text = (Path(root) / MANIFEST_PATH).read_text(encoding="utf-8", errors="replace")
+    except FileNotFoundError:
+        return {}
+    return parse(text)
 
 
 def _shipped_on_disk(root: Path) -> List[str]:

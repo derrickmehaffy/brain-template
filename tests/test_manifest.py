@@ -105,6 +105,11 @@ class ManifestFilesTest(TempDirCase):
         manifest.write(root, ["_meta/a.py"])
         self.assertEqual(list(manifest.read(root)), ["_meta/a.py"])
 
+    def test_parse_reads_manifest_text_the_way_read_reads_the_file(self):
+        text = f"{digest('a')}  _meta/a.py\n\nnot a line\n{'0' * 63}  short.txt\n{digest('b')}  _meta/b c.py\r\n"
+        self.assertEqual(manifest.parse(text), {"_meta/a.py": digest("a"), "_meta/b c.py": digest("b")})
+        self.assertEqual(manifest.parse(""), {})
+
     def test_read_without_a_manifest_is_empty(self):
         self.assertEqual(manifest.read(self.tmp), {})
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import shutil
 import subprocess
@@ -9,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from tests.helpers import TEMPLATE_ROOT, TempDirCase  # first: puts <template>/_meta on sys.path
-from brainlib import config, gitutil, hook, practices, routing_sync
+from brainlib import config, gitutil, hook, manifest, practices, routing_sync
 from brainlib.report import BLOCK
 
 # Planted secrets are assembled at run time: no source file may hold a literal credential shape,
@@ -565,6 +566,156 @@ class CleanCommitsTest(HookCase):
         self.assertNotIn("assets/big.txt", r.stdout)
         self.assertNotIn("manual.pdf", r.stdout)
         self.assertNotIn("exact.md", r.stdout)
+
+
+class ShippedFilesTest(HookCase):
+    """The template's own files are not the person's to edit and hold ordinary words, so a private or deny term
+    in one that is exactly as shipped (byte-identical to the manifest) is not a finding. Credential shapes, file
+    names and every file the person changed are checked as ever."""
+
+    SHIPPED = "_meta/extra/guide.md"
+    BODY = "Set up your homelab at 10.13.4.5 first.\nA second homelab line.\n"
+    PRIVATE = [r"\bhomelab\b"]
+    DENY = {"privacy": {"deny_patterns": [r"10\.13\.\d+\.\d+"]}}
+
+    def shipped_brain(self, private=None) -> Path:
+        root = self.brain_repo(extra=self.DENY, private=self.PRIVATE if private is None else private)
+        stale = root / manifest.MANIFEST_PATH
+        if stale.exists():  # this brain starts with no manifest, like the template
+            stale.unlink()
+        return root
+
+    def record(self, root: Path, rel: str, body: str) -> None:
+        """Write `rel` and make the (working tree) manifest say that is how it was shipped."""
+        target = root / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(body, encoding="utf-8")
+        manifest.write(root, [rel])
+
+    def test_an_unmodified_shipped_file_may_hold_private_and_deny_terms(self):
+        root = self.shipped_brain()
+        self.record(root, self.SHIPPED, self.BODY)  # the manifest is in the working tree, not staged
+        self.stage(root, self.SHIPPED, self.BODY)
+        self.passes(root)
+
+        self.git(root, "add", "-f", manifest.MANIFEST_PATH)  # and again with the manifest staged too
+        self.passes(root)
+
+    def test_the_same_file_modified_is_scanned_fully(self):
+        root = self.shipped_brain()
+        self.record(root, self.SHIPPED, self.BODY)
+        self.stage(root, self.SHIPPED, self.BODY + "A local edit about the homelab.\n")
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  private-pattern: _meta/extra/guide.md:1", r.stdout)
+        self.assertIn("BLOCK  private-pattern: _meta/extra/guide.md:3", r.stdout)
+        self.assertIn("BLOCK  deny-pattern: _meta/extra/guide.md:1", r.stdout)
+        self.assertNotIn("homelab", r.stdout + r.stderr)
+
+    def test_a_credential_in_an_otherwise_unmodified_shipped_file_still_blocks(self):
+        planted = self.BODY + "token left behind: " + PLANTED["github-token"] + "\n"
+        with self.subTest(manifest="written before the credential was added"):
+            root = self.shipped_brain()
+            self.record(root, self.SHIPPED, self.BODY)
+            self.stage(root, self.SHIPPED, planted)  # the hash now differs, so the whole file is scanned
+            r = self.pre_commit(root)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn(f"BLOCK  {GITHUB}: _meta/extra/guide.md:3", r.stdout)
+            self.assertIn("BLOCK  private-pattern: _meta/extra/guide.md:1", r.stdout)
+
+        with self.subTest(manifest="regenerated to include it"):
+            root = self.shipped_brain()
+            self.record(root, self.SHIPPED, planted)  # the file is exactly what the manifest says
+            self.stage(root, self.SHIPPED, planted)
+            self.git(root, "add", "-f", manifest.MANIFEST_PATH)
+            r = self.pre_commit(root)
+            self.assertEqual(r.returncode, 1)
+            self.assertIn(f"BLOCK  {GITHUB}: _meta/extra/guide.md:3", r.stdout)
+            self.assertNotIn("private-pattern", r.stdout)  # the term scans are what the manifest skips
+            self.assertNotIn("deny-pattern", r.stdout)
+            self.assertNotIn(PLANTED["github-token"], r.stdout + r.stderr)
+
+    def test_a_private_term_in_a_shipped_file_name_still_blocks(self):
+        root = self.shipped_brain()
+        rel = "_meta/extra/homelab-guide.md"
+        self.record(root, rel, self.BODY)
+        self.stage(root, rel, self.BODY)
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  private-pattern: _meta/extra/***-guide.md (in the file name)", r.stdout)
+        self.assertEqual(r.stdout.count("BLOCK"), 1, r.stdout)  # its content is skipped; its name is not
+        self.assertNotIn("homelab", r.stdout + r.stderr)
+
+    def test_the_template_without_a_manifest_scans_everything(self):
+        root = self.shipped_brain()
+        self.assertFalse((root / manifest.MANIFEST_PATH).exists())
+        self.stage(root, self.SHIPPED, self.BODY)
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  private-pattern: _meta/extra/guide.md:1", r.stdout)
+        self.assertIn("BLOCK  deny-pattern: _meta/extra/guide.md:1", r.stdout)
+
+    def test_only_shipped_paths_the_manifest_lists_are_trusted(self):
+        root = self.shipped_brain()
+        self.record(root, self.SHIPPED, self.BODY)
+        # a shipped path the manifest does not list, and a path that is not shipped, listed by hand
+        notes = "docs/notes.md"
+        digest = hashlib.sha256(self.BODY.encode("utf-8")).hexdigest()
+        with open(root / manifest.MANIFEST_PATH, "a", encoding="utf-8") as handle:
+            handle.write(f"{digest}  {notes}\n")
+        self.stage(root, "_meta/extra/unlisted.md", self.BODY)
+        self.stage(root, notes, self.BODY)
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  private-pattern: _meta/extra/unlisted.md:1", r.stdout)
+        self.assertIn("BLOCK  private-pattern: docs/notes.md:1", r.stdout)
+
+    def test_the_staged_manifest_is_the_one_that_counts(self):
+        old, new = self.BODY, self.BODY + "A third homelab line.\n"
+        with self.subTest(case="the staged manifest is current, the working-tree one is stale"):
+            root = self.shipped_brain()
+            self.record(root, self.SHIPPED, new)
+            self.git(root, "add", "-f", manifest.MANIFEST_PATH)
+            self.stage(root, self.SHIPPED, new)
+            self.record(root, self.SHIPPED, old)  # the working tree now disagrees
+            self.passes(root)
+
+        with self.subTest(case="the staged manifest is stale, the working-tree one is current"):
+            root = self.shipped_brain()
+            self.record(root, self.SHIPPED, old)
+            self.git(root, "add", "-f", manifest.MANIFEST_PATH)
+            self.stage(root, self.SHIPPED, new)
+            self.record(root, self.SHIPPED, new)  # the working tree would have trusted it
+            self.assertEqual(self.pre_commit(root).returncode, 1)
+
+    def test_a_manifest_removed_by_the_commit_trusts_nothing(self):
+        root = self.shipped_brain()
+        self.record(root, self.SHIPPED, self.BODY)
+        self.git(root, "add", "-f", manifest.MANIFEST_PATH)
+        self.stage(root, self.SHIPPED, self.BODY)
+        self.git(root, "commit", "-q", "-m", "base")
+        self.git(root, "rm", "-q", "--cached", manifest.MANIFEST_PATH)  # still on disk, no longer in the commit
+        self.stage(root, self.SHIPPED, self.BODY + "More text.\n")
+        self.record(root, self.SHIPPED, self.BODY + "More text.\n")  # ... and it would list this version
+        r = self.pre_commit(root)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("BLOCK  private-pattern: _meta/extra/guide.md:1", r.stdout)
+
+    def test_a_new_brains_first_commit_passes_with_common_words_private(self):
+        # what `new --private homelab` meets: the whole shipped set, with words such as these in it
+        root = self.brain_repo(private=[r"\bhomelab\b", r"\bprivate\b", r"\btoken\b", r"\bsecret\b"])
+        shipped = [rel for rel in (p.relative_to(root).as_posix() for p in sorted((root / "_meta").rglob("*")) if p.is_file())
+                   if "__pycache__" not in rel and manifest.is_shipped(rel)]
+        self.assertGreater(len(shipped), 20)
+        manifest.write(root, shipped)
+        self.git(root, "add", "-f", "_meta")
+        r = self.pre_commit(root)
+        self.assertEqual((r.returncode, "BLOCK" in r.stdout), (0, False), r.stdout + r.stderr)
+        # and once one of those files is edited, its words count
+        edited = root / "_meta" / "brainlib" / "paths.py"
+        edited.write_text(edited.read_text(encoding="utf-8") + "# a private note\n", encoding="utf-8")
+        self.git(root, "add", "-f", "_meta/brainlib/paths.py")
+        self.blocked(root, "private-pattern", "_meta/brainlib/paths.py:")
 
 
 class SafetyTest(HookCase):

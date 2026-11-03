@@ -12,7 +12,7 @@ import subprocess
 import unittest
 
 from tests.helpers import TEMPLATE_ROOT, TempDirCase  # first: puts <template>/_meta on sys.path
-from brainlib import managed
+from brainlib import install, managed, manifest
 
 # A credential-shaped value, built at run time: no source file may hold one, because the template's own
 # pre-commit guard scans every file it commits.
@@ -172,8 +172,16 @@ class SmokeTest(TempDirCase):
         done = self.run_brain(clone, "init", "--name", "homelab", "--prefix", "lab")
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
 
-        self.assertFalse((clone / "tests").exists())
-        self.assertFalse((clone / "docs" / "superpowers").exists())
+        # Nothing of the template's own is left: every file is shipped, a starter file, or written by init.
+        starter = set(install.skeleton(install.template_files(template)))
+        written = {"brain.json", "docs/practices/INDEX.md"}
+        tracked = self.git(clone, "ls-files").splitlines()
+        stray = [rel for rel in tracked if not (rel.startswith("_meta/") or manifest.is_shipped(rel)
+                                                or rel in starter or rel in written)]
+        self.assertEqual(stray, [])
+        self.assertEqual(self.git(clone, "ls-files", "--others", "--exclude-standard").split(), [])
+        ignored = self.git(clone, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory")
+        self.assertLessEqual(set(ignored.splitlines()), {".brain/", "brain.local.json"})  # nothing hidden
         self.assertEqual(skill_names(clone, "template-"), [])
         self.assertTrue(skill_names(clone, "brain-"))
         doctor = self.run_brain(clone, "doctor")

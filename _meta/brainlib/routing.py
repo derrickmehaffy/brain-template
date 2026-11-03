@@ -1,5 +1,5 @@
 """The routing map: parse the Mermaid in `_meta/ROUTING-META.md` and `docs/ROUTING.md` as one graph,
-lint it and show it (spec §7.7)."""
+lint it, show it and (in `routing_sync`) write each skill's block from it (spec §7.7)."""
 from __future__ import annotations
 
 import re
@@ -8,9 +8,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Set, Tuple
 
-from . import paths
+from . import config, paths
 from .config import Config
-from .report import BROKEN, GAP, Finding
+from .report import BLOCK, BROKEN, GAP, OK, Finding, emit, exit_code
 from .skills import Skill, owned_skills
 
 CLASSES = ("entry", "gate", "work", "optional", "decision", "state", "human")
@@ -475,9 +475,37 @@ def _run_show(args) -> int:
     return 1
 
 
+def _sync_arguments(parser) -> None:
+    parser.add_argument("--check", action="store_true",
+                        help="write nothing; exit 1 when a block or a style line is out of date")
+
+
+def _run_sync(args) -> int:
+    from . import routing_sync  # imported here: it imports this module
+
+    root = paths.harness_root()
+    try:
+        cfg = config.load(root)
+    except config.ConfigError as exc:
+        print(f"routing: {exc}", file=sys.stderr)
+        return 1
+    refused: List[Finding] = []
+    changed = routing_sync.sync(root, cfg, args.check, refused)
+    if args.check:
+        findings = [Finding(BLOCK, rel, "is out of date; run '_meta/brain routing sync'") for rel in changed]
+    else:
+        findings = [Finding(OK, rel, "updated") for rel in changed]
+    emit(findings + refused)
+    counts = ([f"{len(changed)} {'out of date' if args.check else 'updated'}"] if changed else []) + \
+             ([f"{len(refused)} problem{'' if len(refused) == 1 else 's'}"] if refused else [])
+    print("routing sync: " + (", ".join(counts) or ("everything is up to date" if args.check else "nothing to update")))
+    return exit_code(findings + refused)
+
+
 # name -> (help, add_arguments(parser), run(args) -> int). A new subcommand is one more entry.
 SUBCOMMANDS = {
     "show": ("print entry points and isolated skills, or one skill's neighbours", _show_arguments, _run_show),
+    "sync": ("write each skill's 'Where this sits' block and the map's style lines", _sync_arguments, _run_sync),
 }
 
 

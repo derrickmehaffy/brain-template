@@ -1,9 +1,9 @@
-"""`brain mods`: the brain's mods in `mods/<prefix>-<name>/`, and the kit they are drawn with.
+"""`brain mods`: the brain's mods in `.claude/mods/<prefix>-<name>/`, and the kit they are drawn with.
 
 A mod is a Claude Code plugin whose hooks module changes Claude's own interface or behaviour (a
 pane, a band above the prompt, a command, a hook on tool calls). A brain keeps each one in
-`mods/<prefix>-<name>/` and loads it through a relative link,
-`.claude/skills/<prefix>-<name>` -> `../../mods/<prefix>-<name>`: Claude Code loads a plugin folder
+`.claude/mods/<prefix>-<name>/` and loads it through a relative link,
+`.claude/skills/<prefix>-<name>` -> `../mods/<prefix>-<name>`: Claude Code loads a plugin folder
 it finds in the project's `.claude/skills/` (as `<name>@skills-dir`), in sessions started at the
 brain's root once the folder is trusted, and reloads it when a file in it is saved. The link is
 committed, so every clone loads the same mods; a mod whose manifest says `"defaultEnabled": false`
@@ -13,8 +13,9 @@ A mod may import only files inside its own folder, so each one carries a copy of
 `hooks/kit/`. The kit's home is `_meta/modkit/gallery/hooks/kit/`; `sync` refreshes the copies and
 `lint` reports one that differs.
 
-Read-only except `new`, `link` and `sync`, which write only under `mods/` and `.claude/skills/`, and
-each of those has `--dry-run`.
+Mods live under `.claude/`, Claude's own space, so a folder of the person's (a `mods/` of their own, whatever it
+holds) is never read, linted or saved as one. Read-only except `new`, `link` and `sync`, which write only under
+`.claude/mods/` and `.claude/skills/`, and each of those has `--dry-run`.
 """
 from __future__ import annotations
 
@@ -31,7 +32,7 @@ from . import config, paths
 from .config import Config
 from .report import BROKEN, GAP, Finding
 
-MODS_DIR = "mods"
+MODS = (".claude", "mods")  # Claude's own space: no folder of the person's is ever taken for a mod
 KIT = ("_meta", "modkit", "gallery", "hooks", "kit")
 STARTER = ("_meta", "modkit", "starter")
 STARTER_NAME = "modkit-starter"
@@ -55,7 +56,7 @@ def kit_dir(root: Path) -> Path:
 
 
 def mods_dir(root: Path) -> Path:
-    return Path(root) / MODS_DIR
+    return Path(root).joinpath(*MODS)
 
 
 def link_path(root: Path, name: str) -> Path:
@@ -63,11 +64,11 @@ def link_path(root: Path, name: str) -> Path:
 
 
 def link_target(name: str) -> str:
-    return os.path.join("..", "..", MODS_DIR, name)
+    return os.path.join("..", MODS[-1], name)
 
 
 def mod_folders(root: Path) -> List[Path]:
-    """Every real folder in `mods/`, by name; a link or a dotted name is not a mod."""
+    """Every real folder in `.claude/mods/`, by name; a link or a dotted name is not a mod."""
     base = mods_dir(root)
     try:
         return sorted(p for p in base.iterdir() if p.is_dir() and not p.is_symlink() and not p.name.startswith("."))
@@ -102,22 +103,6 @@ def differs(a: Path, b: Path) -> bool:
     if b.is_symlink() or not b.is_dir():
         return True
     return _files(a) != _files(b)
-
-
-def ignores_mods(root: Path) -> bool:
-    """Whether the brain's allowlist `.gitignore` (`/*` then `!/<path>` lines) leaves `mods/` out."""
-    try:
-        lines = [l.strip() for l in (Path(root) / ".gitignore").read_text(encoding="utf-8").splitlines()]
-    except OSError:
-        return False
-    return "/*" in lines and not any(l in ("!/mods/", "!/mods", "!mods/") for l in lines)
-
-
-def allow_mods(root: Path) -> None:
-    """Add `!/mods/` to the end of the brain's own `.gitignore` lines, so mods are committed."""
-    path = Path(root) / ".gitignore"
-    text = path.read_text(encoding="utf-8")
-    path.write_text(text + ("" if text.endswith("\n") else "\n") + "!/mods/\n", encoding="utf-8")
 
 
 def _is_ours(path: Path, name: str) -> bool:
@@ -181,7 +166,7 @@ def link(root: Path, names: List[str], dry_run: bool = False) -> Tuple[List[str]
     lines, status = [], 0
     for name in wanted:
         if not (mods_dir(root) / name).is_dir():
-            lines.append(f"BROKEN  {name}: no mods/{name}/")
+            lines.append(f"BROKEN  {name}: no .claude/mods/{name}/")
             status = 1
             continue
         path = link_path(root, name)
@@ -214,14 +199,14 @@ def name_problem(root: Path, cfg: Config, name: str) -> Optional[str]:
     if name.startswith(RESERVED) or name in ("claude", "anthropic", "claude-code", "claude-mods"):
         return f"{name}: Claude Code reserves that name"
     if (mods_dir(root) / name).exists():
-        return f"{name}: mods/{name}/ exists already"
+        return f"{name}: .claude/mods/{name}/ exists already"
     if link_path(root, name).exists() or link_path(root, name).is_symlink():
         return f"{name}: {'/'.join(LINKS)}/{name} exists already (a skill or another link has that name)"
     return None
 
 
 def new(root: Path, cfg: Config, name: str, dry_run: bool = False) -> Tuple[List[str], int]:
-    """Start `mods/<prefix>-<name>/` from the starter, with the kit and the link."""
+    """Start `.claude/mods/<prefix>-<name>/` from the starter, with the kit and the link."""
     if cfg.role == "template":
         return ["mods new: the template keeps no mods; run this in a brain"], 2
     name = full_name(cfg, name)
@@ -236,7 +221,7 @@ def new(root: Path, cfg: Config, name: str, dry_run: bool = False) -> Tuple[List
     if linked:
         return [f"BROKEN  {linked} is a link; mods new writes only inside the brain"], 1
     files = _files(starter)
-    lines = [f"{'would write' if dry_run else 'wrote'} mods/{name}/ from the starter ({len(files)} files) "
+    lines = [f"{'would write' if dry_run else 'wrote'} .claude/mods/{name}/ from the starter ({len(files)} files) "
              f"and its kit copy, and link {'/'.join(LINKS)}/{name}"]
     if dry_run:
         return lines, 0
@@ -248,9 +233,6 @@ def new(root: Path, cfg: Config, name: str, dry_run: bool = False) -> Tuple[List
             data = data.decode("utf-8").replace(STARTER_NAME, name).encode("utf-8")
         target.write_bytes(data)
     shutil.copytree(str(kit), str(dest / "hooks" / "kit"))
-    if ignores_mods(root):
-        allow_mods(root)
-        lines.append("added   !/mods/ to .gitignore, so mods are committed")
     linked, status = link(root, [name])
     return lines + linked, status
 
@@ -347,7 +329,8 @@ def lint_mods(root: Path, cfg: Config, skills: list) -> List[Finding]:
         names.add(name)
         data = manifest(folder)
         if data is None:
-            found.append(Finding(BROKEN, name, f"mods/{name}/{'/'.join(MANIFEST)} is missing or not a JSON object"))
+            found.append(Finding(BROKEN, name,
+                                 f".claude/mods/{name}/{'/'.join(MANIFEST)} is missing or not a JSON object"))
             continue
         if data.get("name") != name:
             found.append(Finding(BROKEN, name, f"plugin.json names it {data.get('name')!r}; the folder is {name!r}"))
@@ -365,9 +348,6 @@ def lint_mods(root: Path, cfg: Config, skills: list) -> List[Finding]:
             found.append(Finding(GAP, name, "no *.test.ts: a mod is tested with claude plugin test"))
         if not (folder / "README.md").is_file():
             found.append(Finding(GAP, name, "no README.md saying what it does, what it reads and how to turn it off"))
-    if names and ignores_mods(root):
-        found.append(Finding(GAP, "mods", ".gitignore leaves mods/ out, so no mod is committed: add !/mods/ "
-                                          "below the managed block"))
     base = root.joinpath(*LINKS)
     try:
         links = [p for p in base.iterdir() if p.is_symlink()]
@@ -375,7 +355,7 @@ def lint_mods(root: Path, cfg: Config, skills: list) -> List[Finding]:
         links = []
     for path in links:
         target = os.readlink(str(path))
-        if target.startswith(os.path.join("..", "..", MODS_DIR) + os.sep) and not path.exists():
+        if target.startswith(os.path.join("..", MODS[-1]) + os.sep) and not path.exists():
             found.append(Finding(BROKEN, path.name, f"{'/'.join(LINKS)}/{path.name} points at a mod that is not there"))
     return found
 
@@ -386,7 +366,7 @@ def lint_mods(root: Path, cfg: Config, skills: list) -> List[Finding]:
 def add_arguments(parser) -> None:
     sub = parser.add_subparsers(dest="action", metavar="<action>")
     sub.add_parser("list", help="each mod, whether it is linked and whether its kit is current")
-    p = sub.add_parser("new", help="start mods/<prefix>-<name>/ from the starter, with the kit and the link")
+    p = sub.add_parser("new", help="start .claude/mods/<prefix>-<name>/ from the starter, with the kit and the link")
     p.add_argument("name")
     p.add_argument("--dry-run", action="store_true")
     p = sub.add_parser("sync", help="copy the kit into every mod that has hooks/kit/")
@@ -403,7 +383,7 @@ def add_arguments(parser) -> None:
 def _list(root: Path, cfg: Config) -> List[str]:
     folders = mod_folders(root)
     if not folders:
-        return ["no mods yet (mods/ holds none): _meta/brain mods new <name>"]
+        return ["no mods yet (.claude/mods/ holds none): _meta/brain mods new <name>"]
     kit = kit_dir(root)
     lines = []
     for folder in folders:

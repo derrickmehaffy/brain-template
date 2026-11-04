@@ -60,13 +60,14 @@ The rest is for whoever builds or reviews a mod. The authority is the API declar
 writes beside a loaded mod (`.claude-plugin/types/claude-code/index.d.ts`, with every event, method
 and element of the build you run) and the [mods documentation](https://code.claude.com/docs/en/plugins/mods/overview).
 
-<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="../images/mods-how-dark.svg"><img src="../images/mods-how.svg" width="100%" alt="Three steps. The kit, in _meta/modkit, from the template. Your mod: mods new copies the starter and the kit into mods/lab-health, where Claude writes it and its tests. Every session: a link in .claude/skills loads it and reloads it when a file is saved. Underneath: mods sync copies a new kit into every mod, lint warns about a stale copy, and brain-sync commits."></picture></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="../images/mods-how-dark.svg"><img src="../images/mods-how.svg" width="100%" alt="Three steps. The kit, in _meta/modkit, from the template. Your mod: mods new copies the starter and the kit into .claude/mods/lab-health, where Claude writes it and its tests. Every session: a link in .claude/skills loads it and reloads it when a file is saved. Underneath: mods sync copies a new kit into every mod, lint warns about a stale copy, and brain-sync commits."></picture></p>
 
 ### Where a mod lives and how it loads
 
 A mod is a [plugin](https://code.claude.com/docs/en/plugins/overview) whose `hooks/hooks.json`
-names a hooks module. A brain keeps each one in `mods/<prefix>-<name>/` and commits a relative
-link, `.claude/skills/<prefix>-<name>`, to it. Claude Code loads a plugin folder it finds in the
+names a hooks module. A brain keeps each one in `.claude/mods/<prefix>-<name>/` and commits a relative
+link, `.claude/skills/<prefix>-<name>`, to it. Mods live under `.claude/` because it is Claude's own
+space: a `mods/` folder you already have, whatever it holds, is never mistaken for one. Claude Code loads a plugin folder it finds in the
 project's `.claude/skills/` (it shows as `<name>@skills-dir`), only in sessions started at the
 brain's root and only once that folder is trusted, and
 [watches it](https://code.claude.com/docs/en/plugins/loading), so a saved change reloads the mod.

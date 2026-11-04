@@ -14,7 +14,7 @@ The guide for people is `docs/guides/building-mods.md` in the template; the skil
 ## How a brain's mods are laid out
 
 ```text
-mods/<prefix>-<name>/          the mod, committed (`!/mods/` in the brain's .gitignore)
+.claude/mods/<prefix>-<name>/  the mod, committed with the rest of .claude/
   .claude-plugin/plugin.json   name, description, "types"; "defaultEnabled": false for an opt-in mod
   hooks/hooks.json             { "modules": ["./register.tsx"] }
   hooks/register.tsx           the hooks module
@@ -22,17 +22,18 @@ mods/<prefix>-<name>/          the mod, committed (`!/mods/` in the brain's .git
   types/index.d.ts             the values it keeps in $.state
   tests/*.test.ts              claude plugin test
   README.md                    what it shows, reads and writes, and how to turn it off
-.claude/skills/<prefix>-<name> -> ../../mods/<prefix>-<name>   the link that loads it
+.claude/skills/<prefix>-<name> -> ../mods/<prefix>-<name>   the link that loads it
 ```
 
 Claude Code loads a plugin folder it finds in the project's `.claude/skills/`, in a session started
-at the brain's root once the folder is trusted, and reloads it when one of its files is saved. The
-link is committed, so every clone of the brain gets the same mods. `_meta/brain mods` does the rest:
+at the brain's root once the folder is trusted, and reloads it when one of its files is saved. Mods
+live under `.claude/`, Claude's own space, so a `mods/` folder the person already has (whatever it
+holds) is never mistaken for one, nor saved because of one. The link is committed, so every clone of the brain gets the same mods. `_meta/brain mods` does the rest:
 
 | Command | Does |
 | --- | --- |
 | `mods list` | each mod: linked or not, kit current or stale, opt-in or not |
-| `mods new <name>` | `mods/<prefix>-<name>/` from the starter, with the kit and the link (`--dry-run` first) |
+| `mods new <name>` | `.claude/mods/<prefix>-<name>/` from the starter, with the kit and the link (`--dry-run` first) |
 | `mods sync` | copies the kit into every mod that has `hooks/kit/` (`--check` changes nothing) |
 | `mods link [name]` | makes a missing link |
 | `mods check [name]` | `claude plugin validate` and `claude plugin test` on each mod |

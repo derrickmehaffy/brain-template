@@ -28,8 +28,9 @@
   then `env-sync --open` for the person. Scripts take them through their loader; anything else
   gets them through `_meta/brain secret run KEY COMMAND`.
 - An MCP server only this brain needs goes in its `.mcp.json`, through `brain-write-script`.
-- A mod (a pane, band, command or hook inside Claude Code) lives in `mods/<prefix>-<name>/` and is
-  written through `brain-write-mod`; edit it there, never through its link in `.claude/skills/`.
+- A mod (a pane, band, command or hook inside Claude Code) lives in `.claude/mods/<prefix>-<name>/`
+  and is written through `brain-write-mod`; edit it there, never through its link in `.claude/skills/`.
+  A `mods/` folder of the person's own is theirs, never one of these.
 - Work another brain handed over lands in `docs/INBOX.md`; the session-start check reports what is
   open. Offer to start on it, work it through the routing map, then set its status to `done` (or
   `declined: <reason>`) and commit. Brains this one knows (`brain.json` `brains`) are separate repos:

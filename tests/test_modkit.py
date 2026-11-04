@@ -34,20 +34,18 @@ class ModsCase(TempDirCase):
     def new(self, name: str = "health"):
         lines, status = mods.new(self.root, self.cfg, name)
         self.assertEqual(status, 0, "\n".join(lines))
-        return self.root / "mods" / f"lab-{name}"
+        return self.root / ".claude" / "mods" / f"lab-{name}"
 
 
 class ModsTest(ModsCase):
     def test_new_starts_a_linked_mod_from_the_starter_that_lint_accepts(self):
-        gitignore = self.root / ".gitignore"
-        gitignore.write_text("/*\n!/.gitignore\n!/scripts/\n", encoding="utf-8")
         mod = self.new()
+        self.assertEqual(mod, self.root / ".claude" / "mods" / "lab-health")
         manifest = json.loads((mod / ".claude-plugin" / "plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["name"], "lab-health")
         self.assertFalse(mods.differs(mods.kit_dir(self.root), mod / "hooks" / "kit"))
         link = self.root / ".claude" / "skills" / "lab-health"
-        self.assertEqual(os.readlink(str(link)), os.path.join("..", "..", "mods", "lab-health"))
-        self.assertTrue(gitignore.read_text(encoding="utf-8").endswith("!/mods/\n"))  # an allowlist now saves mods/
+        self.assertEqual(os.readlink(str(link)), os.path.join("..", "mods", "lab-health"))
         self.assertEqual(mods.lint_mods(self.root, self.cfg, []), [])
 
     def test_sync_puts_back_a_kit_copy_edited_in_place(self):
@@ -72,9 +70,18 @@ class ModsTest(ModsCase):
     def test_lint_reports_a_broken_mod_and_a_dangling_link(self):
         mod = self.new()
         (mod / ".claude-plugin" / "plugin.json").write_text(json.dumps({"name": "something-else"}), encoding="utf-8")
-        os.symlink(os.path.join("..", "..", "mods", "lab-gone"), str(self.root / ".claude" / "skills" / "lab-gone"))
+        os.symlink(os.path.join("..", "mods", "lab-gone"), str(self.root / ".claude" / "skills" / "lab-gone"))
         broken = {f.subject for f in mods.lint_mods(self.root, self.cfg, []) if f.severity == BROKEN}
         self.assertEqual(broken, {"lab-health", "lab-gone"})
+
+    def test_a_mods_folder_of_the_persons_own_is_left_alone(self):
+        mod = self.new()
+        theirs = self.root / "mods" / "SomeProject"  # a top-level mods/ that was there before the brain
+        (theirs / "content").mkdir(parents=True)
+        self.assertEqual(mods.mod_folders(self.root), [mod])
+        self.assertNotIn("SomeProject", {f.subject for f in mods.lint_mods(self.root, self.cfg, [])})
+        allowlist = (TEMPLATE_ROOT / "_meta" / "managed" / "gitignore.block").read_text(encoding="utf-8")
+        self.assertNotIn("!/mods/", allowlist)  # and the brain never starts saving it
 
     def test_the_kits_starter_and_gallery_are_well_formed_mods(self):
         for folder in (MODKIT / "gallery", MODKIT / "starter"):

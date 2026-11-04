@@ -9,7 +9,6 @@
 !/_meta/
 !/docs/
 !/scripts/
-!/mods/
 .env
 .env.*
 !.env.example

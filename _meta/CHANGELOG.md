@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.2 — 2026-11-03
+
+- A brain's own mods move to `.claude/mods/<prefix>-<name>/`, Claude's own space, linked as before from `.claude/skills/`. A top-level `mods/` folder belongs to the person again: it is never read or linted as one of the brain's mods, and the managed `.gitignore` block no longer saves it (`!/mods/` is gone), so adopting a folder that already has a `mods/` neither blocks the first commit nor starts saving what is in it. The gate rule for `brain-write-mod` moves to `.claude/mods/<prefix>-*/**`.
+- Existing brains: `update` brings the new allowlist and gate rule. A mod made in `mods/` with 0.4.0 or 0.4.1 moves with `git mv mods/<name> .claude/mods/<name>`, then `_meta/brain mods link`. If your own `mods/` folder should still be saved, add `!/mods/` below the managed block.
+
 ## 0.4.1 — 2026-11-03
 
 - `mods sync`, `mods new` and `mods link` refuse to act when a folder on the way (`mods/`, a mod's folder, its `hooks/`, `.claude/skills/`) is a link, so a mod copied from elsewhere cannot make them delete or write outside the brain. A `hooks/kit` that is itself a link is still replaced: only the link is removed.

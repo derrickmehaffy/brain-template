@@ -1,6 +1,6 @@
 ---
 name: brain-write-mod
-description: "Create, change or fix one of this brain's mods in mods/<prefix>-<name>/: a change to Claude Code's own interface or behaviour, such as a pane beside the chat, a band above the prompt, a status-line word, a toast, a slash command or a hook on tool calls. Starts it from the template's mod kit, keeps it read-only unless the person asks otherwise, tests it with claude plugin test, links it so sessions load it, and records what it shows, reads and writes. Use when someone asks for a panel, pane, sidebar, band, live view beside the chat, status line, notification, slash command or tool-call guard, when a mod does nothing or misbehaves, or when the skill gate refuses a write under mods/. Does NOT write a skill, which is brain-write-skill; does NOT write a script a mod runs, which is brain-write-script; and does NOT change the kit in _meta/modkit/, which is brain-upstream."
+description: "Create, change or fix one of this brain's mods in .claude/mods/<prefix>-<name>/: a change to Claude Code's own interface or behaviour, such as a pane beside the chat, a band above the prompt, a status-line word, a toast, a slash command or a hook on tool calls. Starts it from the template's mod kit, keeps it read-only unless the person asks otherwise, tests it with claude plugin test, links it so sessions load it, and records what it shows, reads and writes. Use when someone asks for a panel, pane, sidebar, band, live view beside the chat, status line, notification, slash command or tool-call guard, when a mod does nothing or misbehaves, or when the skill gate refuses a write under .claude/mods/. Does NOT write a skill, which is brain-write-skill; does NOT write a script a mod runs, which is brain-write-script; and does NOT change the kit in _meta/modkit/, which is brain-upstream."
 ---
 
 # Write a mod for this brain
@@ -16,11 +16,11 @@ failing where the person can see it, never silently and never by breaking the se
 
 **Hand to next:** `brain-sync` · `brain-write-script`
 
-**Reserved output:** writing `mods/<prefix>-*/**` needs this skill to have run.
+**Reserved output:** writing `.claude/mods/<prefix>-*/**` needs this skill to have run.
 <!-- where:end -->
 
 **Call it directly when:** the person asks for something Claude Code should show or do by itself
-(a pane, a band, a command, a guard), or the gate refused a write under `mods/`; step 1 still applies.
+(a pane, a band, a command, a guard), or the gate refused a write under `.claude/mods/`; step 1 still applies.
 
 ## Sequence
 
@@ -35,7 +35,7 @@ failing where the person can see it, never silently and never by breaking the se
    the brain gets it or it is opt-in. Read `_meta/modkit/README.md` for the kit, its pieces and
    the surface facts.
 3. **Start or open it.** New: `_meta/brain mods new <name> --dry-run`, then without `--dry-run`;
-   it writes `mods/<prefix>-<name>/` from the starter, copies the kit and makes the link
+   it writes `.claude/mods/<prefix>-<name>/` from the starter, copies the kit and makes the link
    `.claude/skills/<prefix>-<name>`. Existing: read its `README.md` and `hooks/register.tsx` first.
 4. **Write it.** Replace `hooks/health.ts` with the mod's own data source and delete the starter's
    parts it does not need. Grep the types the engine lays in `.claude-plugin/types/` for the event
@@ -45,7 +45,7 @@ failing where the person can see it, never silently and never by breaking the se
    the empty, failed and nothing-to-show states, that a forged button press does nothing, and that
    a read-only mod writes nothing. Run `_meta/brain mods check <name>` until both steps pass.
 6. **See it.** The session reloads a linked mod when its files are saved; a terminal session can
-   load one with `claude --plugin-dir mods/<prefix>-<name>`. Ask the person to look at it in the
+   load one with `claude --plugin-dir .claude/mods/<prefix>-<name>`. Ask the person to look at it in the
    app they use, in the light and the dark theme. A dim transcript line naming the mod is a hook
    that failed: read it, fix the cause, look again.
 7. **Record and hand on.** Fill the README table: what it shows, what it reads, what it writes,
@@ -91,12 +91,12 @@ Steps 3 and 7's link and lint do not apply.
   not a second set of rules.
 - Do not open a pane at session start unasked; open it on a command, a button, or work that needs it.
 - Do not edit through the link (`.claude/skills/<prefix>-<name>/…`) or make it by hand: write under
-  `mods/`, and let `mods new` or `mods link` make the link. The gate reads a write through the link
+  `.claude/mods/`, and let `mods new` or `mods link` make the link. The gate reads a write through the link
   as a skill write too.
 
 ## Done when
 
-- `mods/<prefix>-<name>/` holds the manifest, `hooks/hooks.json`, the hooks module, the kit copy,
+- `.claude/mods/<prefix>-<name>/` holds the manifest, `hooks/hooks.json`, the hooks module, the kit copy,
   `types/index.d.ts`, tests and a README whose table is filled in.
 - `_meta/brain mods check <name>` passes validate and test, and `_meta/brain lint` reports nothing
   about the mod.
